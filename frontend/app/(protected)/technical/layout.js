@@ -31,5 +31,9 @@ export default function TechnicalLayout({ children }) {
 
   if (!user) return null;
 
-  return <AppShell user={user}>{children}</AppShell>;
+  return (
+    <AppShell user={user} showSidebar={false}>
+      {children}
+    </AppShell>
+  );
 }

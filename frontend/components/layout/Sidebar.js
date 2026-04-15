@@ -2,7 +2,23 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { SquaresFour, PlusCircle, Cube, UserCircle } from "phosphor-react";
 import { NAV_CONFIG } from "@/features/auth/nav-config";
+
+const ICON_MAP = {
+  Dashboard: SquaresFour,
+  "Sample Intake": PlusCircle,
+  "Sample Tracking": Cube,
+  Registry: Cube,
+  Workflow: Cube,
+  Validation: Cube,
+  Reports: Cube,
+  Users: Cube,
+  Branches: Cube,
+  "Audit Logs": Cube,
+  Billing: Cube,
+  Invoices: Cube,
+};
 
 export default function Sidebar({ role }) {
   const pathname = usePathname();
@@ -11,82 +27,177 @@ export default function Sidebar({ role }) {
   return (
     <>
       <aside className="sidebar">
-        <div className="brand">
-          <h2>Matriq</h2>
-          <p>{role ? role.replaceAll("_", " ") : "No role"}</p>
+        <div className="top">
+          <div className="brand">
+            <div className="logoBox">M</div>
+            <h1>Matriq</h1>
+          </div>
+
+          <nav className="nav">
+            {menuItems.map((item) => {
+              const isActive = pathname === item.href;
+              const Icon = ICON_MAP[item.label] || Cube;
+
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={isActive ? "navItem active" : "navItem"}
+                >
+                  <span className="iconWrap">
+                    <Icon size={22} weight={isActive ? "fill" : "regular"} />
+                  </span>
+
+                  <span className="label">{item.label}</span>
+                </Link>
+              );
+            })}
+          </nav>
         </div>
 
-        <nav className="nav">
-          {menuItems.map((item) => {
-            const isActive = pathname === item.href;
+        <div className="bottom">
+          <div className="userCard">
+            <div className="avatar">
+              <UserCircle size={28} weight="regular" />
+            </div>
 
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={isActive ? "navItem active" : "navItem"}
-              >
-                {item.label}
-              </Link>
-            );
-          })}
-        </nav>
+            <div className="userInfo">
+              <strong>Jon Santos</strong>
+              <span>{role ? role.replaceAll("_", " ") : "User"}</span>
+            </div>
+          </div>
+        </div>
       </aside>
 
       <style jsx>{`
         .sidebar {
-          width: 260px;
-          min-height: 100vh;
-          background: #0f172a;
-          color: #ffffff;
-          padding: 24px 16px;
+          width: 100%;
+          height: 100%;
+          background: #080026;
+          color: #ebebeb;
           display: flex;
           flex-direction: column;
-          gap: 24px;
+          justify-content: space-between;
+          padding-top: 26px;
         }
 
-        .brand h2 {
-          margin: 0 0 6px;
-          font-size: 24px;
+        .top {
+          padding: 0 28px;
         }
 
-        .brand p {
+        .brand {
+          display: flex;
+          align-items: center;
+          gap: 18px;
+          margin-bottom: 68px;
+        }
+
+        .logoBox {
+          width: 54px;
+          height: 54px;
+          border-radius: 16px;
+          background: rgba(15, 0, 67, 0.7);
+          color: #ffbb00;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 22px;
+          font-weight: 700;
+          flex-shrink: 0;
+        }
+
+        h1 {
           margin: 0;
-          font-size: 14px;
-          color: #94a3b8;
-          text-transform: capitalize;
+          font-size: 30px;
+          line-height: 1;
+          color: #ffbb00;
+          font-weight: 700;
         }
 
         .nav {
           display: flex;
           flex-direction: column;
-          gap: 8px;
+          gap: 26px;
         }
 
         .navItem {
-          display: block;
-          padding: 12px 14px;
-          border-radius: 12px;
-          color: #cbd5e1;
-          text-decoration: none;
-          transition: 0.2s ease;
+          display: flex;
+          align-items: center;
+          gap: 22px; /* more breathing room like mockup */
+          height: 48px;
+          padding: 0;
         }
 
         .navItem:hover {
-          background: #1e293b;
-          color: #ffffff;
+          opacity: 0.85;
+          transform: translateX(2px);
         }
 
-        .active {
-          background: #1f6feb;
-          color: #ffffff;
+        .iconWrap {
+          width: 28px;
+          height: 28px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #ffbb00;
+          flex-shrink: 0;
         }
 
-        @media (max-width: 900px) {
-          .sidebar {
-            width: 100%;
-            min-height: auto;
-          }
+        .label {
+          font-size: 16px;
+          font-weight: 500;
+          color: #ebebeb;
+          line-height: 1;
+          display: flex;
+          align-items: center;
+          white-space: nowrap; /* 🔥 THIS FIXES IT */
+        }
+
+        .active .label {
+          font-weight: 600;
+        }
+
+        .bottom {
+          border-top: 1px solid rgba(255, 255, 255, 0.18);
+          background: #0a002f;
+          padding: 18px 28px 20px;
+        }
+
+        .userCard {
+          display: flex;
+          align-items: center;
+          gap: 14px;
+        }
+
+        .avatar {
+          width: 56px;
+          height: 56px;
+          border-radius: 16px;
+          background: rgba(255, 255, 255, 0.28);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #ffffff;
+          flex-shrink: 0;
+        }
+
+        .userInfo strong {
+          display: block;
+          font-size: 15px;
+          font-weight: 700;
+          color: #ebebeb;
+          margin-bottom: 5px;
+          line-height: 1.1;
+        }
+
+        .userInfo span {
+          display: block;
+          font-size: 12px;
+          font-weight: 700;
+          text-transform: uppercase;
+          color: #0072f5;
+          letter-spacing: 0.4px;
+          line-height: 1;
         }
       `}</style>
     </>

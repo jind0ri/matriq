@@ -1,9 +1,9 @@
 "use client";
 
-export default function Card({ title, subtitle, children }) {
+export default function Card({ title, subtitle, children, className = "" }) {
   return (
     <>
-      <section className="card">
+      <section className={`card ${className}`}>
         {(title || subtitle) && (
           <div className="header">
             {title && <h2>{title}</h2>}

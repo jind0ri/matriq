@@ -6,12 +6,14 @@ export default function Button({
   onClick,
   variant = "primary",
   fullWidth = false,
+  disabled = false,
 }) {
   return (
     <>
       <button
         type={type}
         onClick={onClick}
+        disabled={disabled}
         className={`btn ${variant} ${fullWidth ? "fullWidth" : ""}`}
       >
         {children}
@@ -20,21 +22,32 @@ export default function Button({
       <style jsx>{`
         .btn {
           border: none;
-          border-radius: 12px;
-          padding: 12px 16px;
-          font-size: 14px;
-          font-weight: 600;
+          border-radius: 18px;
+          min-height: 56px;
+          padding: 0 18px;
+          font-size: 15px;
+          font-weight: 700;
           cursor: pointer;
-          transition: 0.2s ease;
+          transition: all 0.2s ease;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .btn:disabled {
+          opacity: 0.55;
+          cursor: not-allowed;
         }
 
         .primary {
-          background: #1f6feb;
-          color: #ffffff;
+          background: #ffffff;
+          border: 1px solid #d8d8d8;
+          color: #2d2d2d;
         }
 
-        .primary:hover {
-          background: #1557b0;
+        .primary:hover:not(:disabled) {
+          border-color: #5d8dee;
+          box-shadow: 0 0 0 3px rgba(93, 141, 238, 0.12);
         }
 
         .secondary {
@@ -42,7 +55,7 @@ export default function Button({
           color: #0f172a;
         }
 
-        .secondary:hover {
+        .secondary:hover:not(:disabled) {
           background: #cbd5e1;
         }
 
@@ -51,7 +64,7 @@ export default function Button({
           color: #ffffff;
         }
 
-        .danger:hover {
+        .danger:hover:not(:disabled) {
           background: #b91c1c;
         }
 

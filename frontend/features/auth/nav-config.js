@@ -9,24 +9,20 @@ export const NAV_CONFIG = {
 
   qa_engineer: [
     { label: "Dashboard", href: "/technical" },
-    { label: "Registry", href: "/technical/registry" },
-    { label: "Validation", href: "/technical/validation" },
+    { label: "Sample Tracking", href: "/technical/registry" },
     { label: "Reports", href: "/technical/reports" },
   ],
 
   technician: [
     { label: "Dashboard", href: "/technical" },
     { label: "Sample Intake", href: "/technical/intake" },
-    { label: "Registry", href: "/technical/registry" },
-    { label: "Workflow", href: "/technical/workflow" },
+    { label: "Sample Tracking", href: "/technical/registry" },
   ],
 
   senior_technician: [
     { label: "Dashboard", href: "/technical" },
     { label: "Sample Intake", href: "/technical/intake" },
-    { label: "Registry", href: "/technical/registry" },
-    { label: "Validation", href: "/technical/validation" },
-    { label: "Workflow", href: "/technical/workflow" },
+    { label: "Sample Tracking", href: "/technical/registry" },
   ],
 
   accounting: [

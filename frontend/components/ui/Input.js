@@ -8,6 +8,7 @@ export default function Input({
   onChange,
   placeholder,
   error,
+  readOnly = false,
 }) {
   return (
     <>
@@ -22,6 +23,7 @@ export default function Input({
           onChange={onChange}
           placeholder={placeholder}
           className={error ? "error" : ""}
+          readOnly={readOnly}
         />
 
         {error && <span className="errorText">{error}</span>}
@@ -31,29 +33,41 @@ export default function Input({
         .field {
           display: flex;
           flex-direction: column;
-          gap: 6px;
+          gap: 8px;
         }
 
         label {
           font-size: 14px;
           font-weight: 600;
-          color: #334155;
+          color: #5b5b5b;
+          letter-spacing: 0.2px;
         }
 
         input {
           width: 100%;
-          padding: 12px 14px;
-          border: 1px solid #cbd5e1;
-          border-radius: 12px;
+          height: 56px;
+          padding: 0 18px;
+          border: 1px solid #d8d8d8;
+          border-radius: 18px;
           font-size: 14px;
+          color: #2d2d2d;
+          background: #ffffff;
           outline: none;
-          transition: 0.2s ease;
-          background: #fff;
+          transition: all 0.2s ease;
+        }
+
+        input::placeholder {
+          color: #b0b0b0;
         }
 
         input:focus {
-          border-color: #1f6feb;
-          box-shadow: 0 0 0 3px rgba(31, 111, 235, 0.15);
+          border-color: #5d8dee;
+          box-shadow: 0 0 0 3px rgba(93, 141, 238, 0.12);
+        }
+
+        input:read-only {
+          background: #fafafa;
+          color: #5b5b5b;
         }
 
         .error {
@@ -63,6 +77,7 @@ export default function Input({
         .errorText {
           color: #dc2626;
           font-size: 12px;
+          margin-top: -2px;
         }
       `}</style>
     </>
