@@ -1,91 +1,83 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import Sidebar from "./Sidebar";
 import Header from "./Header";
 
 export default function AppShell({
-  user,
   children,
-  showSidebar = true,
+  allowedRoles = [],
+  branch = "Main Laboratory - Marikina",
 }) {
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const router = useRouter();
+  const [user, setUser] = useState(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [ready, setReady] = useState(false);
 
-  function openSidebar() {
-    setIsSidebarOpen(true);
+  useEffect(() => {
+    const stored = localStorage.getItem("user");
+
+    if (!stored) {
+      router.push("/auth/access-select");
+      return;
+    }
+
+    const parsed = JSON.parse(stored);
+
+    if (allowedRoles.length && !allowedRoles.includes(parsed.role)) {
+      router.push("/unauthorized");
+      return;
+    }
+
+    setUser(parsed);
+    setReady(true);
+  }, [allowedRoles, router]);
+
+  function handleLogout() {
+    localStorage.removeItem("user");
+    router.push("/auth/access-select");
   }
 
-  function closeSidebar() {
-    setIsSidebarOpen(false);
-  }
+  if (!ready || !user) return null;
 
   return (
     <>
       <div className="shell">
-        {showSidebar && <Sidebar role={user?.role} />}
+        <Sidebar
+          user={user}
+          isOpen={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+        />
 
-        <main className="main">
+        <div className="mainArea">
           <Header
-            user={user}
-            onMenuClick={openSidebar}
+            branch={branch}
+            onMenuClick={() => setSidebarOpen(true)}
+            onLogout={handleLogout}
           />
-          <div className="content">{children}</div>
-        </main>
+
+          <main className="content">{children}</main>
+        </div>
       </div>
-
-      {!showSidebar && isSidebarOpen && (
-        <>
-          <div className="overlay" onClick={closeSidebar} />
-
-          <div className="drawer">
-            <Sidebar role={user?.role} />
-          </div>
-        </>
-      )}
 
       <style jsx>{`
         .shell {
           min-height: 100vh;
-          display: flex;
-          background: #f8fafc;
+          background: #f2f3f5;
         }
 
-        .main {
-          flex: 1;
-          min-width: 0;
-          display: flex;
-          flex-direction: column;
+        .mainArea {
+          min-height: 100vh;
         }
 
         .content {
-          padding: 24px;
+          padding: 24px 20px 32px;
         }
 
-        .overlay {
-          position: fixed;
-          inset: 0;
-          background: rgba(15, 23, 42, 0.28);
-          z-index: 40;
-        }
-
-        .drawer {
-          position: fixed;
-          top: 0;
-          left: 0;
-          width: 320px;
-          max-width: 86vw;
-          height: 100vh;
-          z-index: 50;
-          box-shadow: 0 18px 40px rgba(15, 23, 42, 0.25);
-        }
-
-        @media (max-width: 900px) {
-          .shell {
-            flex-direction: column;
-          }
-
+        @media (max-width: 768px) {
           .content {
-            padding: 20px;
+            padding: 18px 14px 28px;
           }
         }
       `}</style>
