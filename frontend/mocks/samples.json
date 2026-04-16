@@ -1,0 +1,55 @@
+[
+  {
+    "id": "BRS-2026-001",
+    "material": "Concrete (Beam)",
+    "type": "concrete",
+    "status": "Released",
+    "project": "Cavite-Laguna Express Way",
+    "client": "Build-Build-Build Corp",
+    "branch": "Pateros",
+    "personnel": "Tech. Angel",
+    "equipmentId": "C58-05N",
+    "testDate": "02/16/2026",
+    "measurements": {
+      "specimenDiameter": "150",
+      "specimenHeight": "300",
+      "maximumLoad": "725"
+    }
+  },
+  {
+    "id": "BRS-2026-002",
+    "material": "Cement (Ready-mix)",
+    "type": "cement",
+    "status": "In Test",
+    "project": "SLEX Elevated Extension",
+    "client": "Metro Manila Concrete Solutions",
+    "branch": "Marikina",
+    "personnel": "Tech. Jon",
+    "equipmentId": "E159-01D",
+    "testDate": "02/15/2026",
+    "measurements": {
+      "cubeArea": "",
+      "ageOfSpecimen": "",
+      "maximumLoad": "",
+      "temperature": ""
+    }
+  },
+  {
+    "id": "BRS-2026-003",
+    "material": "Cement (Ready-mix)",
+    "type": "cement",
+    "status": "For Review",
+    "project": "Cavite-Laguna Express Way",
+    "client": "Build-Build-Build Corp",
+    "branch": "Pateros",
+    "personnel": "Tech. Angel",
+    "equipmentId": "E159-01D",
+    "testDate": "02/15/2026",
+    "measurements": {
+      "cubeArea": "2500",
+      "ageOfSpecimen": "7",
+      "maximumLoad": "680",
+      "temperature": "27"
+    }
+  }
+]
