@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
 
 
@@ -9,6 +9,11 @@ class UserLogin(BaseModel):
 
 class TokenRefreshRequest(BaseModel):
     refresh_token: str
+
+
+class PasswordResetRequest(BaseModel):
+    current_password: str = Field(..., min_length=1)
+    new_password: str = Field(..., min_length=8)
 
 
 class TokenResponse(BaseModel):

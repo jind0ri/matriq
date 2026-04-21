@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from ..schemas.user import (
+    PasswordResetRequest,
     TokenRefreshRequest,
     TokenResponse,
     UserLogin,
@@ -15,6 +16,7 @@ from ..services.auth_service import (
     create_access_token,
     create_refresh_token,
     decode_token,
+    reset_password_service,
 )
 from ..services.audit_service import log_audit_event
 
@@ -175,6 +177,40 @@ def refresh_token(payload: TokenRefreshRequest):
         "email": decoded["sub"],
         "full_name": decoded["full_name"],
     }
+
+
+@router.post("/reset-password")
+def reset_password(
+    payload: PasswordResetRequest,
+    current_user=Depends(get_current_user),
+):
+    try:
+        result = reset_password_service(
+            current_user=current_user,
+            current_password=payload.current_password,
+            new_password=payload.new_password,
+        )
+
+        log_audit_event(
+            event_type="AUTH",
+            performed_by=current_user["full_name"],
+            role=current_user["role"],
+            action="Password reset",
+            status="SUCCESS",
+            details=f"email={current_user['email']}",
+        )
+
+        return result
+    except ValueError as e:
+        log_audit_event(
+            event_type="AUTH",
+            performed_by=current_user["full_name"],
+            role=current_user["role"],
+            action="Password reset",
+            status="FAILED",
+            details=str(e),
+        )
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/me", response_model=UserPublic)

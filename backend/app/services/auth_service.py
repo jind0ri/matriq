@@ -100,6 +100,27 @@ def authenticate_user(email: str, password: str) -> Optional[Dict]:
     return user
 
 
+def reset_password_service(current_user: Dict, current_password: str, new_password: str) -> Dict:
+    user = get_user_by_id(current_user["user_id"])
+    if not user:
+        raise ValueError("User not found")
+
+    if not verify_password(current_password, user["password_hash"]):
+        raise ValueError("Current password is incorrect")
+
+    if len(new_password.strip()) < 8:
+        raise ValueError("New password must be at least 8 characters")
+
+    if verify_password(new_password, user["password_hash"]):
+        raise ValueError("New password must be different from the current password")
+
+    user["password_hash"] = hash_password(new_password)
+
+    return {
+        "message": "Password reset successful"
+    }
+
+
 def create_access_token(data: dict) -> str:
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
