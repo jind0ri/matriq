@@ -1,10 +1,10 @@
 from typing import List, Dict
 
 from .sample_service import get_sample_service
+from .audit_service import log_audit_event
 
 
 VALIDATION_LOGS: List[Dict] = []
-AUDIT_LOGS: List[Dict] = []
 
 
 def validate_sample_service(
@@ -26,19 +26,13 @@ def validate_sample_service(
 
     previous_material_type = sample.material_type
 
-    # Final human-reviewed classification
     sample.material_type = final_material_type
-
-    # Temporary runtime metadata until DB schema is expanded
     sample.decision_source = "HUMAN"
     sample.validation_justification = justification
     sample.validated_by = current_user["full_name"]
     sample.validated_role = current_user["role"]
     sample.validation_approved = approved
 
-    # Optional lifecycle effect:
-    # if approved stays in current state unless you want to push forward automatically
-    # if not approved, bring it back to Registered
     if not approved:
         sample.lifecycle_state = "Registered"
 
@@ -54,14 +48,13 @@ def validate_sample_service(
     }
     VALIDATION_LOGS.append(validation_log)
 
-    audit_log = {
-        "event_type": "VALIDATION",
-        "sample_id": sample.sample_id,
-        "performed_by": current_user["full_name"],
-        "role": current_user["role"],
-        "action": "Validated sample classification",
-        "justification": justification,
-    }
-    AUDIT_LOGS.append(audit_log)
+    log_audit_event(
+        event_type="VALIDATION",
+        performed_by=current_user["full_name"],
+        role=current_user["role"],
+        action="Validated sample classification",
+        status="SUCCESS",
+        details=f"sample_id={sample.sample_id}; justification={justification}",
+    )
 
     return validation_log

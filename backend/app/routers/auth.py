@@ -16,6 +16,7 @@ from ..services.auth_service import (
     create_refresh_token,
     decode_token,
 )
+from ..services.audit_service import log_audit_event
 
 router = APIRouter()
 security = HTTPBearer()
@@ -78,6 +79,14 @@ def require_roles(allowed_roles: List[str]):
 def login(user: UserLogin):
     db_user = authenticate_user(user.email, user.password)
     if not db_user:
+        log_audit_event(
+            event_type="AUTH",
+            performed_by=user.email,
+            role="unknown",
+            action="Login attempt",
+            status="FAILED",
+            details="Invalid credentials",
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
@@ -86,6 +95,15 @@ def login(user: UserLogin):
     payload = build_token_payload(db_user)
     access_token = create_access_token(payload)
     refresh_token = create_refresh_token(payload)
+
+    log_audit_event(
+        event_type="AUTH",
+        performed_by=db_user["full_name"],
+        role=db_user["role"],
+        action="Login",
+        status="SUCCESS",
+        details=f"email={db_user['email']}",
+    )
 
     return {
         "access_token": access_token,
@@ -102,12 +120,28 @@ def refresh_token(payload: TokenRefreshRequest):
     try:
         decoded = decode_token(payload.refresh_token)
     except ValueError:
+        log_audit_event(
+            event_type="AUTH",
+            performed_by="unknown",
+            role="unknown",
+            action="Refresh token",
+            status="FAILED",
+            details="Invalid or expired refresh token",
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired refresh token",
         )
 
     if decoded.get("type") != "refresh":
+        log_audit_event(
+            event_type="AUTH",
+            performed_by=decoded.get("sub", "unknown"),
+            role=decoded.get("role", "unknown"),
+            action="Refresh token",
+            status="FAILED",
+            details="Invalid token type for refresh",
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token type for refresh",
@@ -123,6 +157,15 @@ def refresh_token(payload: TokenRefreshRequest):
 
     new_access_token = create_access_token(new_payload)
     new_refresh_token = create_refresh_token(new_payload)
+
+    log_audit_event(
+        event_type="AUTH",
+        performed_by=decoded["full_name"],
+        role=decoded["role"],
+        action="Refresh token",
+        status="SUCCESS",
+        details=f"email={decoded['sub']}",
+    )
 
     return {
         "access_token": new_access_token,
@@ -140,5 +183,13 @@ def get_me(current_user=Depends(get_current_user)):
 
 
 @router.post("/logout")
-def logout():
+def logout(current_user=Depends(get_current_user)):
+    log_audit_event(
+        event_type="AUTH",
+        performed_by=current_user["full_name"],
+        role=current_user["role"],
+        action="Logout",
+        status="SUCCESS",
+        details=f"email={current_user['email']}",
+    )
     return {"message": "Logged out successfully"}
