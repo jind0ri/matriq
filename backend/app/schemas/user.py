@@ -7,8 +7,13 @@ class UserLogin(BaseModel):
     password: str
 
 
+class TokenRefreshRequest(BaseModel):
+    refresh_token: str
+
+
 class TokenResponse(BaseModel):
     access_token: str
+    refresh_token: str
     token_type: str = "bearer"
     role: str
     email: EmailStr

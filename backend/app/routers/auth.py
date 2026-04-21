@@ -3,12 +3,18 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from ..schemas.user import TokenResponse, UserLogin, UserPublic
+from ..schemas.user import (
+    TokenRefreshRequest,
+    TokenResponse,
+    UserLogin,
+    UserPublic,
+)
 from ..services.auth_service import (
     authenticate_user,
     build_token_payload,
     create_access_token,
-    decode_access_token,
+    create_refresh_token,
+    decode_token,
 )
 
 router = APIRouter()
@@ -21,11 +27,17 @@ def get_current_user(
     token = credentials.credentials
 
     try:
-        payload = decode_access_token(token)
+        payload = decode_token(token)
     except ValueError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
+        )
+
+    if payload.get("type") != "access":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token type",
         )
 
     email = payload.get("sub")
@@ -72,14 +84,53 @@ def login(user: UserLogin):
         )
 
     payload = build_token_payload(db_user)
-    token = create_access_token(payload)
+    access_token = create_access_token(payload)
+    refresh_token = create_refresh_token(payload)
 
     return {
-        "access_token": token,
+        "access_token": access_token,
+        "refresh_token": refresh_token,
         "token_type": "bearer",
         "role": db_user["role"],
         "email": db_user["email"],
         "full_name": db_user["full_name"],
+    }
+
+
+@router.post("/refresh", response_model=TokenResponse)
+def refresh_token(payload: TokenRefreshRequest):
+    try:
+        decoded = decode_token(payload.refresh_token)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token",
+        )
+
+    if decoded.get("type") != "refresh":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token type for refresh",
+        )
+
+    new_payload = {
+        "sub": decoded["sub"],
+        "user_id": decoded["user_id"],
+        "role": decoded["role"],
+        "branch": decoded["branch"],
+        "full_name": decoded["full_name"],
+    }
+
+    new_access_token = create_access_token(new_payload)
+    new_refresh_token = create_refresh_token(new_payload)
+
+    return {
+        "access_token": new_access_token,
+        "refresh_token": new_refresh_token,
+        "token_type": "bearer",
+        "role": decoded["role"],
+        "email": decoded["sub"],
+        "full_name": decoded["full_name"],
     }
 
 
@@ -90,6 +141,4 @@ def get_me(current_user=Depends(get_current_user)):
 
 @router.post("/logout")
 def logout():
-    # Stateless JWT logout placeholder.
-    # Later, if you add refresh tokens / blacklist, implement invalidation here.
     return {"message": "Logged out successfully"}
