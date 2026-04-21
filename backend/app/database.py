@@ -1,20 +1,23 @@
-# database.py
+import os
+
+from dotenv import load_dotenv
 from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import declarative_base, sessionmaker
 
-SQLALCHEMY_DATABASE_URL = "postgresql://postgres:MatriqDB123$@db.aqumkaymehrylrvsgdpq.supabase.co:5432/postgres"
+load_dotenv()
 
-# Create the SQLAlchemy engine
-engine = create_engine(SQLALCHEMY_DATABASE_URL)
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-# Create a configured "Session" class
+if not DATABASE_URL:
+    raise ValueError("DATABASE_URL is not set")
+
+engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# Create a Base class for models to inherit from
 Base = declarative_base()
 
-# Dependency to get the database session
+
 def get_db():
     db = SessionLocal()
     try:
