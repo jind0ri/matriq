@@ -1,6 +1,7 @@
 from typing import List
 
 from .auth_service import MOCK_USERS, get_user_by_email, get_user_by_id, hash_password
+from .branch_service import get_branch_by_name
 
 
 VALID_ROLES = {
@@ -32,6 +33,9 @@ def create_user_service(user_data) -> dict:
 
     if get_user_by_email(user_data.email):
         raise ValueError("User with this email already exists")
+
+    if not get_branch_by_name(user_data.branch):
+        raise ValueError("Assigned branch does not exist")
 
     new_user = {
         "user_id": max([u["user_id"] for u in MOCK_USERS], default=0) + 1,
@@ -69,6 +73,8 @@ def update_user_service(user_id: int, user_data) -> dict:
         user["full_name"] = user_data.full_name
 
     if user_data.branch is not None:
+        if not get_branch_by_name(user_data.branch):
+            raise ValueError("Assigned branch does not exist")
         user["branch"] = user_data.branch
 
     if user_data.is_active is not None:
