@@ -11,7 +11,6 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 # Temporary mock users while DB/Supabase is not yet wired.
-# Replace this later with real DB queries.
 MOCK_USERS: List[Dict] = [
     {
         "user_id": 1,
@@ -65,9 +64,20 @@ def verify_password(plain_password: str, password_hash: str) -> bool:
     return pwd_context.verify(plain_password, password_hash)
 
 
+def hash_password(password: str) -> str:
+    return pwd_context.hash(password)
+
+
 def get_user_by_email(email: str) -> Optional[Dict]:
     for user in MOCK_USERS:
         if user["email"].lower() == email.lower():
+            return user
+    return None
+
+
+def get_user_by_id(user_id: int) -> Optional[Dict]:
+    for user in MOCK_USERS:
+        if user["user_id"] == user_id:
             return user
     return None
 
