@@ -1,9 +1,9 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field
 from typing import Optional
 
 
 class UserLogin(BaseModel):
-    email: EmailStr
+    username: str
     password: str
 
 
@@ -21,25 +21,29 @@ class TokenResponse(BaseModel):
     refresh_token: str
     token_type: str = "bearer"
     role: str
-    email: EmailStr
+    username: str
     full_name: str
+    branch_id: Optional[int] = None
 
 
 class UserPublic(BaseModel):
     user_id: int
-    email: EmailStr
+    username: str
     full_name: str
     role: str
-    branch: str
+    branch_id: Optional[int] = None
     is_active: bool
+
+    class Config:
+        from_attributes = True
 
 
 class UserCreate(BaseModel):
-    email: EmailStr
+    username: str
     full_name: str
     password: str
     role: str
-    branch: str
+    branch_id: Optional[int] = None
     is_active: bool = True
 
 
@@ -47,5 +51,5 @@ class UserUpdate(BaseModel):
     full_name: Optional[str] = None
     password: Optional[str] = None
     role: Optional[str] = None
-    branch: Optional[str] = None
+    branch_id: Optional[int] = None
     is_active: Optional[bool] = None

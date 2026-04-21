@@ -11,7 +11,7 @@ router = APIRouter()
 def validate_sample(
     sample_id: int,
     payload: ValidationRequest,
-    current_user=Depends(require_roles(["senior_technician", "qa_engineer"])),
+    current_user=Depends(require_roles(["Senior Technician", "QA Engineer"])),
 ):
     try:
         return validate_sample_service(

@@ -1,8 +1,9 @@
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
+from sqlalchemy.orm import Session
 
 from ..config import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
@@ -10,58 +11,10 @@ from ..config import (
     REFRESH_TOKEN_EXPIRE_DAYS,
     SECRET_KEY,
 )
+from ..models import User
 
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-
-MOCK_USERS: List[Dict] = [
-    {
-        "user_id": 1,
-        "email": "admin@matriq.com",
-        "full_name": "Admin User",
-        "role": "administrator",
-        "branch": "Marikina",
-        "is_active": True,
-        "password_hash": pwd_context.hash("Admin123!"),
-    },
-    {
-        "user_id": 2,
-        "email": "technician@matriq.com",
-        "full_name": "Tech. Jon",
-        "role": "technician",
-        "branch": "Marikina",
-        "is_active": True,
-        "password_hash": pwd_context.hash("Tech123!"),
-    },
-    {
-        "user_id": 3,
-        "email": "senior@matriq.com",
-        "full_name": "Senior Technician",
-        "role": "senior_technician",
-        "branch": "Pateros",
-        "is_active": True,
-        "password_hash": pwd_context.hash("Senior123!"),
-    },
-    {
-        "user_id": 4,
-        "email": "qa@matriq.com",
-        "full_name": "QA Engineer",
-        "role": "qa_engineer",
-        "branch": "Pateros",
-        "is_active": True,
-        "password_hash": pwd_context.hash("Qa12345!"),
-    },
-    {
-        "user_id": 5,
-        "email": "accounting@matriq.com",
-        "full_name": "Accounting User",
-        "role": "accounting",
-        "branch": "Marikina",
-        "is_active": True,
-        "password_hash": pwd_context.hash("Acct123!"),
-    },
-]
 
 
 def verify_password(plain_password: str, password_hash: str) -> bool:
@@ -72,53 +25,51 @@ def hash_password(password: str) -> str:
     return pwd_context.hash(password)
 
 
-def get_user_by_email(email: str) -> Optional[Dict]:
-    for user in MOCK_USERS:
-        if user["email"].lower() == email.lower():
-            return user
-    return None
+def get_user_by_username(db: Session, username: str) -> Optional[User]:
+    return db.query(User).filter(User.username == username).first()
 
 
-def get_user_by_id(user_id: int) -> Optional[Dict]:
-    for user in MOCK_USERS:
-        if user["user_id"] == user_id:
-            return user
-    return None
+def get_user_by_id(db: Session, user_id: int) -> Optional[User]:
+    return db.query(User).filter(User.user_id == user_id).first()
 
 
-def authenticate_user(email: str, password: str) -> Optional[Dict]:
-    user = get_user_by_email(email)
+def authenticate_user(db: Session, username: str, password: str) -> Optional[User]:
+    user = get_user_by_username(db, username)
     if not user:
         return None
 
-    if not user["is_active"]:
+    if not user.is_active:
         return None
 
-    if not verify_password(password, user["password_hash"]):
+    if not verify_password(password, user.password_hash):
         return None
 
     return user
 
 
-def reset_password_service(current_user: Dict, current_password: str, new_password: str) -> Dict:
-    user = get_user_by_id(current_user["user_id"])
+def reset_password_service(
+    db: Session,
+    current_user: Dict,
+    current_password: str,
+    new_password: str,
+) -> Dict:
+    user = get_user_by_id(db, current_user["user_id"])
     if not user:
         raise ValueError("User not found")
 
-    if not verify_password(current_password, user["password_hash"]):
+    if not verify_password(current_password, user.password_hash):
         raise ValueError("Current password is incorrect")
 
     if len(new_password.strip()) < 8:
         raise ValueError("New password must be at least 8 characters")
 
-    if verify_password(new_password, user["password_hash"]):
+    if verify_password(new_password, user.password_hash):
         raise ValueError("New password must be different from the current password")
 
-    user["password_hash"] = hash_password(new_password)
+    user.password_hash = hash_password(new_password)
+    db.commit()
 
-    return {
-        "message": "Password reset successful"
-    }
+    return {"message": "Password reset successful"}
 
 
 def create_access_token(data: dict) -> str:
@@ -159,11 +110,11 @@ def decode_token(token: str) -> Dict:
         raise ValueError("Invalid or expired token") from exc
 
 
-def build_token_payload(user: Dict) -> Dict:
+def build_token_payload(user: User) -> Dict:
     return {
-        "sub": user["email"],
-        "user_id": user["user_id"],
-        "role": user["role"],
-        "branch": user["branch"],
-        "full_name": user["full_name"],
+        "sub": user.username,
+        "user_id": user.user_id,
+        "role": user.role,
+        "branch_id": user.branch_id,
+        "full_name": user.full_name,
     }

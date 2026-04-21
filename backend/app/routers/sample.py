@@ -18,7 +18,7 @@ router = APIRouter()
 @router.post("/", response_model=SampleResponse)
 def create_sample(
     sample: SampleCreate,
-    current_user=Depends(require_roles(["administrator", "technician"]))
+    current_user=Depends(require_roles(["Administrator", "Lab Technician"]))
 ):
     try:
         return create_sample_service(sample)
@@ -46,7 +46,7 @@ def get_sample(
 def update_sample(
     sample_id: int,
     sample: SampleCreate,
-    current_user=Depends(require_roles(["administrator", "technician"]))
+    current_user=Depends(require_roles(["Administrator", "Lab Technician"]))
 ):
     try:
         return update_sample_service(sample_id, sample)
@@ -59,7 +59,7 @@ def update_sample_status(
     sample_id: int,
     status_update: SampleStatusUpdate,
     current_user=Depends(
-        require_roles(["administrator", "technician", "qa_engineer"])
+        require_roles(["Administrator", "Lab Technician", "QA Engineer"])
     ),
 ):
     try:
@@ -75,6 +75,6 @@ def update_sample_status(
 @router.delete("/{sample_id}", status_code=204)
 def delete_sample(
     sample_id: int,
-    current_user=Depends(require_roles(["administrator"]))
+    current_user=Depends(require_roles(["Administrator"]))
 ):
     delete_sample_service(sample_id)

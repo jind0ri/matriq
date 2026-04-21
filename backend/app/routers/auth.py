@@ -2,7 +2,9 @@ from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy.orm import Session
 
+from ..database import get_db
 from ..schemas.user import (
     PasswordResetRequest,
     TokenRefreshRequest,
@@ -43,13 +45,13 @@ def get_current_user(
             detail="Invalid token type",
         )
 
-    email = payload.get("sub")
+    username = payload.get("sub")
     role = payload.get("role")
     user_id = payload.get("user_id")
     full_name = payload.get("full_name")
-    branch = payload.get("branch")
+    branch_id = payload.get("branch_id")
 
-    if not email or not role:
+    if not username or not role:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token payload",
@@ -57,10 +59,10 @@ def get_current_user(
 
     return {
         "user_id": user_id,
-        "email": email,
+        "username": username,
         "full_name": full_name,
         "role": role,
-        "branch": branch,
+        "branch_id": branch_id,
         "is_active": True,
     }
 
@@ -78,12 +80,12 @@ def require_roles(allowed_roles: List[str]):
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(user: UserLogin):
-    db_user = authenticate_user(user.email, user.password)
+def login(user: UserLogin, db: Session = Depends(get_db)):
+    db_user = authenticate_user(db, user.username, user.password)
     if not db_user:
         log_audit_event(
             event_type="AUTH",
-            performed_by=user.email,
+            performed_by=user.username,
             role="unknown",
             action="Login attempt",
             status="FAILED",
@@ -100,20 +102,21 @@ def login(user: UserLogin):
 
     log_audit_event(
         event_type="AUTH",
-        performed_by=db_user["full_name"],
-        role=db_user["role"],
+        performed_by=db_user.full_name,
+        role=db_user.role,
         action="Login",
         status="SUCCESS",
-        details=f"email={db_user['email']}",
+        details=f"username={db_user.username}",
     )
 
     return {
         "access_token": access_token,
         "refresh_token": refresh_token,
         "token_type": "bearer",
-        "role": db_user["role"],
-        "email": db_user["email"],
-        "full_name": db_user["full_name"],
+        "role": db_user.role,
+        "username": db_user.username,
+        "full_name": db_user.full_name,
+        "branch_id": db_user.branch_id,
     }
 
 
@@ -153,7 +156,7 @@ def refresh_token(payload: TokenRefreshRequest):
         "sub": decoded["sub"],
         "user_id": decoded["user_id"],
         "role": decoded["role"],
-        "branch": decoded["branch"],
+        "branch_id": decoded.get("branch_id"),
         "full_name": decoded["full_name"],
     }
 
@@ -166,7 +169,7 @@ def refresh_token(payload: TokenRefreshRequest):
         role=decoded["role"],
         action="Refresh token",
         status="SUCCESS",
-        details=f"email={decoded['sub']}",
+        details=f"username={decoded['sub']}",
     )
 
     return {
@@ -174,8 +177,9 @@ def refresh_token(payload: TokenRefreshRequest):
         "refresh_token": new_refresh_token,
         "token_type": "bearer",
         "role": decoded["role"],
-        "email": decoded["sub"],
+        "username": decoded["sub"],
         "full_name": decoded["full_name"],
+        "branch_id": decoded.get("branch_id"),
     }
 
 
@@ -183,9 +187,11 @@ def refresh_token(payload: TokenRefreshRequest):
 def reset_password(
     payload: PasswordResetRequest,
     current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     try:
         result = reset_password_service(
+            db=db,
             current_user=current_user,
             current_password=payload.current_password,
             new_password=payload.new_password,
@@ -197,7 +203,7 @@ def reset_password(
             role=current_user["role"],
             action="Password reset",
             status="SUCCESS",
-            details=f"email={current_user['email']}",
+            details=f"username={current_user['username']}",
         )
 
         return result
@@ -226,6 +232,6 @@ def logout(current_user=Depends(get_current_user)):
         role=current_user["role"],
         action="Logout",
         status="SUCCESS",
-        details=f"email={current_user['email']}",
+        details=f"username={current_user['username']}",
     )
     return {"message": "Logged out successfully"}

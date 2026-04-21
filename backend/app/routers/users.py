@@ -1,7 +1,9 @@
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
+from sqlalchemy.orm import Session
 
+from ..database import get_db
 from ..schemas.user import UserCreate, UserPublic, UserUpdate
 from ..services.user_service import (
     create_user_service,
@@ -15,17 +17,21 @@ router = APIRouter()
 
 
 @router.get("/", response_model=List[UserPublic])
-def list_users(current_user=Depends(require_roles(["administrator"]))):
-    return get_users_service()
+def list_users(
+    current_user=Depends(require_roles(["Administrator"])),
+    db: Session = Depends(get_db),
+):
+    return get_users_service(db)
 
 
 @router.post("/", response_model=UserPublic)
 def create_user(
     user: UserCreate,
-    current_user=Depends(require_roles(["administrator"])),
+    current_user=Depends(require_roles(["Administrator"])),
+    db: Session = Depends(get_db),
 ):
     try:
-        return create_user_service(user)
+        return create_user_service(db, user)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -34,10 +40,11 @@ def create_user(
 def update_user(
     user_id: int,
     user: UserUpdate,
-    current_user=Depends(require_roles(["administrator"])),
+    current_user=Depends(require_roles(["Administrator"])),
+    db: Session = Depends(get_db),
 ):
     try:
-        return update_user_service(user_id, user)
+        return update_user_service(db, user_id, user)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -45,10 +52,11 @@ def update_user(
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_user(
     user_id: int,
-    current_user=Depends(require_roles(["administrator"])),
+    current_user=Depends(require_roles(["Administrator"])),
+    db: Session = Depends(get_db),
 ):
     try:
-        delete_user_service(user_id)
+        delete_user_service(db, user_id)
         return Response(status_code=status.HTTP_204_NO_CONTENT)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
