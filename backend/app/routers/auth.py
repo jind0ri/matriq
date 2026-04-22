@@ -39,74 +39,42 @@ def get_current_user(
             detail="Invalid or expired token",
         )
 
-    if payload.get("type") != "access":
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token type",
-        )
-
-    username = payload.get("sub")
-    role = payload.get("role")
-    user_id = payload.get("user_id")
-    full_name = payload.get("full_name")
-    branch_id = payload.get("branch_id")
-
-    if not username or not role:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token payload",
-        )
-
     return {
-        "user_id": user_id,
-        "username": username,
-        "full_name": full_name,
-        "role": role,
-        "branch_id": branch_id,
-        "is_active": True,
+        "user_id": payload["user_id"],
+        "username": payload["sub"],
+        "full_name": payload["full_name"],
+        "role": payload["role"],
+        "branch_id": payload.get("branch_id"),
     }
 
 
 def require_roles(allowed_roles: List[str]):
-    def role_checker(current_user=Depends(get_current_user)):
+    def checker(current_user=Depends(get_current_user)):
         if current_user["role"] not in allowed_roles:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You do not have permission to access this resource",
-            )
+            raise HTTPException(status_code=403, detail="Access denied")
         return current_user
 
-    return role_checker
+    return checker
 
 
 @router.post("/login", response_model=TokenResponse)
 def login(user: UserLogin, db: Session = Depends(get_db)):
     db_user = authenticate_user(db, user.username, user.password)
+
     if not db_user:
-        log_audit_event(
-            event_type="AUTH",
-            performed_by=user.username,
-            role="unknown",
-            action="Login attempt",
-            status="FAILED",
-            details="Invalid credentials",
-        )
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials",
-        )
+        raise HTTPException(status_code=401, detail="Invalid credentials")
 
     payload = build_token_payload(db_user)
+
     access_token = create_access_token(payload)
     refresh_token = create_refresh_token(payload)
 
     log_audit_event(
-        event_type="AUTH",
-        performed_by=db_user.full_name,
-        role=db_user.role,
+        db=db,
+        user_id=db_user.user_id,
         action="Login",
-        status="SUCCESS",
-        details=f"username={db_user.username}",
+        endpoint="/api/auth/login",
+        new_value={"username": db_user.username},
     )
 
     return {
@@ -121,36 +89,8 @@ def login(user: UserLogin, db: Session = Depends(get_db)):
 
 
 @router.post("/refresh", response_model=TokenResponse)
-def refresh_token(payload: TokenRefreshRequest):
-    try:
-        decoded = decode_token(payload.refresh_token)
-    except ValueError:
-        log_audit_event(
-            event_type="AUTH",
-            performed_by="unknown",
-            role="unknown",
-            action="Refresh token",
-            status="FAILED",
-            details="Invalid or expired refresh token",
-        )
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired refresh token",
-        )
-
-    if decoded.get("type") != "refresh":
-        log_audit_event(
-            event_type="AUTH",
-            performed_by=decoded.get("sub", "unknown"),
-            role=decoded.get("role", "unknown"),
-            action="Refresh token",
-            status="FAILED",
-            details="Invalid token type for refresh",
-        )
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token type for refresh",
-        )
+def refresh(payload: TokenRefreshRequest, db: Session = Depends(get_db)):
+    decoded = decode_token(payload.refresh_token)
 
     new_payload = {
         "sub": decoded["sub"],
@@ -160,21 +100,20 @@ def refresh_token(payload: TokenRefreshRequest):
         "full_name": decoded["full_name"],
     }
 
-    new_access_token = create_access_token(new_payload)
-    new_refresh_token = create_refresh_token(new_payload)
+    access = create_access_token(new_payload)
+    refresh = create_refresh_token(new_payload)
 
     log_audit_event(
-        event_type="AUTH",
-        performed_by=decoded["full_name"],
-        role=decoded["role"],
+        db=db,
+        user_id=decoded["user_id"],
         action="Refresh token",
-        status="SUCCESS",
-        details=f"username={decoded['sub']}",
+        endpoint="/api/auth/refresh",
+        new_value={"username": decoded["sub"]},
     )
 
     return {
-        "access_token": new_access_token,
-        "refresh_token": new_refresh_token,
+        "access_token": access,
+        "refresh_token": refresh,
         "token_type": "bearer",
         "role": decoded["role"],
         "username": decoded["sub"],
@@ -183,55 +122,13 @@ def refresh_token(payload: TokenRefreshRequest):
     }
 
 
-@router.post("/reset-password")
-def reset_password(
-    payload: PasswordResetRequest,
-    current_user=Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    try:
-        result = reset_password_service(
-            db=db,
-            current_user=current_user,
-            current_password=payload.current_password,
-            new_password=payload.new_password,
-        )
-
-        log_audit_event(
-            event_type="AUTH",
-            performed_by=current_user["full_name"],
-            role=current_user["role"],
-            action="Password reset",
-            status="SUCCESS",
-            details=f"username={current_user['username']}",
-        )
-
-        return result
-    except ValueError as e:
-        log_audit_event(
-            event_type="AUTH",
-            performed_by=current_user["full_name"],
-            role=current_user["role"],
-            action="Password reset",
-            status="FAILED",
-            details=str(e),
-        )
-        raise HTTPException(status_code=400, detail=str(e))
-
-
-@router.get("/me", response_model=UserPublic)
-def get_me(current_user=Depends(get_current_user)):
-    return current_user
-
-
 @router.post("/logout")
-def logout(current_user=Depends(get_current_user)):
+def logout(current_user=Depends(get_current_user), db: Session = Depends(get_db)):
     log_audit_event(
-        event_type="AUTH",
-        performed_by=current_user["full_name"],
-        role=current_user["role"],
+        db=db,
+        user_id=current_user["user_id"],
         action="Logout",
-        status="SUCCESS",
-        details=f"username={current_user['username']}",
+        endpoint="/api/auth/logout",
+        new_value={"username": current_user["username"]},
     )
-    return {"message": "Logged out successfully"}
+    return {"message": "Logged out"}

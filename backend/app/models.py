@@ -8,6 +8,7 @@ from sqlalchemy import (
     String,
     Text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -75,8 +76,8 @@ class AuditLog(Base):
     sample_id = Column(Integer)
     action = Column(String, nullable=False)
     endpoint_accessed = Column(String)
-    old_value = Column(Text)
-    new_value = Column(Text)
+    old_value = Column(JSONB)
+    new_value = Column(JSONB)
     timestamp = Column(DateTime, server_default=func.now())
 
 

@@ -1,30 +1,32 @@
-from datetime import datetime
-from typing import Dict, List, Optional
+from sqlalchemy.orm import Session
 
-
-AUDIT_LOGS: List[Dict] = []
+from ..models import AuditLog
 
 
 def log_audit_event(
-    event_type: str,
-    performed_by: str,
-    role: str,
+    db: Session,
+    user_id: int,
     action: str,
-    status: str = "SUCCESS",
-    details: Optional[str] = None,
+    endpoint: str,
+    old_value=None,
+    new_value=None,
+    sample_id: int = None,
 ):
-    entry = {
-        "event_type": event_type,
-        "performed_by": performed_by,
-        "role": role,
-        "action": action,
-        "status": status,
-        "timestamp": datetime.now().isoformat(),
-        "details": details,
-    }
-    AUDIT_LOGS.append(entry)
+    entry = AuditLog(
+        user_id=user_id,
+        sample_id=sample_id,
+        action=action,
+        endpoint_accessed=endpoint,
+        old_value=old_value if old_value is not None else None,
+        new_value=new_value if new_value is not None else None,
+    )
+
+    db.add(entry)
+    db.commit()
+    db.refresh(entry)
+
     return entry
 
 
-def get_audit_logs_service():
-    return AUDIT_LOGS
+def get_audit_logs_service(db: Session):
+    return db.query(AuditLog).order_by(AuditLog.timestamp.desc()).all()

@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
 
+from ..database import get_db
 from ..schemas.validate import ValidationRequest, ValidationResponse
 from ..services.validate_service import validate_sample_service
 from .auth import require_roles
@@ -9,12 +11,14 @@ router = APIRouter()
 
 @router.post("/{sample_id}", response_model=ValidationResponse)
 def validate_sample(
-    sample_id: int,
+    sample_id: str,
     payload: ValidationRequest,
     current_user=Depends(require_roles(["Senior Technician", "QA Engineer"])),
+    db: Session = Depends(get_db),
 ):
     try:
         return validate_sample_service(
+            db=db,
             sample_id=sample_id,
             final_material_type=payload.final_material_type,
             justification=payload.justification,
