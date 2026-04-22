@@ -3,8 +3,60 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft } from "phosphor-react";
-import { MOCK_USERS } from "@/lib/mockUsers";
-import { getRedirectByRole } from "@/lib/roleRedirect";
+
+const API_BASE_URL = "http://localhost:8000";
+
+function getRedirectByBackendRole(role) {
+  switch (role) {
+    case "Administrator":
+      return "/admin";
+    case "Lab Technician":
+      return "/technical";
+    case "Senior Technician":
+      return "/technical/workflow";
+    case "QA Engineer":
+      return "/technical/workflow";
+    case "Accounting Staff":
+      return "/accounting";
+    default:
+      return "/auth/access-select";
+  }
+}
+
+function mapBackendUserToFrontendUser(data, passwordInput) {
+  let frontendRole = "";
+
+  switch (data.role) {
+    case "Administrator":
+      frontendRole = "admin";
+      break;
+    case "Lab Technician":
+      frontendRole = "technician";
+      break;
+    case "Senior Technician":
+      frontendRole = "senior_technician";
+      break;
+    case "QA Engineer":
+      frontendRole = "qa_engineer";
+      break;
+    case "Accounting Staff":
+      frontendRole = "accounting";
+      break;
+    default:
+      frontendRole = "";
+  }
+
+  return {
+    name: data.full_name,
+    full_name: data.full_name,
+    email: data.username,
+    username: data.username,
+    password: passwordInput,
+    role: frontendRole,
+    rawRole: data.role,
+    branch_id: data.branch_id,
+  };
+}
 
 export default function EmployeeLoginPage() {
   const router = useRouter();
@@ -15,6 +67,7 @@ export default function EmployeeLoginPage() {
   });
 
   const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   function handleChange(e) {
     const { name, value } = e.target;
@@ -27,27 +80,51 @@ export default function EmployeeLoginPage() {
     setError("");
   }
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
+    setError("");
+    setIsSubmitting(true);
 
-    const user = MOCK_USERS.find(
-      (item) =>
-        item.email.toLowerCase() === form.email.toLowerCase() &&
-        item.password === form.password,
-    );
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          username: form.email,
+          password: form.password,
+        }),
+      });
 
-    if (!user) {
-      setError("Invalid credentials.");
-      return;
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.detail || "Invalid credentials.");
+      }
+
+      if (data.role === "Administrator") {
+        setError("Please use Admin Access for this account.");
+        setIsSubmitting(false);
+        return;
+      }
+
+      const frontendUser = mapBackendUserToFrontendUser(data, form.password);
+
+      localStorage.setItem("access_token", data.access_token);
+      localStorage.setItem("refresh_token", data.refresh_token);
+      localStorage.setItem("role", data.role);
+      localStorage.setItem("username", data.username);
+      localStorage.setItem("full_name", data.full_name);
+      localStorage.setItem("branch_id", String(data.branch_id ?? ""));
+      localStorage.setItem("user", JSON.stringify(frontendUser));
+
+      router.push(getRedirectByBackendRole(data.role));
+    } catch (err) {
+      setError(err.message || "Login failed.");
+    } finally {
+      setIsSubmitting(false);
     }
-
-    if (user.role === "admin") {
-      setError("Please use Admin Access for this account.");
-      return;
-    }
-
-    localStorage.setItem("user", JSON.stringify(user));
-    router.push(getRedirectByRole(user.role));
   }
 
   return (
@@ -71,14 +148,15 @@ export default function EmployeeLoginPage() {
 
           <form className="form" onSubmit={handleSubmit}>
             <div className="field">
-              <label htmlFor="email">Email</label>
+              <label htmlFor="email">Email / Username</label>
               <input
                 id="email"
                 name="email"
-                type="email"
+                type="text"
                 value={form.email}
                 onChange={handleChange}
                 placeholder="jon@matriq.com"
+                required
               />
             </div>
 
@@ -91,13 +169,14 @@ export default function EmployeeLoginPage() {
                 value={form.password}
                 onChange={handleChange}
                 placeholder="Enter password"
+                required
               />
             </div>
 
             {error && <p className="error">{error}</p>}
 
-            <button type="submit" className="submitButton">
-              Login
+            <button type="submit" className="submitButton" disabled={isSubmitting}>
+              {isSubmitting ? "Logging in..." : "Login"}
             </button>
           </form>
 
@@ -140,6 +219,12 @@ export default function EmployeeLoginPage() {
           color: #555555;
           padding: 0;
           margin-bottom: 18px;
+          transition: color 0.2s ease, transform 0.2s ease;
+        }
+
+        .backButton:hover {
+          color: #111827;
+          transform: translateX(-1px);
         }
 
         .header {
@@ -200,12 +285,14 @@ export default function EmployeeLoginPage() {
           padding: 0 14px;
           font-size: 14px;
           outline: none;
-          color: #222222; /* darker text */
+          color: #222222;
           background: #ffffff;
+          transition: border-color 0.2s ease, box-shadow 0.2s ease,
+            transform 0.2s ease;
         }
 
         input::placeholder {
-          color: #9ca3af; /* softer gray for placeholder */
+          color: #9ca3af;
         }
 
         input:hover {
@@ -215,11 +302,13 @@ export default function EmployeeLoginPage() {
         input:focus {
           border-color: #5d8dee;
           box-shadow: 0 0 0 3px rgba(93, 141, 238, 0.15);
+          transform: translateY(-1px);
         }
 
         .error {
           color: #dc2626;
           font-size: 12px;
+          font-weight: 600;
         }
 
         .submitButton {
@@ -232,15 +321,21 @@ export default function EmployeeLoginPage() {
           font-weight: 700;
           cursor: pointer;
           margin-top: 4px;
+          transition: background 0.2s ease, transform 0.2s ease, opacity 0.2s ease;
         }
 
-        .submitButton:hover {
-          background: #14004a; /* slightly lighter */
+        .submitButton:hover:not(:disabled) {
+          background: #14004a;
           transform: translateY(-1px);
         }
 
-        .submitButton:active {
+        .submitButton:active:not(:disabled) {
           transform: translateY(0);
+        }
+
+        .submitButton:disabled {
+          opacity: 0.7;
+          cursor: not-allowed;
         }
 
         .demoBox {
