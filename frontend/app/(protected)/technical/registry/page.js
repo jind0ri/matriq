@@ -1,230 +1,335 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import mockSamples from "@/mocks/samples.json";
+import Dropdown from "@/components/ui/Dropdown";
 import {
-  ArrowLeft,
-  ListBullets,
-  SquaresFour,
-  DownloadSimple,
-  MagnifyingGlass,
+  ArrowClockwise,
+  Eye,
   FadersHorizontal,
-  CaretDown,
+  MagnifyingGlass,
+  WarningCircle,
 } from "phosphor-react";
 
-function getStatusClass(status) {
-  if (status === "Released") return "released";
-  if (status === "In Test") return "testing";
-  return "registered";
+const API_BASE_URL = "http://localhost:8000";
+
+function getStatusTone(status) {
+  switch (status) {
+    case "Registered":
+      return "registered";
+    case "In Test":
+      return "testing";
+    case "For Review":
+      return "review";
+    case "Released":
+      return "released";
+    case "Archived":
+      return "archived";
+    default:
+      return "registered";
+  }
 }
 
-export default function RegistryPage() {
+function normalizeBranch(branchId) {
+  if (branchId === "1" || branchId === 1) return "Marikina";
+  if (branchId === "2" || branchId === 2) return "Pateros";
+  return "Unassigned";
+}
+
+export default function TechnicalRegistryPage() {
   const router = useRouter();
+
+  const [samples, setSamples] = useState([]);
+  const [filteredSamples, setFilteredSamples] = useState([]);
   const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("All");
-  const [isFilterOpen, setIsFilterOpen] = useState(false);
-  const [viewMode, setViewMode] = useState("list");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [branchFilter, setBranchFilter] = useState("all");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
 
-  const filteredSamples = useMemo(() => {
-    return mockSamples.filter((sample) => {
-      const matchesQuery =
-        sample.id.toLowerCase().includes(query.toLowerCase()) ||
-        sample.client.toLowerCase().includes(query.toLowerCase()) ||
-        sample.material.toLowerCase().includes(query.toLowerCase());
+  const currentUser =
+    typeof window !== "undefined"
+      ? JSON.parse(localStorage.getItem("user") || "{}")
+      : {};
 
-      const matchesStatus =
-        statusFilter === "All" || sample.status === statusFilter;
+  const isLabTechnician = currentUser?.role === "technician";
+  const isSeniorTechnician = currentUser?.role === "senior_technician";
+  const isQAEngineer = currentUser?.role === "qa_engineer";
 
-      return matchesQuery && matchesStatus;
-    });
-  }, [query, statusFilter]);
+  async function fetchSamples(showRefreshState = false) {
+    try {
+      if (showRefreshState) setRefreshing(true);
+      setLoading(true);
+      setError("");
+
+      const token = localStorage.getItem("access_token");
+
+      if (!token) {
+        throw new Error("You are not logged in.");
+      }
+
+      const response = await fetch(`${API_BASE_URL}/api/samples`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          typeof data?.detail === "string"
+            ? data.detail
+            : "Failed to fetch samples."
+        );
+      }
+
+      setSamples(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Failed to fetch samples:", err);
+      setError(err.message || "Failed to load registry.");
+      setSamples([]);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }
+
+  useEffect(() => {
+    fetchSamples();
+  }, []);
+
+  useEffect(() => {
+    let next = [...samples];
+
+    if (query.trim()) {
+      const q = query.trim().toLowerCase();
+      next = next.filter((sample) => {
+        return (
+          sample.sample_id?.toLowerCase().includes(q) ||
+          sample.client_name?.toLowerCase().includes(q) ||
+          sample.project_id?.toLowerCase().includes(q) ||
+          sample.material_type?.toLowerCase().includes(q)
+        );
+      });
+    }
+
+    if (statusFilter !== "all") {
+      next = next.filter((sample) => sample.current_state === statusFilter);
+    }
+
+    if (branchFilter !== "all") {
+      next = next.filter(
+        (sample) => normalizeBranch(sample.branch_id).toLowerCase() === branchFilter
+      );
+    }
+
+    setFilteredSamples(next);
+  }, [samples, query, statusFilter, branchFilter]);
+
+  const summary = useMemo(() => {
+    return {
+      total: samples.length,
+      registered: samples.filter((item) => item.current_state === "Registered")
+        .length,
+      inTest: samples.filter((item) => item.current_state === "In Test").length,
+      forReview: samples.filter((item) => item.current_state === "For Review")
+        .length,
+      released: samples.filter((item) => item.current_state === "Released").length,
+    };
+  }, [samples]);
+
+  function handleViewDetails(sampleId) {
+    router.push(`/technical/tracking/${sampleId}`);
+  }
+
+  function handleOpenWorkflow() {
+    router.push("/technical/workflow");
+  }
 
   return (
     <>
       <div className="page">
-        <div className="topRow">
-          <div className="titleBlock">
-            <button className="backButton" type="button" aria-label="Go back">
-              <ArrowLeft size={28} weight="regular" />
-            </button>
-
-            <div className="header">
-              <h1>GLOBAL REGISTRY</h1>
-              <p>Real-time traceability across the laboratory network.</p>
-            </div>
+        <div className="header">
+          <div>
+            <h1>Sample Registry</h1>
+            <p>
+              Review registered samples, search records, and open the next workflow
+              stage for technical processing.
+            </p>
           </div>
 
-          <div className="viewControls">
+          <div className="headerActions">
             <button
-              className={
-                viewMode === "list" ? "iconButton active" : "iconButton"
-              }
               type="button"
-              aria-label="List view"
-              onClick={() => setViewMode("list")}
+              className="secondaryButton"
+              onClick={() => fetchSamples(true)}
+              disabled={refreshing}
             >
-              <ListBullets size={20} weight="bold" />
+              <ArrowClockwise size={16} />
+              {refreshing ? "Refreshing..." : "Refresh"}
             </button>
 
             <button
-              className={
-                viewMode === "grid" ? "iconButton active" : "iconButton"
-              }
               type="button"
-              aria-label="Grid view"
-              onClick={() => setViewMode("grid")}
+              className="primaryButton"
+              onClick={handleOpenWorkflow}
             >
-              <SquaresFour size={18} weight="regular" />
+              Open Workflow
             </button>
+          </div>
+        </div>
 
-            <button className="exportButton" type="button">
-              <DownloadSimple size={16} weight="regular" />
-              <span>EXPORT LOGS</span>
-            </button>
+        <div className="statsGrid">
+          <div className="statCard">
+            <span>Total Samples</span>
+            <strong>{summary.total}</strong>
+          </div>
+          <div className="statCard">
+            <span>Registered</span>
+            <strong>{summary.registered}</strong>
+          </div>
+          <div className="statCard">
+            <span>In Test</span>
+            <strong>{summary.inTest}</strong>
+          </div>
+          <div className="statCard">
+            <span>For Review</span>
+            <strong>{summary.forReview}</strong>
+          </div>
+          <div className="statCard">
+            <span>Released</span>
+            <strong>{summary.released}</strong>
           </div>
         </div>
 
         <div className="toolbar">
-          <div className="searchWrap">
-            <MagnifyingGlass size={18} weight="regular" />
-
+          <div className="searchBox">
+            <MagnifyingGlass size={16} />
             <input
               type="text"
-              placeholder="Search by ID, Material, Client or Project Reference..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              className="searchInput"
+              placeholder="Search by sample ID, client, project, or material"
             />
           </div>
 
-          <div className="filterWrap">
-            <button
-              type="button"
-              className="filterButton"
-              onClick={() => setIsFilterOpen((prev) => !prev)}
-            >
-              <span className="filterLabelWrap">
-                <FadersHorizontal size={14} weight="regular" />
-                <span>
-                  {statusFilter === "All"
-                    ? "ALL STATUSES"
-                    : statusFilter.toUpperCase()}
-                </span>
-              </span>
+          <div className="filterGroup">
+            <div className="filterLabel">
+              <FadersHorizontal size={16} />
+              <span>Filters</span>
+            </div>
 
-              <CaretDown
-                size={14}
-                weight="bold"
-                className={isFilterOpen ? "caret rotated" : "caret"}
-              />
-            </button>
+            <Dropdown
+              options={[
+                { label: "All Statuses", value: "all" },
+                { label: "Registered", value: "Registered" },
+                { label: "In Test", value: "In Test" },
+                { label: "For Review", value: "For Review" },
+                { label: "Released", value: "Released" },
+                { label: "Archived", value: "Archived" },
+              ]}
+              value={statusFilter}
+              onChange={setStatusFilter}
+            />
 
-            {isFilterOpen && (
-              <div className="filterMenu">
-                {["All", "Registered", "In Test", "Released", "Archived"].map(
-                  (status) => (
-                    <button
-                      key={status}
-                      type="button"
-                      className={
-                        statusFilter === status
-                          ? "filterOption activeOption"
-                          : "filterOption"
-                      }
-                      onClick={() => {
-                        setStatusFilter(status);
-                        setIsFilterOpen(false);
-                      }}
-                    >
-                      {status === "All" ? "ALL STATUSES" : status.toUpperCase()}
-                    </button>
-                  ),
-                )}
-              </div>
-            )}
+            <Dropdown
+              options={[
+                { label: "All Branches", value: "all" },
+                { label: "Marikina", value: "marikina" },
+                { label: "Pateros", value: "pateros" },
+              ]}
+              value={branchFilter}
+              onChange={setBranchFilter}
+            />
           </div>
         </div>
 
-        {viewMode === "list" ? (
-          <>
-            <div className="listHeader">
-              <div>MATERIAL IDENTIFICATION</div>
-              <div>LIFECYCLE STATE</div>
-              <div>CLIENT/PROJECT</div>
-              <div>REGISTRY INTEL</div>
-              <div>ACCESS</div>
+        {error && (
+          <div className="errorCard">
+            <WarningCircle size={18} />
+            <span>{error}</span>
+          </div>
+        )}
+
+        <div className="tablePanel">
+          <div className="panelHeader">
+            <h3>Registered Sample Records</h3>
+            <span>{filteredSamples.length} visible</span>
+          </div>
+
+          {loading ? (
+            <div className="emptyState">Loading registry data...</div>
+          ) : filteredSamples.length === 0 ? (
+            <div className="emptyState">
+              No samples matched your current search and filters.
             </div>
+          ) : (
+            <div className="tableWrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Sample ID</th>
+                    <th>Client</th>
+                    <th>Project</th>
+                    <th>Material Type</th>
+                    <th>Branch</th>
+                    <th>State</th>
+                    <th>Decision</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
 
-            <div className="list">
-              {filteredSamples.map((sample) => (
-                <div
-                  key={sample.id}
-                  className="listRow"
-                  onClick={() =>
-                    router.push(`/technical/tracking/${sample.id}`)
-                  }
-                >
-                  <div className="col material">
-                    <span className="sampleId">{sample.id}</span>
-                    <span className="materialName">{sample.material}</span>
-                  </div>
+                <tbody>
+                  {filteredSamples.map((sample) => (
+                    <tr key={sample.id}>
+                      <td>
+                        <div className="primaryCell">
+                          <strong>{sample.sample_id}</strong>
+                        </div>
+                      </td>
 
-                  <div
-                    className={`col status ${getStatusClass(sample.status)}`}
-                  >
-                    {sample.status.toUpperCase()}
-                  </div>
+                      <td>{sample.client_name}</td>
+                      <td>{sample.project_id}</td>
+                      <td>{sample.material_type}</td>
+                      <td>{normalizeBranch(sample.branch_id)}</td>
 
-                  <div className="col client">
-                    {sample.client.toUpperCase()}
-                  </div>
+                      <td>
+                        <span
+                          className={`statusBadge ${getStatusTone(
+                            sample.current_state
+                          )}`}
+                        >
+                          {sample.current_state}
+                        </span>
+                      </td>
 
-                  <div className="col registry">
-                    <span>{sample.date}</span>
-                    <span className="branch">{sample.branch}</span>
-                  </div>
+                      <td>{sample.decision || "Pending"}</td>
 
-                  <div className="col arrow">→</div>
-                </div>
-              ))}
-
-              {filteredSamples.length === 0 && (
-                <div className="emptyState">
-                  No samples matched your search.
-                </div>
-              )}
+                      <td>
+                        <button
+                          type="button"
+                          className="actionButton"
+                          onClick={() => handleViewDetails(sample.sample_id)}
+                        >
+                          <Eye size={15} />
+                          View
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          </>
-        ) : (
-          <div className="gridView">
-            {filteredSamples.map((sample) => (
-              <button
-                key={sample.id}
-                type="button"
-                className="sampleCard"
-                onClick={() => router.push(`/technical/tracking/${sample.id}`)}
-              >
-                <div className={`cardStatus ${getStatusClass(sample.status)}`}>
-                  {sample.status.toUpperCase()}
-                </div>
+          )}
+        </div>
 
-                <div className="cardContent">
-                  <span className="sampleId">{sample.id}</span>
-                  <h3>{sample.material}</h3>
-                  <p>{sample.client.toUpperCase()}</p>
-
-                  <div className="cardFooter">
-                    <span>{sample.date}</span>
-                    <span>{sample.branch}</span>
-                  </div>
-                </div>
-              </button>
-            ))}
-
-            {filteredSamples.length === 0 && (
-              <div className="emptyState">No samples matched your search.</div>
-            )}
+        {(isSeniorTechnician || isQAEngineer || isLabTechnician) && (
+          <div className="infoNote">
+            Registry content is now loaded from the backend using your authenticated
+            access token.
           </div>
         )}
       </div>
@@ -233,418 +338,330 @@ export default function RegistryPage() {
         .page {
           display: flex;
           flex-direction: column;
-          gap: 24px;
+          gap: 22px;
         }
 
-        .topRow {
+        .header {
           display: flex;
-          align-items: flex-start;
           justify-content: space-between;
-          gap: 20px;
-        }
-
-        .titleBlock {
-          display: flex;
           align-items: flex-start;
           gap: 16px;
         }
 
-        .backButton {
-          border: none;
-          background: transparent;
-          padding: 0;
-          margin-top: 2px;
-          color: #8a8a8a;
-          cursor: pointer;
+        .headerActions {
           display: flex;
+          gap: 10px;
           align-items: center;
-          justify-content: center;
+          flex-wrap: wrap;
         }
 
-        .backButton:hover {
-          color: #4b4b4b;
-        }
-
-        .header h1 {
+        h1 {
           margin: 0;
-          font-size: 26px;
-          letter-spacing: 1px;
-          color: #333333;
-          font-weight: 700;
+          font-size: 24px;
+          color: #1f2937;
         }
 
-        .header p {
-          margin: 4px 0 0;
-          color: #404040;
+        p {
+          margin: 6px 0 0;
+          color: #4b5563;
           font-size: 14px;
+          line-height: 1.45;
         }
 
-        .viewControls {
-          display: flex;
-          align-items: center;
-          gap: 14px;
+        h3 {
+          margin: 0;
+          font-size: 15px;
+          font-weight: 700;
+          color: #1f2937;
         }
 
-        .iconButton {
-          width: 42px;
+        .primaryButton,
+        .secondaryButton,
+        .actionButton {
           height: 42px;
-          border: none;
           border-radius: 12px;
-          background: transparent;
-          color: #8a8a8a;
-          display: flex;
+          padding: 0 16px;
+          font-size: 13px;
+          font-weight: 700;
+          display: inline-flex;
           align-items: center;
           justify-content: center;
+          gap: 8px;
           cursor: pointer;
+          transition: all 0.2s ease;
         }
 
-        .iconButton.active {
+        .primaryButton {
+          border: none;
           background: #080026;
           color: #ffffff;
         }
 
-        .exportButton {
-          border: none;
-          background: transparent;
-          color: #4b4b4b;
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
+        .primaryButton:hover {
+          background: #14004a;
+        }
+
+        .secondaryButton {
+          border: 1px solid #d1d5db;
+          background: #ffffff;
+          color: #1f2937;
+        }
+
+        .secondaryButton:hover {
+          border-color: #9ca3af;
+          background: #f9fafb;
+        }
+
+        .secondaryButton:disabled {
+          opacity: 0.7;
+          cursor: not-allowed;
+        }
+
+        .actionButton {
+          height: 36px;
+          border: 1px solid #cbd5e1;
+          background: #ffffff;
+          color: #1f2937;
+          padding: 0 12px;
+        }
+
+        .actionButton:hover {
+          background: #f8fafc;
+          border-color: #94a3b8;
+        }
+
+        .statsGrid {
+          display: grid;
+          grid-template-columns: repeat(5, 1fr);
+          gap: 16px;
+        }
+
+        .statCard {
+          background: #ffffff;
+          border: 1px solid #e5e7eb;
+          border-radius: 16px;
+          padding: 18px;
+        }
+
+        .statCard span {
+          display: block;
           font-size: 12px;
+          color: #6b7280;
+          margin-bottom: 8px;
           font-weight: 700;
-          letter-spacing: 0.3px;
-          cursor: pointer;
-          padding: 0;
+        }
+
+        .statCard strong {
+          font-size: 24px;
+          color: #111827;
         }
 
         .toolbar {
-          display: flex;
+          display: grid;
+          grid-template-columns: 1.2fr 1fr;
           gap: 16px;
           align-items: center;
         }
 
-        .searchWrap {
-          flex: 1;
-          height: 52px;
-          background: #efefef;
-          border-radius: 16px;
+        .searchBox {
+          height: 46px;
+          border: 1px solid #d1d5db;
+          background: #ffffff;
+          border-radius: 14px;
           display: flex;
           align-items: center;
           gap: 10px;
           padding: 0 14px;
-          color: #9a9a9a;
+          color: #6b7280;
         }
 
-        .searchWrap :global(svg) {
-          color: #9a9a9a;
-        }
-
-        .searchInput {
+        .searchBox input {
           flex: 1;
           border: none;
-          background: transparent;
-          font-size: 14px;
           outline: none;
-          color: #2d2d2d;
-        }
-
-        .searchInput::placeholder {
-          color: #9a9a9a;
-        }
-
-        .filterWrap {
-          position: relative;
-          min-width: 190px;
-        }
-
-        .filterButton {
-          width: 100%;
-          height: 52px;
-          border: none;
+          font-size: 13px;
+          color: #1f2937;
           background: transparent;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 12px;
-          padding: 0 6px;
-          color: #2d2d2d;
-          cursor: pointer;
         }
 
-        .filterLabelWrap {
+        .searchBox input::placeholder {
+          color: #9ca3af;
+        }
+
+        .filterGroup {
+          display: grid;
+          grid-template-columns: auto 1fr 1fr;
+          gap: 10px;
+          align-items: center;
+        }
+
+        .filterLabel {
           display: inline-flex;
           align-items: center;
-          gap: 10px;
+          gap: 8px;
+          color: #374151;
           font-size: 12px;
           font-weight: 700;
-          letter-spacing: 0.3px;
         }
 
-        .caret {
-          color: #6b7280;
-          transition: transform 0.2s ease;
+        .errorCard {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          border: 1px solid #fecaca;
+          background: #fef2f2;
+          color: #b91c1c;
+          border-radius: 14px;
+          padding: 14px 16px;
+          font-size: 13px;
+          font-weight: 600;
         }
 
-        .rotated {
-          transform: rotate(180deg);
-        }
-
-        .filterMenu {
-          position: absolute;
-          top: calc(100% + 8px);
-          right: 0;
-          min-width: 180px;
+        .tablePanel {
           background: #ffffff;
           border: 1px solid #e5e7eb;
-          border-radius: 16px;
-          box-shadow: 0 16px 32px rgba(15, 23, 42, 0.12);
-          padding: 8px;
-          z-index: 20;
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
+          border-radius: 18px;
+          padding: 20px;
         }
 
-        .filterOption {
-          border: none;
-          background: transparent;
-          text-align: left;
-          border-radius: 12px;
-          padding: 10px 12px;
+        .panelHeader {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 12px;
+          margin-bottom: 16px;
+        }
+
+        .panelHeader span {
           font-size: 12px;
           font-weight: 700;
-          color: #2d2d2d;
-          cursor: pointer;
-        }
-
-        .filterOption:hover {
-          background: #f3f4f6;
-        }
-
-        .activeOption {
-          background: #e5e7eb;
-        }
-
-        .listHeader {
-          display: grid;
-          grid-template-columns: 1.7fr 0.9fr 1.5fr 1fr 0.2fr;
-          align-items: center;
-          padding: 0 0 10px;
-          border-bottom: 1px solid transparent;
-        }
-
-        .listHeader div {
-          font-size: 11px;
-          font-weight: 700;
-          letter-spacing: 0.5px;
-          color: #4b4b4b;
-        }
-
-        .list {
-          display: flex;
-          flex-direction: column;
-          gap: 6px;
-        }
-
-        .listRow {
-          display: grid;
-          grid-template-columns: 1.7fr 0.9fr 1.5fr 1fr 0.2fr;
-          align-items: center;
-          padding: 16px 0;
-          border-bottom: 1px solid #eeeeee;
-          cursor: pointer;
-          transition:
-            opacity 0.2s ease,
-            transform 0.2s ease;
-        }
-
-        .listRow:hover {
-          opacity: 0.75;
-          transform: translateX(2px);
-        }
-
-        .col {
-          font-size: 13px;
-          color: #2d2d2d;
-        }
-
-        .material {
-          display: flex;
-          flex-direction: column;
-          gap: 3px;
-        }
-
-        .sampleId {
-          font-size: 10px;
-          color: #8a8a8a;
-          letter-spacing: 0.3px;
-        }
-
-        .materialName {
-          font-size: 13px;
-          font-weight: 700;
-          color: #333333;
-          line-height: 1.25;
-        }
-
-        .status {
-          font-size: 11px;
-          font-weight: 700;
-          letter-spacing: 0.6px;
-        }
-
-        .released {
-          color: #0f8a28;
-        }
-
-        .testing {
-          color: #c58a00;
-        }
-
-        .registered {
-          color: #1f2937;
-        }
-
-        .client {
-          font-size: 12px;
-          color: #404040;
-          line-height: 1.35;
-        }
-
-        .registry {
-          display: flex;
-          flex-direction: column;
-          gap: 2px;
-          font-size: 11px;
           color: #6b7280;
         }
 
-        .branch {
-          font-size: 10px;
-          color: #9a9a9a;
+        .tableWrap {
+          width: 100%;
+          overflow-x: auto;
         }
 
-        .arrow {
-          font-size: 20px;
-          color: #9a9a9a;
-          text-align: right;
+        table {
+          width: 100%;
+          border-collapse: collapse;
         }
 
-        .gridView {
-          display: grid;
-          grid-template-columns: repeat(3, minmax(0, 1fr));
-          gap: 24px;
-        }
-
-        .sampleCard {
-          border: none;
-          background: #d9d9d9;
-          border-radius: 22px;
-          padding: 22px;
-          min-height: 210px;
-          display: flex;
-          flex-direction: column;
-          justify-content: space-between;
+        thead th {
           text-align: left;
-          cursor: pointer;
+          font-size: 12px;
+          color: #6b7280;
+          font-weight: 700;
+          padding: 12px 10px;
+          border-bottom: 1px solid #e5e7eb;
+          white-space: nowrap;
         }
 
-        .sampleCard:hover {
-          opacity: 0.9;
+        tbody td {
+          padding: 14px 10px;
+          border-bottom: 1px solid #f1f5f9;
+          font-size: 13px;
+          color: #1f2937;
+          vertical-align: middle;
         }
 
-        .cardStatus {
+        tbody tr:hover {
+          background: #fafcff;
+        }
+
+        .primaryCell strong {
+          color: #111827;
+          font-size: 13px;
+        }
+
+        .statusBadge {
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          min-width: 92px;
-          width: fit-content;
-          padding: 8px 12px;
+          min-width: 102px;
+          padding: 6px 10px;
           border-radius: 999px;
           font-size: 11px;
-          font-weight: 700;
-          color: #ffffff;
+          font-weight: 800;
         }
 
-        .cardStatus.released {
-          background: #0f8a28;
+        .statusBadge.registered {
+          background: #eff6ff;
+          color: #1d4ed8;
         }
 
-        .cardStatus.testing {
-          background: #c58a00;
+        .statusBadge.testing {
+          background: #fef3c7;
+          color: #b45309;
         }
 
-        .cardStatus.registered {
-          background: #080026;
+        .statusBadge.review {
+          background: #e0f2fe;
+          color: #0369a1;
         }
 
-        .cardContent {
-          display: flex;
-          flex-direction: column;
-          gap: 8px;
+        .statusBadge.released {
+          background: #ecfdf5;
+          color: #047857;
         }
 
-        .cardContent h3 {
-          margin: 0;
-          font-size: 20px;
-          line-height: 1.2;
-          color: #333333;
-        }
-
-        .cardContent p {
-          margin: 0;
-          font-size: 13px;
-          color: #7a7a7a;
-          line-height: 1.4;
-        }
-
-        .cardFooter {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 12px;
-          font-size: 11px;
-          color: #8a8a8a;
-          margin-top: 8px;
+        .statusBadge.archived {
+          background: #f3f4f6;
+          color: #6b7280;
         }
 
         .emptyState {
+          border: 1px dashed #d1d5db;
+          border-radius: 16px;
+          padding: 24px;
           text-align: center;
-          color: #8b8b8b;
-          padding: 28px;
+          color: #6b7280;
+          font-size: 13px;
+          background: #fafafa;
         }
 
-        @media (max-width: 900px) {
-          .topRow {
-            flex-direction: column;
-            align-items: stretch;
-          }
+        .infoNote {
+          font-size: 12px;
+          color: #6b7280;
+          background: #f8fafc;
+          border: 1px solid #e5e7eb;
+          border-radius: 14px;
+          padding: 12px 14px;
+        }
 
-          .viewControls {
-            justify-content: flex-start;
+        @media (max-width: 1100px) {
+          .statsGrid {
+            grid-template-columns: repeat(2, 1fr);
           }
 
           .toolbar {
+            grid-template-columns: 1fr;
+          }
+
+          .filterGroup {
+            grid-template-columns: 1fr;
+          }
+        }
+
+        @media (max-width: 768px) {
+          .header {
+            flex-direction: column;
+          }
+
+          .headerActions {
+            width: 100%;
             flex-direction: column;
             align-items: stretch;
           }
 
-          .gridView {
+          .statsGrid {
             grid-template-columns: 1fr;
           }
 
-          .listHeader {
-            display: none;
-          }
-
-          .listRow {
-            grid-template-columns: 1fr;
-            gap: 10px;
-            padding: 16px 0;
-          }
-
-          .arrow {
-            text-align: left;
+          .primaryButton,
+          .secondaryButton {
+            width: 100%;
           }
         }
       `}</style>

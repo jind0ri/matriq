@@ -13,6 +13,8 @@ import {
   ArrowRight,
 } from "phosphor-react";
 
+const API_BASE_URL = "http://localhost:8000";
+
 const BRANCH_OPTIONS = [
   { label: "Marikina", value: "marikina" },
   { label: "Pateros", value: "pateros" },
@@ -48,12 +50,6 @@ const MATERIAL_PRESETS = {
   },
 };
 
-function buildSampleId(branchValue, count = 1) {
-  const prefix = branchValue === "marikina" ? "MRS" : "PRS";
-  const padded = String(count).padStart(3, "0");
-  return `${prefix}-2026-${padded}`;
-}
-
 export default function TechnicalIntakePage() {
   const router = useRouter();
   const fileInputRef = useRef(null);
@@ -63,7 +59,8 @@ export default function TechnicalIntakePage() {
       ? JSON.parse(localStorage.getItem("user") || "{}")
       : {};
 
-  const displayName = currentUser?.name || currentUser?.personnel || "Tech. Jon";
+  const displayName = currentUser?.name || currentUser?.full_name || "Tech. Jon";
+
   const defaultBranch =
     currentUser?.branch?.toLowerCase() === "marikina" ? "marikina" : "pateros";
 
@@ -124,6 +121,10 @@ export default function TechnicalIntakePage() {
     setClassifyState("idle");
     setResult(null);
 
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+    }
+
     const nextUrl = URL.createObjectURL(file);
     setPreviewUrl(nextUrl);
   }
@@ -157,50 +158,43 @@ export default function TechnicalIntakePage() {
     }, 1100);
   }
 
-  function handleRegisterSample() {
+  async function handleRegisterSample() {
     const valid = validateForm();
     if (!valid) return;
 
     setIsSaving(true);
 
-    setTimeout(() => {
-      const savedSample = {
-        id: buildSampleId(form.branch, 7),
-        material: result.predictedLabel,
-        type:
-          selectedMockType === "cement"
-            ? "cement"
-            : selectedMockType === "soil"
-            ? "soil"
-            : "concrete",
-        status: result.confidence >= 85 ? "Registered" : "For Review",
-        project: form.project,
-        client: form.client,
-        branch:
-          form.branch === "marikina" ? "Marikina" : "Pateros",
-        personnel: form.personnel,
-        equipmentId: "CAM-01A",
-        testDate: new Date().toLocaleDateString(),
-        ai: {
-          predictedLabel: result.predictedLabel,
-          confidence: result.confidence,
-          decision: result.decision,
-          modelVersion: result.modelVersion,
-        },
-      };
+    try {
+      const token = localStorage.getItem("access_token");
 
-      try {
-        const existing =
-          JSON.parse(localStorage.getItem("mockRegisteredSamples") || "[]") || [];
-        localStorage.setItem(
-          "mockRegisteredSamples",
-          JSON.stringify([savedSample, ...existing])
-        );
-      } catch (error) {
-        console.error("Failed to store sample locally:", error);
+      if (!token) {
+        throw new Error("You are not logged in.");
       }
 
-      setIsSaving(false);
+      const response = await fetch(`${API_BASE_URL}/api/samples`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          client_name: form.client,
+          project_id: form.project,
+          material_type: result.predictedLabel,
+          notes: `Captured by ${form.personnel}. Source image: ${imageName}`,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          typeof data?.detail === "string"
+            ? data.detail
+            : "Failed to register sample."
+        );
+      }
+
       showToast(
         result.confidence >= 85
           ? "Sample registered successfully."
@@ -208,7 +202,12 @@ export default function TechnicalIntakePage() {
       );
 
       router.push("/technical/registry");
-    }, 900);
+    } catch (error) {
+      console.error("Sample registration failed:", error);
+      showToast(error.message || "Registration failed.");
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   const classificationTone =
@@ -289,10 +288,10 @@ export default function TechnicalIntakePage() {
             </div>
 
             <div className="infoCard">
-              <strong>Buffer & Sync Notice</strong>
+              <strong>Camera Support</strong>
               <p>
-                Registration data is temporarily buffered in the frontend mock and
-                can later be synchronized with the centralized database and APIs.
+                Mobile devices can capture sample images directly using the back
+                camera. Desktop users can upload an image file normally.
               </p>
             </div>
           </div>
@@ -320,6 +319,7 @@ export default function TechnicalIntakePage() {
                   ref={fileInputRef}
                   type="file"
                   accept="image/*"
+                  capture="environment"
                   className="hiddenInput"
                   onChange={handleImageChange}
                 />
@@ -330,7 +330,7 @@ export default function TechnicalIntakePage() {
                   onClick={() => fileInputRef.current?.click()}
                 >
                   <UploadSimple size={16} />
-                  Upload JPEG / PNG
+                  Upload or Capture Image
                 </button>
 
                 <Dropdown
