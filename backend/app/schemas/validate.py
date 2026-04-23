@@ -1,14 +1,14 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ValidationRequest(BaseModel):
-    final_material_type: str
-    justification: str
-    approved: bool
+    final_material_type: str = Field(..., min_length=1)
+    justification: str = Field(..., min_length=5)
+    approved: bool = True
 
 
 class ValidationResponse(BaseModel):
-    sample_id: str
+    sample_id: int
     previous_material_type: str
     final_material_type: str
     decision_source: str

@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 
-from ..models import Sample
+from ..models import Sample, ManualValidation
 from .audit_service import log_audit_event
 
 
@@ -16,7 +16,7 @@ def validate_sample_service(
     if not sample:
         raise ValueError("Sample not found")
 
-    if sample.current_state != "For Review":
+    if sample.current_state not in ["For Review"]:
         raise ValueError("Sample cannot be validated in its current lifecycle state")
 
     if not justification or len(justification.strip()) < 5:
@@ -26,7 +26,6 @@ def validate_sample_service(
     cleaned_justification = justification.strip()
 
     sample.material_type = final_material_type
-    sample.notes = cleaned_justification
 
     if approved:
         sample.current_state = "Released"
@@ -39,6 +38,16 @@ def validate_sample_service(
         sample.decision = "Rejected"
         sample.is_immutable = False
 
+    validation = ManualValidation(
+        sample_id=sample.id,
+        original_ai_label=sample.ai_predicted_label or previous_material_type,
+        corrected_label=final_material_type,
+        justification=cleaned_justification,
+        reviewed_by=current_user["user_id"],
+    )
+
+    db.add(validation)
+
     db.commit()
     db.refresh(sample)
 
@@ -49,8 +58,7 @@ def validate_sample_service(
         endpoint=f"/api/validate/{sample_id}",
         new_value=(
             f"material: {previous_material_type} -> {final_material_type}; "
-            f"state: {sample.current_state}; "
-            f"decision: {sample.decision}"
+            f"state: {'Released' if approved else 'In Testing'}"
         ),
     )
 
