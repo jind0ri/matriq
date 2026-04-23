@@ -8,3 +8,6 @@ venv/
 # Ignore other potential IDE files
 .idea/
 *.log
+
+venv/
+.venv/
