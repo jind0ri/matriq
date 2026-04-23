@@ -16,33 +16,37 @@ def validate_sample_service(
     if not sample:
         raise ValueError("Sample not found")
 
-    if sample.current_state not in ["Registered", "In Test", "For Review"]:
+    if sample.current_state not in ["For Review"]:
         raise ValueError("Sample cannot be validated in its current lifecycle state")
 
     if not justification or len(justification.strip()) < 5:
         raise ValueError("Justification is required and must be at least 5 characters")
 
     previous_material_type = sample.material_type
+    cleaned_justification = justification.strip()
 
-    # update sample
     sample.material_type = final_material_type
 
-    if not approved:
-        sample.current_state = "Registered"
+    if approved:
+        sample.current_state = "Released"
+        sample.status = "Released"
+        sample.decision = "Approved"
+        sample.is_immutable = True
+    else:
+        sample.current_state = "In Testing"
+        sample.status = "In Testing"
+        sample.decision = "Rejected"
+        sample.is_immutable = False
 
-    # save validation record
     validation = ManualValidation(
         sample_id=sample.id,
-        original_ai_label=previous_material_type,
+        original_ai_label=sample.ai_predicted_label or previous_material_type,
         corrected_label=final_material_type,
-        justification=justification,
+        justification=cleaned_justification,
         reviewed_by=current_user["user_id"],
     )
 
     db.add(validation)
-
-    # update decision source logic
-    sample.decision = "Approved" if approved else "Rejected"
 
     db.commit()
     db.refresh(sample)
@@ -51,8 +55,11 @@ def validate_sample_service(
         db=db,
         user_id=current_user["user_id"],
         action="Validated sample classification",
-        endpoint="/api/validate",
-        new_value=f"{previous_material_type} -> {final_material_type}",
+        endpoint=f"/api/validate/{sample_id}",
+        new_value=(
+            f"material: {previous_material_type} -> {final_material_type}; "
+            f"state: {'Released' if approved else 'In Testing'}"
+        ),
     )
 
     return {
@@ -60,7 +67,7 @@ def validate_sample_service(
         "previous_material_type": previous_material_type,
         "final_material_type": final_material_type,
         "decision_source": "HUMAN",
-        "justification": justification,
+        "justification": cleaned_justification,
         "validated_by": current_user["full_name"],
         "validated_role": current_user["role"],
         "lifecycle_state": sample.current_state,

@@ -24,6 +24,26 @@ def create_sample_service(db: Session, sample_data, current_user: dict):
     if existing:
         raise ValueError("Duplicate sample")
 
+    # ✅ AI values (coming from frontend later)
+    ai_label = getattr(sample_data, "ai_predicted_label", None)
+    ai_conf = getattr(sample_data, "ai_confidence_score", None)
+    model_version = getattr(sample_data, "model_version", None)
+
+    # ✅ THRESHOLD (you can tweak this later)
+    CONFIDENCE_THRESHOLD = 80
+
+    # ✅ DEFAULT VALUES
+    status = "Registered"
+    current_state = "Registered"
+    decision = "Pending"
+
+    # ✅ AUTO FOR REVIEW LOGIC
+    if ai_conf is not None:
+        if ai_conf < CONFIDENCE_THRESHOLD:
+            status = "For Review"
+            current_state = "For Review"
+            decision = "Pending Review"
+
     new_sample = Sample(
         id=str(uuid.uuid4()),
         sample_id=generate_sample_code(db),
@@ -33,13 +53,18 @@ def create_sample_service(db: Session, sample_data, current_user: dict):
         registered_by_user_id=str(current_user["user_id"]),
         registered_by_role=current_user["role"],
         material_type=sample_data.material_type,
-        ai_predicted_label=None,
-        ai_confidence_score=None,
-        model_version=None,
-        status="Registered",
-        decision="Pending",
+
+        # ✅ AI fields
+        ai_predicted_label=ai_label,
+        ai_confidence_score=ai_conf,
+        model_version=model_version,
+
+        # ✅ lifecycle (dynamic now)
+        status=status,
+        decision=decision,
+        current_state=current_state,
+
         notes=sample_data.notes,
-        current_state="Registered",
         registered_by=current_user["user_id"],
         is_immutable=False,
     )

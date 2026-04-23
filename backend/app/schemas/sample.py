@@ -7,6 +7,9 @@ class SampleCreate(BaseModel):
     project_id: str
     material_type: str
     notes: Optional[str] = None
+    ai_predicted_label: Optional[str] = None
+    ai_confidence_score: Optional[float] = None
+    model_version: Optional[str] = None
 
 
 class SampleResponse(BaseModel):
@@ -22,6 +25,9 @@ class SampleResponse(BaseModel):
     registered_by: Optional[int] = None
     is_immutable: bool = False
     notes: Optional[str] = None
+    ai_predicted_label: Optional[str] = None
+    ai_confidence_score: Optional[float] = None
+    model_version: Optional[str] = None
 
     class Config:
         from_attributes = True

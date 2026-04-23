@@ -17,7 +17,9 @@ function getStatusTone(status) {
   switch (status) {
     case "Registered":
       return "registered";
-    case "In Test":
+    case "Up-To-Standard":
+      return "standard";
+    case "In Testing":
       return "testing";
     case "For Review":
       return "review";
@@ -134,10 +136,15 @@ export default function TechnicalRegistryPage() {
       total: samples.length,
       registered: samples.filter((item) => item.current_state === "Registered")
         .length,
-      inTest: samples.filter((item) => item.current_state === "In Test").length,
+      upToStandard: samples.filter(
+        (item) => item.current_state === "Up-To-Standard"
+      ).length,
+      inTesting: samples.filter((item) => item.current_state === "In Testing")
+        .length,
       forReview: samples.filter((item) => item.current_state === "For Review")
         .length,
-      released: samples.filter((item) => item.current_state === "Released").length,
+      released: samples.filter((item) => item.current_state === "Released")
+        .length,
     };
   }, [samples]);
 
@@ -192,8 +199,12 @@ export default function TechnicalRegistryPage() {
             <strong>{summary.registered}</strong>
           </div>
           <div className="statCard">
-            <span>In Test</span>
-            <strong>{summary.inTest}</strong>
+            <span>Up-To-Standard</span>
+            <strong>{summary.upToStandard}</strong>
+          </div>
+          <div className="statCard">
+            <span>In Testing</span>
+            <strong>{summary.inTesting}</strong>
           </div>
           <div className="statCard">
             <span>For Review</span>
@@ -226,7 +237,8 @@ export default function TechnicalRegistryPage() {
               options={[
                 { label: "All Statuses", value: "all" },
                 { label: "Registered", value: "Registered" },
-                { label: "In Test", value: "In Test" },
+                { label: "Up-To-Standard", value: "Up-To-Standard" },
+                { label: "In Testing", value: "In Testing" },
                 { label: "For Review", value: "For Review" },
                 { label: "Released", value: "Released" },
                 { label: "Archived", value: "Archived" },
@@ -432,7 +444,7 @@ export default function TechnicalRegistryPage() {
 
         .statsGrid {
           display: grid;
-          grid-template-columns: repeat(5, 1fr);
+          grid-template-columns: repeat(6, 1fr);
           gap: 16px;
         }
 
@@ -579,7 +591,7 @@ export default function TechnicalRegistryPage() {
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          min-width: 102px;
+          min-width: 108px;
           padding: 6px 10px;
           border-radius: 999px;
           font-size: 11px;
@@ -589,6 +601,11 @@ export default function TechnicalRegistryPage() {
         .statusBadge.registered {
           background: #eff6ff;
           color: #1d4ed8;
+        }
+
+        .statusBadge.standard {
+          background: #ede9fe;
+          color: #6d28d9;
         }
 
         .statusBadge.testing {

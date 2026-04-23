@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Dropdown from "@/components/ui/Dropdown";
 import {
@@ -13,79 +13,52 @@ import {
   WarningCircle,
 } from "phosphor-react";
 
-const WORKFLOW_ITEMS = [
-  {
-    id: "BRS-2026-001",
-    material: "Concrete (Beam)",
-    type: "concrete",
-    branch: "Pateros",
-    client: "Build-Build-Build Corp",
-    project: "Cavite-Laguna Express Way",
-    assignedTo: "Tech. Jon",
-    status: "In Test",
-    aiConfidence: 96,
-    needsValidation: false,
-    updatedAt: "02/16/2026 2:15 PM",
-  },
-  {
-    id: "BRS-2026-002",
-    material: "Cement (Ready-mix)",
-    type: "cement",
-    branch: "Marikina",
-    client: "Metro Manila Concrete Solutions",
-    project: "SLEX Elevated Extension",
-    assignedTo: "Senior Technician",
-    status: "Registered",
-    aiConfidence: 82,
-    needsValidation: true,
-    updatedAt: "02/16/2026 1:40 PM",
-  },
-  {
-    id: "BRS-2026-003",
-    material: "Soil Aggregate (Subbase)",
-    type: "soil",
-    branch: "Pateros",
-    client: "Luzon Dev Corp",
-    project: "North Road Widening",
-    assignedTo: "QA Engineer",
-    status: "For Review",
-    aiConfidence: 90,
-    needsValidation: false,
-    updatedAt: "02/16/2026 11:10 AM",
-  },
-  {
-    id: "BRS-2026-004",
-    material: "Concrete Aggregate (Fine)",
-    type: "concrete",
-    branch: "Marikina",
-    client: "Metro Link Holdings",
-    project: "Bridge Retrofit Project",
-    assignedTo: "QA Engineer",
-    status: "Released",
-    aiConfidence: 94,
-    needsValidation: false,
-    updatedAt: "02/16/2026 9:45 AM",
-  },
-  {
-    id: "BRS-2026-005",
-    material: "Reinforcing Steel Bars",
-    type: "steel",
-    branch: "Marikina",
-    client: "North Axis Structures",
-    project: "Pasig Support Works",
-    assignedTo: "Tech. Angel",
-    status: "In Test",
-    aiConfidence: 91,
-    needsValidation: false,
-    updatedAt: "02/16/2026 8:20 AM",
-  },
-];
+const API_BASE_URL = "http://localhost:8000";
 
 function getStatusClass(status) {
   if (status === "Released") return "released";
   if (status === "For Review") return "review";
-  if (status === "In Test") return "testing";
+  if (status === "In Testing") return "testing";
+  if (status === "Up-To-Standard") return "standard";
+  if (status === "Archived") return "archived";
   return "registered";
+}
+
+function normalizeBranch(branchId) {
+  if (branchId === "1" || branchId === 1) return "Marikina";
+  if (branchId === "2" || branchId === 2) return "Pateros";
+  return "Unassigned";
+}
+
+function getMaterialLabel(materialType) {
+  if (!materialType) return "Unknown";
+
+  const normalized = materialType.toLowerCase();
+
+  if (normalized.includes("concrete")) return "Concrete";
+  if (normalized.includes("soil")) return "Soil Aggregates";
+  if (normalized.includes("steel") || normalized.includes("rsb")) {
+    return "Reinforcing Steel Bar (RSB)";
+  }
+
+  return materialType;
+}
+
+function getFrontendRole(rawRole) {
+  switch (rawRole) {
+    case "Lab Technician":
+      return "technician";
+    case "Senior Technician":
+      return "senior_technician";
+    case "QA Engineer":
+      return "qa_engineer";
+    case "Administrator":
+      return "admin";
+    case "Accounting Staff":
+      return "accounting";
+    default:
+      return "";
+  }
 }
 
 export default function WorkflowPage() {
@@ -96,24 +69,30 @@ export default function WorkflowPage() {
       ? JSON.parse(localStorage.getItem("user") || "{}")
       : {};
 
-  const role = currentUser?.role || "technician";
+  const rawRole =
+    typeof window !== "undefined" ? localStorage.getItem("role") || "" : "";
 
-  const isTechnician = role === "technician";
-  const isSeniorTechnician = role === "senior_technician";
-  const isQAEngineer = role === "qa_engineer";
+  const frontendRole =
+    currentUser?.role || getFrontendRole(rawRole) || "technician";
 
-  const [items, setItems] = useState(WORKFLOW_ITEMS);
+  const isTechnician = frontendRole === "technician";
+  const isSeniorTechnician = frontendRole === "senior_technician";
+  const isQAEngineer = frontendRole === "qa_engineer";
+
+  const [items, setItems] = useState([]);
   const [branch, setBranch] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [query, setQuery] = useState("");
   const [toast, setToast] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   const pageMeta = useMemo(() => {
     if (isSeniorTechnician) {
       return {
         title: "Validation Workflow",
         subtitle:
-          "Review low-confidence AI classifications and record manual validation decisions.",
+          "Review low-confidence AI classifications and confirm material decisions before release review.",
       };
     }
 
@@ -121,14 +100,14 @@ export default function WorkflowPage() {
       return {
         title: "Release Review Workflow",
         subtitle:
-          "Review finalized samples, authorize release, and manage report-ready records.",
+          "Review finalized testing records, confirm findings, and authorize release-ready samples.",
       };
     }
 
     return {
       title: "Testing Workflow",
       subtitle:
-        "Monitor assigned samples, continue technical encoding, and progress testing work.",
+        "Progress registered samples through standards checking, testing, and review preparation.",
     };
   }, [isSeniorTechnician, isQAEngineer]);
 
@@ -137,67 +116,153 @@ export default function WorkflowPage() {
     setTimeout(() => setToast(""), 2500);
   }
 
-  function updateItem(sampleId, updates) {
-    setItems((prev) =>
-      prev.map((item) =>
-        item.id === sampleId
-          ? {
-              ...item,
-              ...updates,
-              updatedAt: new Date().toLocaleString(),
-            }
-          : item
-      )
-    );
+  function mapSampleToWorkflowItem(sample) {
+    const aiConfidence =
+      typeof sample.ai_confidence_score === "number"
+        ? Math.round(sample.ai_confidence_score)
+        : 0;
+
+    return {
+      id: sample.sample_id,
+      dbId: sample.id,
+      material: getMaterialLabel(sample.material_type),
+      type: sample.material_type,
+      branch: normalizeBranch(sample.branch_id),
+      client: sample.client_name,
+      project: sample.project_id,
+      assignedTo:
+        sample.current_state === "For Review"
+          ? "QA Engineer"
+          : sample.current_state === "Released"
+          ? "QA Engineer"
+          : sample.current_state === "Archived"
+          ? "QA Engineer"
+          : "Lab Technician",
+      status: sample.current_state,
+      aiConfidence,
+      needsValidation: aiConfidence > 0 && aiConfidence < 85,
+      updatedAt: sample.updated_at
+        ? new Date(sample.updated_at).toLocaleString()
+        : sample.created_at
+        ? new Date(sample.created_at).toLocaleString()
+        : "—",
+      raw: sample,
+    };
   }
 
-  function handleStartTesting(sampleId) {
-    updateItem(sampleId, {
-      status: "In Test",
-      assignedTo: currentUser?.name || "Technician",
-    });
-    showToast("Sample moved to In Test.");
+  async function fetchWorkflowItems(showRefreshState = false) {
+    try {
+      if (showRefreshState) setRefreshing(true);
+      setLoading(true);
+
+      const token = localStorage.getItem("access_token");
+
+      if (!token) {
+        throw new Error("You are not logged in.");
+      }
+
+      const response = await fetch(`${API_BASE_URL}/api/samples`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          typeof data?.detail === "string"
+            ? data.detail
+            : "Failed to fetch workflow items."
+        );
+      }
+
+      const normalized = Array.isArray(data)
+        ? data.map(mapSampleToWorkflowItem)
+        : [];
+
+      setItems(normalized);
+    } catch (error) {
+      console.error("Failed to fetch workflow items:", error);
+      showToast(error.message || "Failed to load workflow.");
+      setItems([]);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   }
 
-  function handleFinalizeForReview(sampleId) {
-    updateItem(sampleId, {
-      status: "For Review",
-      assignedTo: "QA Engineer",
-    });
+  useEffect(() => {
+    fetchWorkflowItems();
+  }, []);
+
+  async function updateSampleState(sampleId, currentState) {
+    try {
+      const token = localStorage.getItem("access_token");
+
+      if (!token) {
+        throw new Error("You are not logged in.");
+      }
+
+      const response = await fetch(
+        `${API_BASE_URL}/api/samples/${sampleId}/status`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            current_state: currentState,
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          typeof data?.detail === "string"
+            ? data.detail
+            : "Failed to update workflow status."
+        );
+      }
+
+      await fetchWorkflowItems();
+    } catch (error) {
+      console.error("Failed to update state:", error);
+      showToast(error.message || "Failed to update sample state.");
+    }
+  }
+
+  async function handleMoveToUpToStandard(sampleId) {
+    await updateSampleState(sampleId, "Up-To-Standard");
+    showToast("Sample moved to Up-To-Standard.");
+  }
+
+  async function handleMoveToInTesting(sampleId) {
+    await updateSampleState(sampleId, "In Testing");
+    showToast("Sample moved to In Testing.");
+  }
+
+  async function handleMoveToForReview(sampleId) {
+    await updateSampleState(sampleId, "For Review");
     showToast("Sample moved to For Review.");
   }
 
-  function handleConfirmValidation(sampleId) {
-    updateItem(sampleId, {
-      needsValidation: false,
-      assignedTo: "Technician",
-    });
-    showToast("Manual validation confirmed.");
-  }
-
-  function handleOverrideValidation(sampleId) {
-    updateItem(sampleId, {
-      needsValidation: false,
-      assignedTo: "Technician",
-      status: "Registered",
-    });
-    showToast("AI result overridden and validation recorded.");
-  }
-
-  function handleAuthorizeRelease(sampleId) {
-    updateItem(sampleId, {
-      status: "Released",
-      assignedTo: "QA Engineer",
-    });
+  async function handleAuthorizeRelease(sampleId) {
+    await updateSampleState(sampleId, "Released");
     showToast("Sample released successfully.");
   }
 
-  function handleReturnToInTest(sampleId) {
-    updateItem(sampleId, {
-      status: "In Test",
-      assignedTo: "Technician",
-    });
-    showToast("Sample returned to In Test.");
+  async function handleArchive(sampleId) {
+    await updateSampleState(sampleId, "Archived");
+    showToast("Sample archived.");
+  }
+
+  function handleOpenValidation(sampleId) {
+    router.push(`/technical/tracking/${sampleId}`);
   }
 
   const filteredItems = useMemo(() => {
@@ -211,7 +276,10 @@ export default function WorkflowPage() {
       base = base.filter((item) => item.needsValidation);
     } else if (isQAEngineer) {
       base = base.filter(
-        (item) => item.status === "For Review" || item.status === "Released"
+        (item) =>
+          item.status === "For Review" ||
+          item.status === "Released" ||
+          item.status === "Archived"
       );
     }
 
@@ -242,7 +310,10 @@ export default function WorkflowPage() {
 
   const stats = useMemo(() => {
     const registered = items.filter((item) => item.status === "Registered").length;
-    const inTest = items.filter((item) => item.status === "In Test").length;
+    const upToStandard = items.filter(
+      (item) => item.status === "Up-To-Standard"
+    ).length;
+    const inTesting = items.filter((item) => item.status === "In Testing").length;
     const forReview = items.filter((item) => item.status === "For Review").length;
     const released = items.filter((item) => item.status === "Released").length;
     const validation = items.filter((item) => item.needsValidation).length;
@@ -251,8 +322,8 @@ export default function WorkflowPage() {
       return [
         { label: "Needs Validation", value: validation },
         { label: "Registered", value: registered },
-        { label: "In Test", value: inTest },
-        { label: "For Review", value: forReview },
+        { label: "Up-To-Standard", value: upToStandard },
+        { label: "In Testing", value: inTesting },
       ];
     }
 
@@ -260,16 +331,16 @@ export default function WorkflowPage() {
       return [
         { label: "For Review", value: forReview },
         { label: "Released", value: released },
-        { label: "Pending Validation", value: validation },
+        { label: "Needs Validation", value: validation },
         { label: "Review Queue", value: forReview + released },
       ];
     }
 
     return [
       { label: "Registered", value: registered },
-      { label: "In Test", value: inTest },
+      { label: "Up-To-Standard", value: upToStandard },
+      { label: "In Testing", value: inTesting },
       { label: "For Review", value: forReview },
-      { label: "Released", value: released },
     ];
   }, [items, isSeniorTechnician, isQAEngineer]);
 
@@ -279,7 +350,8 @@ export default function WorkflowPage() {
         { label: "Validation Queue", value: "validation" },
         { label: "All Statuses", value: "all" },
         { label: "Registered", value: "registered" },
-        { label: "In Test", value: "in_test" },
+        { label: "Up-To-Standard", value: "up-to-standard" },
+        { label: "In Testing", value: "in_testing" },
       ];
     }
 
@@ -288,19 +360,22 @@ export default function WorkflowPage() {
         { label: "All Statuses", value: "all" },
         { label: "For Review", value: "for_review" },
         { label: "Released", value: "released" },
+        { label: "Archived", value: "archived" },
       ];
     }
 
     return [
       { label: "All Statuses", value: "all" },
       { label: "Registered", value: "registered" },
-      { label: "In Test", value: "in_test" },
+      { label: "Up-To-Standard", value: "up-to-standard" },
+      { label: "In Testing", value: "in_testing" },
       { label: "For Review", value: "for_review" },
       { label: "Released", value: "released" },
+      { label: "Archived", value: "archived" },
     ];
   }, [isSeniorTechnician, isQAEngineer]);
 
-    const actionBaseStyle = {
+  const actionBaseStyle = {
     minHeight: "42px",
     borderRadius: "12px",
     padding: "10px 14px",
@@ -363,12 +438,21 @@ export default function WorkflowPage() {
             <button
               type="button"
               style={primaryActionStyle}
-              onClick={() => handleStartTesting(item.id)}
+              onClick={() => handleMoveToUpToStandard(item.id)}
+            >
+              <CheckCircle size={16} weight="bold" />
+              <span>Mark Up-To-Standard</span>
+            </button>
+          ) : item.status === "Up-To-Standard" ? (
+            <button
+              type="button"
+              style={primaryActionStyle}
+              onClick={() => handleMoveToInTesting(item.id)}
             >
               <ArrowClockwise size={16} weight="bold" />
               <span>Start Testing</span>
             </button>
-          ) : item.status === "In Test" ? (
+          ) : item.status === "In Testing" ? (
             <>
               <button
                 type="button"
@@ -376,13 +460,13 @@ export default function WorkflowPage() {
                 onClick={() => router.push(`/technical/tracking/${item.id}`)}
               >
                 <ClipboardText size={16} weight="bold" />
-                <span>Continue Encoding</span>
+                <span>Continue Testing</span>
               </button>
 
               <button
                 type="button"
                 style={secondaryActionStyle}
-                onClick={() => handleFinalizeForReview(item.id)}
+                onClick={() => handleMoveToForReview(item.id)}
               >
                 <Medal size={16} weight="bold" />
                 <span>Move to For Review</span>
@@ -409,7 +493,7 @@ export default function WorkflowPage() {
           <button
             type="button"
             style={secondaryActionStyle}
-            onClick={() => router.push(`/technical/tracking/${item.id}`)}
+            onClick={() => handleOpenValidation(item.id)}
           >
             <Eye size={16} weight="bold" />
             <span>Review Details</span>
@@ -417,20 +501,11 @@ export default function WorkflowPage() {
 
           <button
             type="button"
-            style={secondaryActionStyle}
-            onClick={() => handleConfirmValidation(item.id)}
-          >
-            <CheckCircle size={16} weight="bold" />
-            <span>Confirm AI Result</span>
-          </button>
-
-          <button
-            type="button"
             style={primaryActionStyle}
-            onClick={() => handleOverrideValidation(item.id)}
+            onClick={() => handleOpenValidation(item.id)}
           >
             <FloppyDisk size={16} weight="bold" />
-            <span>Override Result</span>
+            <span>Open Validation</span>
           </button>
         </>
       );
@@ -452,10 +527,10 @@ export default function WorkflowPage() {
             <button
               type="button"
               style={secondaryActionStyle}
-              onClick={() => handleReturnToInTest(item.id)}
+              onClick={() => handleMoveToInTesting(item.id)}
             >
               <ArrowClockwise size={16} weight="bold" />
-              <span>Return to In Test</span>
+              <span>Return to In Testing</span>
             </button>
 
             <button
@@ -467,6 +542,15 @@ export default function WorkflowPage() {
               <span>Authorize Release</span>
             </button>
           </>
+        ) : item.status === "Released" ? (
+          <button
+            type="button"
+            style={secondaryActionStyle}
+            onClick={() => handleArchive(item.id)}
+          >
+            <FloppyDisk size={16} weight="bold" />
+            <span>Archive</span>
+          </button>
         ) : (
           <button
             type="button"
@@ -493,6 +577,15 @@ export default function WorkflowPage() {
           </div>
 
           <div className="headerActions">
+            <button
+              type="button"
+              className="topButton"
+              onClick={() => fetchWorkflowItems(true)}
+              disabled={refreshing}
+            >
+              {refreshing ? "Refreshing..." : "Refresh"}
+            </button>
+
             <button
               type="button"
               className="topButton"
@@ -551,64 +644,66 @@ export default function WorkflowPage() {
           </div>
 
           <div className="cardList">
-            {filteredItems.map((item) => (
-              <div key={item.id} className="workflowCard">
-                <div className="cardTop">
-                  <div>
-                    <strong>{item.id}</strong>
-                    <p className="materialText">{item.material}</p>
-                  </div>
-
-                  <div className="topBadges">
-                    {item.needsValidation && (
-                      <span className="validationBadge">LOW CONFIDENCE</span>
-                    )}
-                    <span className={`statusBadge ${getStatusClass(item.status)}`}>
-                      {item.status}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="detailsGrid">
-                  <div>
-                    <span className="label">Client</span>
-                    <p>{item.client}</p>
-                  </div>
-
-                  <div>
-                    <span className="label">Project</span>
-                    <p>{item.project}</p>
-                  </div>
-
-                  <div>
-                    <span className="label">Branch</span>
-                    <p>{item.branch}</p>
-                  </div>
-
-                  <div>
-                    <span className="label">Assigned To</span>
-                    <p>{item.assignedTo}</p>
-                  </div>
-
-                  <div>
-                    <span className="label">AI Confidence</span>
-                    <p>{item.aiConfidence}%</p>
-                  </div>
-
-                  <div>
-                    <span className="label">Updated At</span>
-                    <p>{item.updatedAt}</p>
-                  </div>
-                </div>
-
-                <div className="actionRow">{renderActions(item)}</div>
-              </div>
-            ))}
-
-            {filteredItems.length === 0 && (
+            {loading ? (
+              <div className="emptyState">Loading workflow items...</div>
+            ) : filteredItems.length === 0 ? (
               <div className="emptyState">
                 No workflow items matched your current filters.
               </div>
+            ) : (
+              filteredItems.map((item) => (
+                <div key={item.id} className="workflowCard">
+                  <div className="cardTop">
+                    <div>
+                      <strong>{item.id}</strong>
+                      <p className="materialText">{item.material}</p>
+                    </div>
+
+                    <div className="topBadges">
+                      {item.needsValidation && (
+                        <span className="validationBadge">LOW CONFIDENCE</span>
+                      )}
+                      <span className={`statusBadge ${getStatusClass(item.status)}`}>
+                        {item.status}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="detailsGrid">
+                    <div>
+                      <span className="label">Client</span>
+                      <p>{item.client}</p>
+                    </div>
+
+                    <div>
+                      <span className="label">Project</span>
+                      <p>{item.project}</p>
+                    </div>
+
+                    <div>
+                      <span className="label">Branch</span>
+                      <p>{item.branch}</p>
+                    </div>
+
+                    <div>
+                      <span className="label">Assigned To</span>
+                      <p>{item.assignedTo}</p>
+                    </div>
+
+                    <div>
+                      <span className="label">AI Confidence</span>
+                      <p>{item.aiConfidence ? `${item.aiConfidence}%` : "—"}</p>
+                    </div>
+
+                    <div>
+                      <span className="label">Updated At</span>
+                      <p>{item.updatedAt}</p>
+                    </div>
+                  </div>
+
+                  <div className="actionRow">{renderActions(item)}</div>
+                </div>
+              ))
             )}
           </div>
         </div>
@@ -681,9 +776,14 @@ export default function WorkflowPage() {
           transition: all 0.2s ease;
         }
 
-        .topButton:hover {
+        .topButton:hover:not(:disabled) {
           border-color: #9ca3af;
           background: #f8fafc;
+        }
+
+        .topButton:disabled {
+          opacity: 0.7;
+          cursor: not-allowed;
         }
 
         .statsRow {
@@ -827,7 +927,7 @@ export default function WorkflowPage() {
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          min-width: 96px;
+          min-width: 108px;
           padding: 6px 10px;
           border-radius: 999px;
           font-size: 11px;
@@ -837,6 +937,11 @@ export default function WorkflowPage() {
         .statusBadge.registered {
           background: #eff6ff;
           color: #1d4ed8;
+        }
+
+        .statusBadge.standard {
+          background: #ede9fe;
+          color: #6d28d9;
         }
 
         .statusBadge.testing {
@@ -852,6 +957,11 @@ export default function WorkflowPage() {
         .statusBadge.released {
           background: #ecfdf5;
           color: #047857;
+        }
+
+        .statusBadge.archived {
+          background: #f3f4f6;
+          color: #6b7280;
         }
 
         .detailsGrid {
@@ -882,63 +992,6 @@ export default function WorkflowPage() {
           margin-top: 8px;
           padding-top: 16px;
           border-top: 1px solid #e5e7eb;
-        }
-
-        .actionButton {
-          min-height: 42px;
-          border-radius: 12px;
-          padding: 10px 14px;
-          font-size: 12px;
-          font-weight: 700;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          gap: 8px;
-          line-height: 1;
-          white-space: nowrap;
-          transition: all 0.2s ease;
-        }
-
-        .actionButton span {
-          color: inherit;
-        }
-
-        .actionButton :global(svg) {
-          flex-shrink: 0;
-        }
-
-        .primaryAction {
-          border: none;
-          background: #080026;
-          color: #ffffff;
-          cursor: pointer;
-          box-shadow: 0 4px 10px rgba(8, 0, 38, 0.16);
-        }
-
-        .primaryAction:hover {
-          background: #14004a;
-          transform: translateY(-1px);
-        }
-
-        .secondaryAction {
-          border: 1px solid #cbd5e1;
-          background: #ffffff;
-          color: #1f2937;
-          cursor: pointer;
-          box-shadow: 0 2px 6px rgba(15, 23, 42, 0.05);
-        }
-
-        .secondaryAction:hover {
-          border-color: #94a3b8;
-          background: #f8fafc;
-          transform: translateY(-1px);
-        }
-
-        .mutedAction {
-          border: 1px solid #e5e7eb;
-          background: #f3f4f6;
-          color: #9ca3af;
-          cursor: not-allowed;
         }
 
         .emptyState {
@@ -978,7 +1031,6 @@ export default function WorkflowPage() {
             flex-direction: column;
           }
 
-          .actionButton,
           .topButton {
             width: 100%;
           }

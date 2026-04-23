@@ -14,6 +14,7 @@ import {
 } from "phosphor-react";
 
 const API_BASE_URL = "http://localhost:8000";
+const REVIEW_THRESHOLD = 85;
 
 const BRANCH_OPTIONS = [
   { label: "Marikina", value: "marikina" },
@@ -30,23 +31,23 @@ const MATERIAL_PRESETS = {
     notes:
       "Confidence meets threshold. Classification may proceed to automatic registration.",
   },
-  cement: {
-    label: "Cement / Ready-mix",
-    confidence: 82,
-    badge: "MANUAL REVIEW",
-    status: "Pending Validation",
-    color: "orange",
-    notes:
-      "Confidence is below threshold. Senior Technician review is required before progression.",
-  },
   soil: {
-    label: "Soil / Aggregate",
+    label: "Soil Aggregates",
     confidence: 88,
     badge: "AUTO-ACCEPT",
     status: "Registered",
     color: "blue",
     notes:
       "Classification is accepted and ready for digital registration.",
+  },
+  rsb: {
+    label: "Reinforcing Steel Bar (RSB)",
+    confidence: 82,
+    badge: "FOR REVIEW",
+    status: "For Review",
+    color: "orange",
+    notes:
+      "Confidence is below threshold. Sample will automatically be routed to For Review.",
   },
 };
 
@@ -146,7 +147,8 @@ export default function TechnicalIntakePage() {
         predictedLabel: preset.label,
         confidence: preset.confidence,
         decision: preset.badge,
-        finalStatus: preset.status,
+        finalStatus:
+          preset.confidence < REVIEW_THRESHOLD ? "For Review" : "Registered",
         color: preset.color,
         notes: preset.notes,
         modelVersion: "vision-cnn-v1.0.3",
@@ -182,6 +184,9 @@ export default function TechnicalIntakePage() {
           project_id: form.project,
           material_type: result.predictedLabel,
           notes: `Captured by ${form.personnel}. Source image: ${imageName}`,
+          ai_predicted_label: result.predictedLabel,
+          ai_confidence_score: result.confidence,
+          model_version: result.modelVersion,
         }),
       });
 
@@ -196,9 +201,9 @@ export default function TechnicalIntakePage() {
       }
 
       showToast(
-        result.confidence >= 85
-          ? "Sample registered successfully."
-          : "Sample saved and routed for senior validation."
+        result.confidence < REVIEW_THRESHOLD
+          ? "Sample saved and automatically routed to For Review."
+          : "Sample registered successfully."
       );
 
       router.push("/technical/registry");
@@ -336,8 +341,8 @@ export default function TechnicalIntakePage() {
                 <Dropdown
                   options={[
                     { label: "Mock: Concrete", value: "concrete" },
-                    { label: "Mock: Cement / Ready-mix", value: "cement" },
-                    { label: "Mock: Soil / Aggregate", value: "soil" },
+                    { label: "Mock: Soil Aggregates", value: "soil" },
+                    { label: "Mock: Reinforcing Steel Bar (RSB)", value: "rsb" },
                   ]}
                   value={selectedMockType}
                   onChange={setSelectedMockType}
@@ -401,11 +406,11 @@ export default function TechnicalIntakePage() {
                   </div>
                 </div>
 
-                {result.confidence < 85 ? (
+                {result.confidence < REVIEW_THRESHOLD ? (
                   <div className="notice warningNotice">
                     <WarningCircle size={16} />
-                    Senior Technician manual validation is required before this
-                    sample can proceed normally in the workflow.
+                    Confidence is below threshold, so this sample will automatically
+                    be routed to For Review.
                   </div>
                 ) : (
                   <div className="notice successNotice">
