@@ -94,6 +94,9 @@ export const apiClient = {
   getSample: (id) => request(`/api/samples/${id}`),
   getReviews: () => request("/api/reviews"),
   getAuditLogs: () => request("/audit-logs"),
+  getAccountingDashboard: () => request("/api/accounting/dashboard"),
+  getAccountingBilling: () => request("/api/accounting/billing"),
+  getAccountingInvoices: () => request("/api/accounting/invoices"),
 
   classify: (fd) =>
     request("/api/classify", {
