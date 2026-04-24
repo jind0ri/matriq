@@ -32,9 +32,13 @@ export default function RegistryPage() {
         <div className="header">
           <div>
             <h1>Sample Registry</h1>
-            <p className="description">All classified and registered samples.</p>
+            <p className="description">
+              All classified and registered samples.
+            </p>
           </div>
-          <button className="refresh-btn" onClick={loadSamples}>Refresh</button>
+          <button className="refresh-btn" onClick={loadSamples}>
+            Refresh
+          </button>
         </div>
 
         {loading && <div className="card">Loading samples...</div>}
@@ -62,8 +66,28 @@ export default function RegistryPage() {
                     <td>{item.sample_id}</td>
                     <td>{item.client_name || "-"}</td>
                     <td>{item.project_reference || "-"}</td>
-                    <td>{item.material_type || item.ai_predicted_label || "-"}</td>
-                    <td>{item.current_state || "-"}</td>
+                    <td>
+                      {item.material_type || item.ai_predicted_label || "-"}
+                    </td>
+                    <td>
+                      <span
+                        className={`status ${
+                          item.current_state === "Registered"
+                            ? "registered"
+                            : item.current_state === "For Review"
+                              ? "review"
+                              : item.current_state === "In Testing"
+                                ? "testing"
+                                : item.current_state === "Released"
+                                  ? "released"
+                                  : item.current_state === "Archived"
+                                    ? "archived"
+                                    : "unknown"
+                        }`}
+                      >
+                        {item.current_state || "Unknown"}
+                      </span>
+                    </td>
                     <td>
                       {typeof item.ai_confidence_score === "number"
                         ? `${Math.round(item.ai_confidence_score * 100)}%`
@@ -72,7 +96,10 @@ export default function RegistryPage() {
                     <td>{item.decision || "-"}</td>
                     <td>{item.model_version || "-"}</td>
                     <td>
-                      <Link href={`/technical/tracking/${item.sample_id}`} className="view-link">
+                      <Link
+                        href={`/technical/tracking/${item.sample_id}`}
+                        className="view-link"
+                      >
                         View
                       </Link>
                     </td>
@@ -167,6 +194,45 @@ export default function RegistryPage() {
           color: #b91c1c;
           border-color: #fecaca;
           background: #fff7f7;
+        }
+
+        .status {
+          padding: 6px 12px;
+          border-radius: 999px;
+          font-size: 12px;
+          font-weight: 800;
+          display: inline-block;
+          white-space: nowrap;
+        }
+
+        .registered {
+          background: #eef2ff;
+          color: #3730a3;
+        }
+
+        .review {
+          background: #fff7ed;
+          color: #c2410c;
+        }
+
+        .testing {
+          background: #fef9c3;
+          color: #854d0e;
+        }
+
+        .released {
+          background: #ecfdf5;
+          color: #047857;
+        }
+
+        .archived {
+          background: #f1f5f9;
+          color: #334155;
+        }
+
+        .unknown {
+          background: #f3f4f6;
+          color: #374151;
         }
       `}</style>
     </>

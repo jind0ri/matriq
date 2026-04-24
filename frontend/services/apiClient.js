@@ -105,4 +105,10 @@ export const apiClient = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+
+  updateSampleStatus: (sampleId, payload) =>
+    request(`/api/samples/${sampleId}/status`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
 };

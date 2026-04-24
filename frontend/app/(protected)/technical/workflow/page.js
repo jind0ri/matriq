@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { apiClient } from "@/services/apiClient";
+import { apiClient, getStoredUser } from "@/services/apiClient";
 
 export default function WorkflowPage() {
+  const user = getStoredUser();
   const [dashboard, setDashboard] = useState(null);
   const [reviews, setReviews] = useState([]);
   const [error, setError] = useState("");
@@ -12,6 +13,7 @@ export default function WorkflowPage() {
   async function loadData() {
     setLoading(true);
     setError("");
+
     try {
       const [dashData, reviewData] = await Promise.all([
         apiClient.getDashboard(),
@@ -24,6 +26,21 @@ export default function WorkflowPage() {
       setError(err.message || "Failed to load workflow.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleValidation(sample_id, decision) {
+    try {
+      await apiClient.validate({
+        sample_id,
+        corrected_label: "Concrete",
+        justification: "Validated by Senior Technician",
+        decision,
+      });
+
+      await loadData();
+    } catch (err) {
+      alert(err.message || "Validation failed");
     }
   }
 
@@ -68,8 +85,12 @@ export default function WorkflowPage() {
 
             <div className="section">
               <h2>Recent Review Cases</h2>
+
               <div className="list">
-                {reviews.length === 0 && <div className="card">No review cases found.</div>}
+                {reviews.length === 0 && (
+                  <div className="card">No review cases found.</div>
+                )}
+
                 {reviews.map((item) => (
                   <div className="card" key={item.sample_id}>
                     <div className="row">
@@ -77,7 +98,12 @@ export default function WorkflowPage() {
                         <div className="label">Sample ID</div>
                         <div className="value">{item.sample_id}</div>
                       </div>
-                      <div className={`pill ${item.status === "Mandatory Override" ? "danger" : "warn"}`}>
+
+                      <div
+                        className={`pill ${
+                          item.status === "Mandatory Override" ? "danger" : "warn"
+                        }`}
+                      >
                         {item.status}
                       </div>
                     </div>
@@ -87,14 +113,17 @@ export default function WorkflowPage() {
                         <div className="label">Client</div>
                         <div className="value">{item.client_name || "-"}</div>
                       </div>
+
                       <div>
                         <div className="label">Project</div>
                         <div className="value">{item.project_id || "-"}</div>
                       </div>
+
                       <div>
                         <div className="label">Predicted</div>
                         <div className="value">{item.predicted_label || "-"}</div>
                       </div>
+
                       <div>
                         <div className="label">Confidence</div>
                         <div className="value">
@@ -104,6 +133,28 @@ export default function WorkflowPage() {
                         </div>
                       </div>
                     </div>
+
+                    {user?.role === "Senior Technician" && (
+                      <div className="actions">
+                        <button
+                          className="approveButton"
+                          onClick={() =>
+                            handleValidation(item.sample_id, "approve")
+                          }
+                        >
+                          Approve
+                        </button>
+
+                        <button
+                          className="rejectButton"
+                          onClick={() =>
+                            handleValidation(item.sample_id, "reject")
+                          }
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -118,6 +169,7 @@ export default function WorkflowPage() {
           background: #f7f7fb;
           min-height: 100vh;
         }
+
         .header {
           display: flex;
           justify-content: space-between;
@@ -125,20 +177,24 @@ export default function WorkflowPage() {
           gap: 16px;
           margin-bottom: 20px;
         }
+
         h1 {
           margin: 0 0 6px;
           font-size: 28px;
           color: #000000;
         }
+
         h2 {
           margin: 0 0 12px;
           font-size: 20px;
           color: #000000;
         }
+
         p {
           margin: 0;
           color: #000000;
         }
+
         button {
           border: none;
           border-radius: 12px;
@@ -148,12 +204,14 @@ export default function WorkflowPage() {
           background: #14003a;
           color: #fff;
         }
+
         .stats {
           display: grid;
           grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
           gap: 16px;
           margin-bottom: 22px;
         }
+
         .statCard,
         .card {
           background: #fff;
@@ -162,28 +220,34 @@ export default function WorkflowPage() {
           padding: 18px;
           box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
         }
+
         .statCard span {
           display: block;
           color: #000000;
           font-size: 13px;
           margin-bottom: 8px;
         }
+
         .statCard strong {
           font-size: 30px;
           color: #000000;
         }
+
         .error {
           color: #b91c1c;
           border-color: #fecaca;
           background: #fff7f7;
         }
+
         .section {
           margin-top: 10px;
         }
+
         .list {
           display: grid;
           gap: 14px;
         }
+
         .row {
           display: flex;
           justify-content: space-between;
@@ -191,11 +255,13 @@ export default function WorkflowPage() {
           gap: 12px;
           margin-bottom: 12px;
         }
+
         .grid {
           display: grid;
           grid-template-columns: repeat(2, 1fr);
           gap: 12px;
         }
+
         .label {
           font-size: 12px;
           color: #000000;
@@ -203,24 +269,42 @@ export default function WorkflowPage() {
           text-transform: uppercase;
           letter-spacing: 0.04em;
         }
+
         .value {
           font-size: 15px;
           font-weight: 600;
           color: #000000;
         }
+
         .pill {
           border-radius: 999px;
           padding: 8px 12px;
           font-size: 12px;
           font-weight: 700;
         }
+
         .warn {
           background: #fff7ed;
           color: #c2410c;
         }
+
         .danger {
           background: #fef2f2;
           color: #b91c1c;
+        }
+
+        .actions {
+          margin-top: 12px;
+          display: flex;
+          gap: 10px;
+        }
+
+        .approveButton {
+          background: #16a34a;
+        }
+
+        .rejectButton {
+          background: #dc2626;
         }
       `}</style>
     </>

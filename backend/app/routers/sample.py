@@ -244,3 +244,56 @@ def technical_dashboard(
         ip_address=request.client.host if request.client else None,
     )
     return data
+
+@router.patch("/samples/{sample_id}/status")
+def update_sample_status(
+    sample_id: str,
+    payload: dict,
+    request: Request,
+    current_user=Depends(require_roles(ROLE_QA, ROLE_ADMIN)),
+):
+    item = get_sample(sample_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Sample not found")
+
+    new_state = payload.get("status")
+
+    if new_state not in {"Released", "Archived"}:
+        raise HTTPException(status_code=400, detail="Invalid status")
+
+    from ..database import execute
+
+    is_immutable = new_state in {"Released", "Archived"}
+
+    execute(
+        """
+        UPDATE samples
+        SET
+            status = %s,
+            current_state = %s,
+            is_immutable = %s,
+            decision = %s,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE sample_id = %s
+        """,
+        (
+            new_state,
+            new_state,
+            is_immutable,
+            new_state,
+            sample_id,
+        ),
+    )
+
+    updated = get_sample(sample_id)
+
+    log_event(
+        action="UPDATE_SAMPLE_STATUS",
+        endpoint_accessed=f"/api/samples/{sample_id}/status",
+        user_id=current_user["user_id"],
+        sample_id=sample_id,
+        new_value={"status": new_state},
+        ip_address=request.client.host if request.client else None,
+    )
+
+    return updated
