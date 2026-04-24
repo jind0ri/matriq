@@ -2,6 +2,7 @@ from __future__ import annotations
 import json
 from typing import Any
 from uuid import uuid4
+from datetime import datetime
 
 from ..database import execute, fetchall, fetchone
 
@@ -26,8 +27,36 @@ def _make_id() -> str:
     return str(uuid4())
 
 
-def _make_sample_id() -> str:
-    return f"S-{uuid4().hex[:12].upper()}"
+def _make_sample_id(branch_id: int) -> str:
+    branch_code_map = {
+        1: "MAR",  # Marikina
+        2: "PAT",  # Pateros
+    }
+
+    prefix = branch_code_map.get(int(branch_id), "BR")
+    year = datetime.now().year
+
+    row = fetchone(
+        """
+        SELECT sample_id
+        FROM samples
+        WHERE sample_id LIKE %s
+        ORDER BY sample_id DESC
+        LIMIT 1
+        """,
+        (f"{prefix}-{year}-%",),
+    )
+
+    if row and row.get("sample_id"):
+        try:
+            last_number = int(row["sample_id"].split("-")[-1])
+            next_number = last_number + 1
+        except:
+            next_number = 1
+    else:
+        next_number = 1
+
+    return f"{prefix}-{year}-{next_number:03d}"
 
 
 def _sample_projection_query() -> str:
@@ -154,7 +183,7 @@ def create_sample_only(
         """,
         (
             _make_id(),
-            _make_sample_id(),
+            _make_sample_id(branch_id),
             client_name,
             project_reference,
             str(branch_id),

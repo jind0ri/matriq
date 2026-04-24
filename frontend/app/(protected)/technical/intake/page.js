@@ -12,11 +12,18 @@ export default function Page() {
   const router = useRouter();
   const user = getStoredUser();
 
+  const userBranchId = Number(user?.branch_id || 1);
+
+  const branchLabelMap = {
+    1: "Matest Marikina",
+    2: "Matest Pateros",
+  };
+
   const [form, setForm] = useState({
     clientName: "",
     projectId: "",
-    branchLabel: "Main Laboratory - Marikina",
-    branchId: 1,
+    branchLabel: branchLabelMap[userBranchId] || `Branch ${userBranchId}`,
+    branchId: userBranchId,
     staff: user?.name || "Current User",
     file: null,
   });
@@ -61,7 +68,7 @@ export default function Page() {
         source: "frontend-intake",
         branch_label: form.branchLabel,
         original_filename: form.file?.name || null,
-      })
+      }),
     );
 
     try {
@@ -84,13 +91,18 @@ export default function Page() {
     <>
       <div className="page">
         <div className="titleRow">
-          <button className="backButton" onClick={() => router.push("/technical")}>
+          <button
+            className="backButton"
+            onClick={() => router.push("/technical")}
+          >
             <ArrowLeft size={28} />
           </button>
 
           <div className="pageHeader">
             <h1>SAMPLE INTAKE TERMINAL</h1>
-            <p>Coordinate physical sample handover with digital responsibility</p>
+            <p>
+              Coordinate physical sample handover with digital responsibility
+            </p>
           </div>
         </div>
 
@@ -150,7 +162,11 @@ export default function Page() {
 
                 {previewUrl ? (
                   <>
-                    <img src={previewUrl} alt="preview" className="previewImage" />
+                    <img
+                      src={previewUrl}
+                      alt="preview"
+                      className="previewImage"
+                    />
                     <label
                       htmlFor="sample-upload"
                       className="uploadTrigger secondaryUpload"
@@ -187,8 +203,8 @@ export default function Page() {
                   {isAnalyzing
                     ? "Analyzing..."
                     : createdSampleId
-                    ? "Sample Created"
-                    : "Analyze Image"}
+                      ? "Sample Created"
+                      : "Analyze Image"}
                 </Button>
 
                 {error && <p className="errorText">{error}</p>}
@@ -212,7 +228,8 @@ export default function Page() {
 
                 {result?.manual_review_queue?.review_case_id && (
                   <p className="helperText">
-                    Queued for review as {result.manual_review_queue.review_case_id}.
+                    Queued for review as{" "}
+                    {result.manual_review_queue.review_case_id}.
                   </p>
                 )}
               </div>
@@ -223,18 +240,28 @@ export default function Page() {
                     <Sparkle size={18} />
                     <span>ANALYSIS RESULT</span>
                   </div>
-                  <div className="resultBadge">{result?.decision || "PENDING"}</div>
+                  <div className="resultBadge">
+                    {result?.decision || "PENDING"}
+                  </div>
                 </div>
 
                 <div className="resultGrid">
                   <div>
                     <p className="resultLabel">CLASSIFICATION</p>
-                    <h3>{result?.predicted_label_db || result?.predicted_label || "-"}</h3>
+                    <h3>
+                      {result?.predicted_label_db ||
+                        result?.predicted_label ||
+                        "-"}
+                    </h3>
                   </div>
 
                   <div>
                     <p className="resultLabel">CONFIDENCE</p>
-                    <h3>{confidencePercent !== null ? `${confidencePercent}%` : "-"}</h3>
+                    <h3>
+                      {confidencePercent !== null
+                        ? `${confidencePercent}%`
+                        : "-"}
+                    </h3>
                   </div>
 
                   <div>

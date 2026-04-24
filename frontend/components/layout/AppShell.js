@@ -53,7 +53,11 @@ export default function AppShell({
 
         <div className="mainArea">
           <Header
-            branch={branch}
+            branch={
+              user?.branch_id === 2
+                ? "Matest Pateros"
+                : "Matest Marikina"
+            }
             onMenuClick={() => setSidebarOpen(true)}
             onLogout={handleLogout}
           />
