@@ -53,6 +53,34 @@ def _sample_projection_query() -> str:
     """
 
 
+def find_active_duplicate_sample(
+    *,
+    client_name: str,
+    project_reference: str,
+    material_type: str,
+    branch_id: int,
+):
+    return fetchone(
+        """
+        SELECT sample_id, status AS current_state
+        FROM samples
+        WHERE lower(client_name) = lower(%s)
+          AND lower(COALESCE(project_reference, project_id)) = lower(%s)
+          AND lower(material_type) = lower(%s)
+          AND branch_id = %s
+          AND status NOT IN ('Released', 'Archived')
+        ORDER BY created_at DESC
+        LIMIT 1
+        """,
+        (
+            client_name.strip(),
+            project_reference.strip(),
+            material_type.strip(),
+            str(branch_id),
+        ),
+    )
+
+
 def create_sample_only(
     *,
     client_name: str,
@@ -204,6 +232,18 @@ def create_sample_with_inference(
     user_id_for_audit: int,
     original_state: str | None = None,
 ):
+    duplicate = find_active_duplicate_sample(
+        client_name=client_name,
+        project_reference=project_reference,
+        material_type=predicted_label_db,
+        branch_id=branch_id,
+    )
+
+    if duplicate:
+        raise ValueError(
+            f"Duplicate active sample already exists: {duplicate['sample_id']}"
+        )
+
     return create_sample_only(
         client_name=client_name,
         project_reference=project_reference,
@@ -267,11 +307,14 @@ def list_reviews() -> list[dict]:
         """,
         ("Manual-Review",),
     )
+
     output = []
+
     for row in rows:
         _parse_json_field(row, "device_metadata")
         confidence = float(row["confidence_score"] or 0)
         status = "Mandatory Override" if confidence < 0.70 else "Pending Review"
+
         output.append(
             {
                 "review_case_id": f"SAMPLE-{row['sample_id']}",
@@ -281,7 +324,9 @@ def list_reviews() -> list[dict]:
                 "branch_id": row["branch_id"],
                 "predicted_label": row["predicted_label"],
                 "confidence_score": confidence,
-                "decision": "MANDATORY_OVERRIDE" if confidence < 0.70 else "MANUAL_REVIEW_QUEUE",
+                "decision": "MANDATORY_OVERRIDE"
+                if confidence < 0.70
+                else "MANUAL_REVIEW_QUEUE",
                 "status": status,
                 "out_of_scope": confidence < 0.75,
                 "model_version": row.get("model_version"),
@@ -289,9 +334,10 @@ def list_reviews() -> list[dict]:
                 "corrected_label": None,
                 "justification": row.get("notes"),
                 "reviewed_by": None,
-                "image_path": row.get("image_path"),  # FIX: expose image_path to frontend
+                "image_path": row.get("image_path"),
             }
         )
+
     return output
 
 
@@ -299,8 +345,15 @@ def get_review_by_sample_id(sample_id: str) -> dict | None:
     return next((item for item in list_reviews() if item["sample_id"] == sample_id), None)
 
 
-def complete_review(*, sample_id: str, corrected_label_db: str, justification: str, reviewed_by: int):
+def complete_review(
+    *,
+    sample_id: str,
+    corrected_label_db: str,
+    justification: str,
+    reviewed_by: int,
+):
     sample_before = get_sample(sample_id)
+
     if not sample_before:
         raise ValueError("Sample not found.")
 
@@ -317,10 +370,17 @@ def complete_review(*, sample_id: str, corrected_label_db: str, justification: s
             updated_at = CURRENT_TIMESTAMP
         WHERE sample_id = %s
         """,
-        # FIX: decision updated to 'Completed' so list_reviews() (which filters
-        # by decision = 'Manual-Review') no longer returns this sample.
-        (corrected_label_db, "Registered", "Registered", True, justification, "Completed", sample_id),
+        (
+            corrected_label_db,
+            "Registered",
+            "Registered",
+            True,
+            justification,
+            "Completed",
+            sample_id,
+        ),
     )
+
     return get_sample(sample_id)
 
 
@@ -330,6 +390,7 @@ def dashboard() -> dict:
     pending_manual = [x for x in reviews if x["status"] == "Pending Review"]
     mandatory = [x for x in reviews if x["status"] == "Mandatory Override"]
     completed = [x for x in reviews if x["status"] == "Completed"]
+
     return {
         "registered": len(samples),
         "manual_review": len(pending_manual),
