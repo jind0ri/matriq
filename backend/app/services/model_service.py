@@ -181,14 +181,19 @@ def predict(pil_image: Image.Image) -> dict:
 
     if pre['quality_flags']:
         confidence = max(0.0, confidence - 0.08 * len(pre['quality_flags']))
-    out_of_scope = confidence < OUT_OF_SCOPE_THRESHOLD
+
+    confidence = round(float(confidence), 6)
+
     return {
         'predicted_label': predicted_label,
         'predicted_label_db': LABEL_TO_DB[predicted_label],
-        'confidence_score': round(float(confidence), 6),
-        'out_of_scope': out_of_scope,
+        'confidence_score': confidence,
+        'out_of_scope': False,
         'model_version': meta['version_number'],
         'version_id': meta.get('version_id'),
         'provider': provider,
-        'preprocessing': {'quality_flags': pre['quality_flags'], 'blur_score': round(pre['blur_score'], 4)},
+        'preprocessing': {
+            'quality_flags': pre['quality_flags'],
+            'blur_score': round(pre['blur_score'], 4)
+        },
     }
