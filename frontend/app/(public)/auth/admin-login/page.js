@@ -3,8 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft } from "phosphor-react";
-import { MOCK_USERS } from "@/lib/mockUsers";
-import { getRedirectByRole } from "@/lib/roleRedirect";
+import { apiClient, saveAuthSession } from "@/services/apiClient";
 
 export default function AdminLoginPage() {
   const router = useRouter();
@@ -27,23 +26,23 @@ export default function AdminLoginPage() {
     setError("");
   }
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
+    setError("");
 
-    const user = MOCK_USERS.find(
-      (item) =>
-        item.email.toLowerCase() === form.email.toLowerCase() &&
-        item.password === form.password &&
-        item.role === "admin",
-    );
+    try {
+      const payload = await apiClient.login(form.email, form.password);
 
-    if (!user) {
-      setError("Invalid admin credentials.");
-      return;
+      if (payload.role !== "Administrator") {
+        setError("This login is for administrators only.");
+        return;
+      }
+
+      saveAuthSession(payload);
+      router.push("/admin");
+    } catch (err) {
+      setError(err.message || "Invalid admin credentials.");
     }
-
-    localStorage.setItem("user", JSON.stringify(user));
-    router.push(getRedirectByRole(user.role));
   }
 
   return (

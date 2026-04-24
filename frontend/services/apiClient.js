@@ -93,6 +93,7 @@ export const apiClient = {
   getSamples: () => request("/api/samples"),
   getSample: (id) => request(`/api/samples/${id}`),
   getReviews: () => request("/api/reviews"),
+  getAuditLogs: () => request("/audit-logs"),
 
   classify: (fd) =>
     request("/api/classify", {
