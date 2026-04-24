@@ -13,10 +13,14 @@ MATRIQ AI INTEGRATED RUN INSTRUCTIONS
 
 2. BACKEND SETUP
 - Go to backend/
+- IMPORTANT: Use Python 3.12 (not 3.13). Python 3.13 has compatibility issues with numpy 1.26.4.
+  Check your version: python --version
+  If using py launcher on Windows: py -3.12 -m venv .venv
 - Create a virtual environment:
   python -m venv .venv
-  .\.venv\Scripts\Activate.ps1
-  On Windows: .venv\Scripts\activate
+  On Windows PowerShell: .\.venv\Scripts\Activate.ps1
+  On Windows CMD: .venv\Scripts\activate
+  On Mac/Linux: source .venv/bin/activate
 - Install dependencies:
   pip install -r requirements.txt
 - Optional quick verification that the shipped CNN artifact can be loaded:
@@ -24,17 +28,20 @@ MATRIQ AI INTEGRATED RUN INSTRUCTIONS
   Expected output starts with: REAL_MODEL_LOAD_OK
 - Start the API:
   uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+  Note: If port 8000 is already in use, use a different port (e.g., --port 8001)
+        and update frontend/.env.local accordingly.
 
 3. FRONTEND SETUP
 - Go to frontend/
-- Copy env example if needed:
-  cp .env.local.example .env.local
-  On Windows: copy .env.local.example .env.local
+- Create .env.local with the backend API URL:
+  NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000
+  NEXT_PUBLIC_API_URL=http://127.0.0.1:8000
+  (Change port if backend is running on a different port)
 - Install dependencies:
   npm install
 - Start frontend:
   npm run dev
-- Default frontend API target is http://127.0.0.1:8000
+- Frontend runs at http://localhost:3000
 
 4. REAL MODEL NOTE
 - backend/.env currently enables the shipped pretrained CNN:
@@ -46,11 +53,16 @@ MATRIQ AI INTEGRATED RUN INSTRUCTIONS
 - Login as Lab Technician:
   jon@matriq.com / tech123
 - Go to /technical/intake
-- Upload a valid JPG or PNG sample image and classify it
+- You can now either:
+  - Click "Use Camera" to capture an image directly from your device camera
+  - Click "Upload File" to select an existing image file
+- Upload or capture a valid JPG or PNG sample image and classify it
 - Expected routing:
   - confidence >= 85% -> auto accepted and auto registered
   - confidence 70% to 84% -> manual review queue
   - confidence < 70% -> mandatory override
+- Anomaly detection: Non-construction-material images (faces, random objects) will receive
+  reduced confidence scores and warnings to prevent incorrect auto-acceptance.
 - Login as Senior Technician:
   senior@matriq.com / senior123
 - Go to /technical/validation and complete manual override cases
@@ -61,5 +73,13 @@ MATRIQ AI INTEGRATED RUN INSTRUCTIONS
   pytest -q
 - These tests verify auth, classify flow, /api/samples, /api/reviews, /api/validate, and dashboard behavior.
 
-7. IMPORTANT
+7. NEW FEATURES (April 2026)
+- Camera Capture: Users can now capture sample images directly using device camera
+- Anomaly Detection: AI safeguard that detects non-material images (faces, random objects)
+  and reduces confidence to route them to manual review instead of auto-accepting
+- Improved UI: Color-coded confidence scores, decision badges, and routing alerts
+
+8. IMPORTANT
 - Rotate your database password after testing because it was shared in chat.
+- Required Python version: 3.12 (3.13 not supported due to numpy compatibility)
+- Backend dependencies include: passlib, bcrypt (for password hashing)
