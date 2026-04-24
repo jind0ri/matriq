@@ -13,12 +13,24 @@ export default function BillingPage() {
     setError("");
 
     try {
-      const res = await apiClient.getAccountingBilling();
+      const res = await apiClient.getSamples(); // 🔥 CHANGE: use all samples
       setItems(Array.isArray(res) ? res : []);
     } catch (err) {
-      setError(err.message || "Failed to load billing queue.");
+      setError(err.message || "Failed to load billing data.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function updatePayment(sampleId, status) {
+    try {
+      await apiClient.updateSamplePayment(sampleId, {
+        payment_status: status,
+      });
+
+      await loadData();
+    } catch (err) {
+      alert(err.message || "Payment update failed");
     }
   }
 
@@ -30,8 +42,8 @@ export default function BillingPage() {
     <div className="page">
       <div className="header">
         <div>
-          <h1>Billing Queue</h1>
-          <p>Released samples ready for invoice generation.</p>
+          <h1>Payment Management</h1>
+          <p>Manage payment status before testing and release.</p>
         </div>
 
         <button onClick={loadData}>Refresh</button>
@@ -43,39 +55,69 @@ export default function BillingPage() {
       {!loading && !error && (
         <div className="list">
           {items.length === 0 && (
-            <div className="card">No samples ready for billing.</div>
+            <div className="card">No samples found.</div>
           )}
 
-          {items.map((item) => (
-            <div key={item.sample_id} className="card">
-              <div className="row">
-                <strong>{item.sample_id}</strong>
+          {items.map((item) => {
+            const payment =
+              item.device_metadata?.payment || {};
 
-                <span className="pill ready">Ready</span>
-              </div>
+            return (
+              <div key={item.sample_id} className="card">
+                <div className="row">
+                  <strong>{item.sample_id}</strong>
 
-              <div className="grid">
-                <div>
-                  <span>Client</span>
-                  <p>{item.client_name || "-"}</p>
+                  <span className="pill">
+                    {payment.payment_status || "Unpaid"}
+                  </span>
                 </div>
 
-                <div>
-                  <span>Material</span>
-                  <p>{item.material_type || "-"}</p>
+                <div className="grid">
+                  <div>
+                    <span>Client</span>
+                    <p>{item.client_name || "-"}</p>
+                  </div>
+
+                  <div>
+                    <span>Status</span>
+                    <p>{item.current_state}</p>
+                  </div>
+
+                  <div>
+                    <span>Payment Method</span>
+                    <p>{payment.payment_requirement || "-"}</p>
+                  </div>
                 </div>
 
-                <div>
-                  <span>Branch</span>
-                  <p>{item.branch_id || "-"}</p>
+                <div className="actions">
+                  <button
+                    onClick={() =>
+                      updatePayment(item.sample_id, "Downpayment Paid")
+                    }
+                  >
+                    50% Downpayment
+                  </button>
+
+                  <button
+                    onClick={() =>
+                      updatePayment(item.sample_id, "PO Submitted")
+                    }
+                  >
+                    PO Submitted
+                  </button>
+
+                  <button
+                    className="full"
+                    onClick={() =>
+                      updatePayment(item.sample_id, "Fully Paid")
+                    }
+                  >
+                    Fully Paid
+                  </button>
                 </div>
               </div>
-
-              <div className="actions">
-                <button className="primary">Generate Invoice</button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -92,21 +134,6 @@ export default function BillingPage() {
 
         h1 {
           margin: 0;
-          font-size: 24px;
-        }
-
-        p {
-          margin: 4px 0 0;
-          color: #555;
-        }
-
-        button {
-          background: #080026;
-          color: white;
-          border: none;
-          border-radius: 10px;
-          padding: 10px 14px;
-          cursor: pointer;
         }
 
         .list {
@@ -131,36 +158,32 @@ export default function BillingPage() {
           display: grid;
           grid-template-columns: repeat(3, 1fr);
           gap: 10px;
-          margin-bottom: 10px;
-        }
-
-        span {
-          font-size: 12px;
-          color: #666;
-        }
-
-        p {
-          margin: 2px 0 0;
-          font-weight: 600;
         }
 
         .pill {
+          background: #eef2ff;
           padding: 6px 10px;
           border-radius: 999px;
           font-size: 11px;
           font-weight: 700;
         }
 
-        .ready {
-          background: #eff6ff;
-          color: #1d4ed8;
-        }
-
         .actions {
-          margin-top: 10px;
+          margin-top: 12px;
+          display: flex;
+          gap: 8px;
         }
 
-        .primary {
+        button {
+          background: #080026;
+          color: white;
+          border: none;
+          border-radius: 10px;
+          padding: 8px 12px;
+          cursor: pointer;
+        }
+
+        .full {
           background: #16a34a;
         }
 

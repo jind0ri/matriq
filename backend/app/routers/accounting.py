@@ -1,3 +1,6 @@
+import json
+from fastapi import HTTPException
+
 from fastapi import APIRouter, Depends
 
 from ..config import ROLE_ACCOUNTING, ROLE_ADMIN
@@ -117,3 +120,58 @@ def get_invoices(
         )
 
     return invoices
+
+@router.patch("/samples/{sample_id}/payment")
+def update_sample_payment(
+    sample_id: str,
+    payload: dict,
+    current_user=Depends(require_roles(ROLE_ACCOUNTING, ROLE_ADMIN)),
+):
+    from ..database import execute
+    from ..services.sample_service import get_sample
+
+    item = get_sample(sample_id)
+
+    if not item:
+        raise HTTPException(status_code=404, detail="Sample not found")
+
+    metadata = item.get("device_metadata") or {}
+    payment = metadata.get("payment") or {}
+
+    payment_status = payload.get("payment_status")
+    amount_paid = payload.get("amount_paid")
+    balance = payload.get("balance")
+    billing_notes = payload.get("billing_notes")
+
+    if payment_status not in {
+        "Unpaid",
+        "Downpayment Paid",
+        "PO Submitted",
+        "Fully Paid",
+    }:
+        raise HTTPException(status_code=400, detail="Invalid payment status")
+
+    payment["payment_status"] = payment_status
+
+    if amount_paid is not None:
+        payment["amount_paid"] = amount_paid
+
+    if balance is not None:
+        payment["balance"] = balance
+
+    if billing_notes is not None:
+        payment["billing_notes"] = billing_notes
+
+    metadata["payment"] = payment
+
+    execute(
+        """
+        UPDATE samples
+        SET device_metadata = %s,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE sample_id = %s
+        """,
+        (json.dumps(metadata), sample_id),
+    )
+
+    return get_sample(sample_id)

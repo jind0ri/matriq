@@ -391,9 +391,9 @@ def complete_review(
         raise ValueError("Invalid decision")
     
     if decision == "approve":
-        new_status = "Released"
-        new_state = "Released"
-        is_immutable = True
+        new_status = "Registered"
+        new_state = "Registered"
+        is_immutable = False
         new_decision = "Approved"
     else:
         new_status = "In Testing"

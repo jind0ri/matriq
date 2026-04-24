@@ -15,16 +15,34 @@ export default function Page() {
   const userBranchId = Number(user?.branch_id || 1);
 
   const branchLabelMap = {
-    1: "Matest Marikina",
-    2: "Matest Pateros",
+    1: "Main Laboratory - Marikina",
+    2: "Pateros Branch",
   };
 
   const [form, setForm] = useState({
     clientName: "",
+    clientAddress: "",
     projectId: "",
+    structureDetails: "",
+    requestedTestType: "",
     branchLabel: branchLabelMap[userBranchId] || `Branch ${userBranchId}`,
     branchId: userBranchId,
     staff: user?.name || "Current User",
+
+    clientType: "Walk-in",
+    paymentRequirement: "50% Downpayment or Full Payment",
+    paymentStatus: "Unpaid",
+    amountPaid: "",
+    balance: "",
+    billingNotes: "",
+
+    actualSampleChecked: false,
+    voidsCracks: "",
+    weight: "",
+    diameter: "",
+    referenceTestIds: "",
+    conditionNotes: "",
+
     file: null,
   });
 
@@ -62,12 +80,42 @@ export default function Page() {
     fd.append("client_name", form.clientName.trim());
     fd.append("project_id", form.projectId.trim());
     fd.append("branch_id", String(form.branchId));
+
     fd.append(
       "device_metadata",
       JSON.stringify({
         source: "frontend-intake",
         branch_label: form.branchLabel,
         original_filename: form.file?.name || null,
+
+        trf: {
+          client_name: form.clientName.trim(),
+          client_address: form.clientAddress.trim(),
+          project_identifier: form.projectId.trim(),
+          structure_details: form.structureDetails.trim(),
+          requested_test_type: form.requestedTestType.trim(),
+          registry_branch: form.branchLabel,
+          branch_id: form.branchId,
+          terminal_staff: form.staff,
+        },
+
+        payment: {
+          client_type: form.clientType,
+          payment_requirement: form.paymentRequirement,
+          payment_status: form.paymentStatus,
+          amount_paid: form.amountPaid,
+          balance: form.balance,
+          billing_notes: form.billingNotes.trim(),
+        },
+
+        test_slip: {
+          actual_sample_checked: form.actualSampleChecked,
+          voids_cracks: form.voidsCracks.trim(),
+          weight: form.weight.trim(),
+          diameter: form.diameter.trim(),
+          reference_test_ids: form.referenceTestIds.trim(),
+          condition_notes: form.conditionNotes.trim(),
+        },
       }),
     );
 
@@ -101,34 +149,55 @@ export default function Page() {
           <div className="pageHeader">
             <h1>SAMPLE INTAKE TERMINAL</h1>
             <p>
-              Coordinate physical sample handover with digital responsibility
+              Register TRF, payment, sample slip, and AI classification data.
             </p>
           </div>
         </div>
 
         <div className="grid">
           <Card
-            title="Client & Project Metadata"
-            subtitle="Enter the basic information for the sample registration."
+            title="Client & TRF Metadata"
+            subtitle="Capture test request form details for sample registration."
           >
             <div className="form">
               <Input
                 label="Client / Contractor"
-                name="clientName"
                 value={form.clientName}
                 onChange={(e) => updateForm({ clientName: e.target.value })}
               />
 
               <Input
+                label="Client Address"
+                value={form.clientAddress}
+                onChange={(e) => updateForm({ clientAddress: e.target.value })}
+              />
+
+              <Input
                 label="Project Identifier"
-                name="projectId"
                 value={form.projectId}
                 onChange={(e) => updateForm({ projectId: e.target.value })}
               />
 
               <Input
+                label="Structure / Design Details"
+                value={form.structureDetails}
+                onChange={(e) =>
+                  updateForm({ structureDetails: e.target.value })
+                }
+                placeholder="e.g. SLAB 3000 psi @ 7 days"
+              />
+
+              <Input
+                label="Requested Test Type"
+                value={form.requestedTestType}
+                onChange={(e) =>
+                  updateForm({ requestedTestType: e.target.value })
+                }
+                placeholder="e.g. Concrete Compression Test"
+              />
+
+              <Input
                 label="Registry Branch"
-                name="branch"
                 value={form.branchLabel}
                 onChange={() => {}}
                 readOnly
@@ -136,10 +205,130 @@ export default function Page() {
 
               <Input
                 label="Terminal Staff"
-                name="staff"
                 value={form.staff}
                 onChange={() => {}}
                 readOnly
+              />
+            </div>
+          </Card>
+
+          <Card
+            title="Payment Information"
+            subtitle="Record payment requirement before testing and release."
+          >
+            <div className="form">
+              <label className="field">
+                <span>Client Type</span>
+                <select
+                  value={form.clientType}
+                  onChange={(e) => updateForm({ clientType: e.target.value })}
+                >
+                  <option>Walk-in</option>
+                  <option>Quotation</option>
+                </select>
+              </label>
+
+              <label className="field">
+                <span>Payment Method</span>
+                <select
+                  value={form.paymentRequirement}
+                  onChange={(e) =>
+                    updateForm({ paymentRequirement: e.target.value })
+                  }
+                >
+                  <option>50% Downpayment</option>
+                  <option>Full Payment</option>
+                  <option>Purchase Order</option>
+                </select>
+              </label>
+
+              <label className="field">
+                <span>Payment Status</span>
+                <select
+                  value={form.paymentStatus}
+                  onChange={(e) =>
+                    updateForm({ paymentStatus: e.target.value })
+                  }
+                >
+                  <option>Unpaid</option>
+                  <option>Downpayment Paid</option>
+                  <option>Purchase Order Provided</option>
+                  <option>Fully Paid</option>
+                </select>
+              </label>
+
+              <Input
+                label="Amount Paid"
+                value={form.amountPaid}
+                onChange={(e) => updateForm({ amountPaid: e.target.value })}
+                placeholder="e.g. 2500"
+              />
+
+              <Input
+                label="Balance"
+                value={form.balance}
+                onChange={(e) => updateForm({ balance: e.target.value })}
+                placeholder="e.g. 2500"
+              />
+
+              <Input
+                label="Billing Notes"
+                value={form.billingNotes}
+                onChange={(e) => updateForm({ billingNotes: e.target.value })}
+              />
+            </div>
+          </Card>
+
+          <Card
+            title="Lab Tech Test Slip"
+            subtitle="Record physical sample inspection before testing."
+          >
+            <div className="form">
+              <label className="checkField">
+                <input
+                  type="checkbox"
+                  checked={form.actualSampleChecked}
+                  onChange={(e) =>
+                    updateForm({ actualSampleChecked: e.target.checked })
+                  }
+                />
+                <span>Actual sample checked</span>
+              </label>
+
+              <Input
+                label="Voids / Cracks Observed"
+                value={form.voidsCracks}
+                onChange={(e) => updateForm({ voidsCracks: e.target.value })}
+                placeholder="e.g. No visible cracks"
+              />
+
+              <Input
+                label="Weight"
+                value={form.weight}
+                onChange={(e) => updateForm({ weight: e.target.value })}
+                placeholder="e.g. 8.2 kg"
+              />
+
+              <Input
+                label="Diameter"
+                value={form.diameter}
+                onChange={(e) => updateForm({ diameter: e.target.value })}
+                placeholder="e.g. 150 mm"
+              />
+
+              <Input
+                label="Reference Test IDs"
+                value={form.referenceTestIds}
+                onChange={(e) =>
+                  updateForm({ referenceTestIds: e.target.value })
+                }
+                placeholder="e.g. CT-001, CT-002"
+              />
+
+              <Input
+                label="Condition Notes"
+                value={form.conditionNotes}
+                onChange={(e) => updateForm({ conditionNotes: e.target.value })}
               />
             </div>
           </Card>
@@ -197,6 +386,7 @@ export default function Page() {
                     !form.file ||
                     !form.clientName.trim() ||
                     !form.projectId.trim() ||
+                    !form.requestedTestType.trim() ||
                     !!createdSampleId
                   }
                 >
@@ -299,16 +489,63 @@ export default function Page() {
           cursor: pointer;
         }
 
+        .pageHeader h1 {
+          margin: 0;
+          font-size: 24px;
+        }
+
+        .pageHeader p {
+          margin: 4px 0 0;
+          color: #64748b;
+        }
+
         .grid {
           display: grid;
           grid-template-columns: 1fr 1fr;
           gap: 20px;
+          align-items: start;
         }
 
         .form {
           display: grid;
           grid-template-columns: 1fr 1fr;
           gap: 16px;
+        }
+
+        .field {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .field span {
+          font-size: 13px;
+          font-weight: 700;
+          color: #334155;
+        }
+
+        select {
+          height: 44px;
+          border: 1px solid #d1d5db;
+          border-radius: 12px;
+          padding: 0 12px;
+          background: #fff;
+          color: #111827;
+        }
+
+        .checkField {
+          grid-column: span 2;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          font-size: 14px;
+          font-weight: 700;
+          color: #334155;
+        }
+
+        .checkField input {
+          width: 18px;
+          height: 18px;
         }
 
         .panel {
@@ -351,6 +588,23 @@ export default function Page() {
           background: white;
         }
 
+        .cameraIconWrap {
+          color: #cbd5e1;
+          margin-bottom: 10px;
+        }
+
+        .uploadText {
+          margin: 10px 0 0;
+          color: #64748b;
+          font-size: 13px;
+        }
+
+        .actions {
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+
         .resultGrid {
           display: grid;
           grid-template-columns: 1fr 1fr;
@@ -388,6 +642,12 @@ export default function Page() {
           margin-bottom: 4px;
         }
 
+        .resultGrid h3 {
+          margin: 0;
+          font-size: 15px;
+          color: #111827;
+        }
+
         .helperText {
           font-size: 13px;
           color: #475569;
@@ -420,6 +680,10 @@ export default function Page() {
           .form,
           .resultGrid {
             grid-template-columns: 1fr;
+          }
+
+          .checkField {
+            grid-column: span 1;
           }
         }
       `}</style>

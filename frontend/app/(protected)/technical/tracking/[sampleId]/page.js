@@ -31,6 +31,13 @@ export default function TrackingDetailPage() {
   }
 
   async function handleRelease() {
+    const paymentStatus = item?.device_metadata?.payment?.payment_status;
+
+    if (paymentStatus !== "Fully Paid" && user?.role !== "Administrator") {
+      alert("Cannot release sample. Payment must be fully paid first.");
+      return;
+    }
+
     try {
       await apiClient.updateSampleStatus(sampleId, {
         status: "Released",
@@ -58,26 +65,56 @@ export default function TrackingDetailPage() {
     loadSample();
   }, [sampleId]);
 
+  const metadata = item?.device_metadata || {};
+  const trf = metadata.trf || {};
+  const payment = metadata.payment || {};
+  const testSlip = metadata.test_slip || {};
+
+  const paymentStatus = item?.device_metadata?.payment?.payment_status;
+
+  const canStartTesting =
+    item &&
+    item.current_state === "Registered" &&
+    (user?.role === "Lab Technician" || user?.role === "Administrator");
+
+  const canSubmitForReview =
+    item &&
+    item.current_state === "In Testing" &&
+    (user?.role === "Senior Technician" || user?.role === "Administrator");
+
   const canRelease =
     item &&
-    !item.is_immutable &&
     item.current_state === "For Review" &&
     (user?.role === "QA Engineer" || user?.role === "Administrator");
-
-  const canForceRelease =
-    item &&
-    !item.is_immutable &&
-    item.current_state !== "Released" &&
-    item.current_state !== "Archived" &&
-    user?.role === "Administrator";
 
   const canArchive =
     item &&
     item.current_state === "Released" &&
     (user?.role === "QA Engineer" || user?.role === "Administrator");
 
-  const isReadOnly =
-    item?.is_immutable || item?.current_state === "Archived";
+  const isReadOnly = item?.is_immutable || item?.current_state === "Archived";
+
+  async function handleStartTesting() {
+    try {
+      await apiClient.updateSampleStatus(sampleId, {
+        status: "In Testing",
+      });
+      await loadSample();
+    } catch (err) {
+      alert(err.message || "Failed to start testing");
+    }
+  }
+
+  async function handleSubmitForReview() {
+    try {
+      await apiClient.updateSampleStatus(sampleId, {
+        status: "For Review",
+      });
+      await loadSample();
+    } catch (err) {
+      alert(err.message || "Failed to submit for review");
+    }
+  }
 
   return (
     <>
@@ -88,7 +125,7 @@ export default function TrackingDetailPage() {
               ← Back to Registry
             </Link>
             <h1>Sample Tracking Detail</h1>
-            <p>Detailed view of one classified sample.</p>
+            <p>Detailed view of sample, TRF, payment, and test slip data.</p>
           </div>
         </div>
 
@@ -97,106 +134,123 @@ export default function TrackingDetailPage() {
         {!loading && error && <div className="card error">{error}</div>}
 
         {!loading && !error && item && (
-          <div className="card">
-            <div className="top">
-              <div>
-                <div className="label">Sample ID</div>
-                <div className="value big">{item.sample_id}</div>
-              </div>
-
-              <div className="pill">{item.current_state || "Unknown"}</div>
-            </div>
-
-            {isReadOnly && (
-              <div className="readOnlyBox">
-                This sample is read-only because it is immutable or archived.
-              </div>
-            )}
-
-            <div className="grid">
-              <div>
-                <div className="label">Client</div>
-                <div className="value">{item.client_name || "-"}</div>
-              </div>
-
-              <div>
-                <div className="label">Project</div>
-                <div className="value">{item.project_reference || "-"}</div>
-              </div>
-
-              <div>
-                <div className="label">Material Type</div>
-                <div className="value">{item.material_type || "-"}</div>
-              </div>
-
-              <div>
-                <div className="label">AI Predicted Label</div>
-                <div className="value">{item.ai_predicted_label || "-"}</div>
-              </div>
-
-              <div>
-                <div className="label">Confidence</div>
-                <div className="value">
-                  {typeof item.ai_confidence_score === "number"
-                    ? `${Math.round(item.ai_confidence_score * 100)}%`
-                    : "-"}
+          <div className="stack">
+            <div className="card">
+              <div className="top">
+                <div>
+                  <div className="label">Sample ID</div>
+                  <div className="value big">{item.sample_id}</div>
                 </div>
+
+                <div className="pill">{item.current_state || "Unknown"}</div>
               </div>
 
-              <div>
-                <div className="label">Decision</div>
-                <div className="value">{item.decision || "-"}</div>
-              </div>
-
-              <div>
-                <div className="label">Model Version</div>
-                <div className="value">{item.model_version || "-"}</div>
-              </div>
-
-              <div>
-                <div className="label">Branch ID</div>
-                <div className="value">{item.branch_id || "-"}</div>
-              </div>
-
-              <div>
-                <div className="label">Registered By</div>
-                <div className="value">{item.registered_by || "-"}</div>
-              </div>
-
-              <div>
-                <div className="label">Immutable</div>
-                <div className="value">{String(item.is_immutable)}</div>
-              </div>
-
-              <div>
-                <div className="label">Image Path</div>
-                <div className="value">{item.image_path || "-"}</div>
-              </div>
-
-              <div>
-                <div className="label">Timestamp</div>
-                <div className="value">
-                  {item.intake_timestamp || item.inference_timestamp || "-"}
+              {isReadOnly && (
+                <div className="readOnlyBox">
+                  This sample is read-only because it is immutable or archived.
                 </div>
+              )}
+
+              <div className="grid">
+                <Info label="Client" value={item.client_name} />
+                <Info label="Project" value={item.project_reference} />
+                <Info label="Material Type" value={item.material_type} />
+                <Info
+                  label="AI Predicted Label"
+                  value={item.ai_predicted_label}
+                />
+                <Info
+                  label="Confidence"
+                  value={
+                    typeof item.ai_confidence_score === "number"
+                      ? `${Math.round(item.ai_confidence_score * 100)}%`
+                      : "-"
+                  }
+                />
+                <Info label="Decision" value={item.decision} />
+                <Info label="Model Version" value={item.model_version} />
+                <Info label="Branch ID" value={item.branch_id} />
+                <Info label="Registered By" value={item.registered_by} />
+                <Info label="Immutable" value={String(item.is_immutable)} />
+                <Info label="Image Path" value={item.image_path} />
+                <Info
+                  label="Timestamp"
+                  value={item.intake_timestamp || item.inference_timestamp}
+                />
               </div>
             </div>
 
-            <div className="metadata">
-              <div className="label">Device Metadata</div>
-              <pre>{JSON.stringify(item.device_metadata || {}, null, 2)}</pre>
+            <Section title="Test Request Form / TRF">
+              <Info
+                label="Client Name"
+                value={trf.client_name || item.client_name}
+              />
+              <Info label="Client Address" value={trf.client_address} />
+              <Info
+                label="Project Identifier"
+                value={trf.project_identifier || item.project_reference}
+              />
+              <Info
+                label="Structure / Design Details"
+                value={trf.structure_details}
+              />
+              <Info
+                label="Requested Test Type"
+                value={trf.requested_test_type}
+              />
+              <Info label="Registry Branch" value={trf.registry_branch} />
+              <Info label="Terminal Staff" value={trf.terminal_staff} />
+            </Section>
+
+            <Section title="Payment Information">
+              <Info
+                label="Payment Method"
+                value={payment.payment_requirement}
+              />
+              <Info label="Payment Status" value={payment.payment_status} />
+              <Info label="Amount Paid" value={payment.amount_paid} />
+              <Info label="Balance" value={payment.balance} />
+              <Info label="Billing Notes" value={payment.billing_notes} />
+            </Section>
+
+            <Section title="Lab Tech Test Slip">
+              <Info
+                label="Actual Sample Checked"
+                value={testSlip.actual_sample_checked ? "Yes" : "No"}
+              />
+              <Info label="Voids / Cracks" value={testSlip.voids_cracks} />
+              <Info label="Weight" value={testSlip.weight} />
+              <Info label="Diameter" value={testSlip.diameter} />
+              <Info
+                label="Reference Test IDs"
+                value={testSlip.reference_test_ids}
+              />
+              <Info label="Condition Notes" value={testSlip.condition_notes} />
+            </Section>
+
+            <div className="card metadata">
+              <div className="label">Raw Device Metadata</div>
+              <pre>{JSON.stringify(metadata, null, 2)}</pre>
             </div>
 
-            {(canRelease || canForceRelease || canArchive) && (
+            {(canStartTesting ||
+              canSubmitForReview ||
+              canRelease ||
+              canArchive) && (
               <div className="actions">
-                {canRelease && (
-                  <button className="releaseButton" onClick={handleRelease}>
-                    Release
+                {canStartTesting && (
+                  <button onClick={handleStartTesting}>Start Testing</button>
+                )}
+
+                {canSubmitForReview && (
+                  <button onClick={handleSubmitForReview}>
+                    Submit for QA Review
                   </button>
                 )}
 
-                {canForceRelease && (
-                  <button className="forceButton" onClick={handleRelease}>
-                    Force Release
+                {canRelease && (
+                  <button className="releaseButton" onClick={handleRelease}>
+                    Release
                   </button>
                 )}
 
@@ -239,6 +293,12 @@ export default function TrackingDetailPage() {
         p {
           margin: 0;
           color: #000000;
+        }
+
+        .stack {
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
         }
 
         .card {
@@ -287,7 +347,6 @@ export default function TrackingDetailPage() {
           display: grid;
           grid-template-columns: repeat(2, 1fr);
           gap: 14px 18px;
-          margin-bottom: 20px;
         }
 
         .label {
@@ -319,7 +378,6 @@ export default function TrackingDetailPage() {
         }
 
         .actions {
-          margin-top: 20px;
           display: flex;
           gap: 10px;
           flex-wrap: wrap;
@@ -358,5 +416,68 @@ export default function TrackingDetailPage() {
         }
       `}</style>
     </>
+  );
+}
+
+function Info({ label, value }) {
+  return (
+    <div>
+      <div className="label">{label}</div>
+      <div className="value">{value || "-"}</div>
+
+      <style jsx>{`
+        .label {
+          font-size: 12px;
+          color: #000000;
+          margin-bottom: 4px;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+        }
+
+        .value {
+          font-size: 15px;
+          font-weight: 600;
+          color: #000000;
+          word-break: break-word;
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function Section({ title, children }) {
+  return (
+    <div className="card">
+      <h2>{title}</h2>
+      <div className="grid">{children}</div>
+
+      <style jsx>{`
+        .card {
+          background: #fff;
+          border: 1px solid #e7e7ef;
+          border-radius: 18px;
+          padding: 20px;
+          box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+        }
+
+        h2 {
+          margin: 0 0 16px;
+          font-size: 18px;
+          color: #000;
+        }
+
+        .grid {
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 14px 18px;
+        }
+
+        @media (max-width: 760px) {
+          .grid {
+            grid-template-columns: 1fr;
+          }
+        }
+      `}</style>
+    </div>
   );
 }

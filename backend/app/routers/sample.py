@@ -6,7 +6,8 @@ import hashlib
 import httpx
 from urllib.parse import urlparse, quote
 
-
+import json
+from datetime import datetime
 
 from ..config import ROLE_ACCOUNTING, ROLE_ADMIN, ROLE_QA, ROLE_SENIOR_TECH, ROLE_LAB_TECH
 from ..config import SUPABASE_URL, SUPABASE_SERVICE_KEY, SUPABASE_BUCKET
@@ -42,7 +43,7 @@ def create_sample(
 
     db_decision = "Auto-Accepted" if payload.decision == "AUTO_ACCEPTED" else "Manual-Review"
     state = "Registered" if payload.decision == "AUTO_ACCEPTED" else "For Review"
-    immutable = payload.decision == "AUTO_ACCEPTED"
+    immutable = False
 
     ai_predicted_label = (
         material_map.get(payload.ai_predicted_label, payload.ai_predicted_label)
@@ -189,6 +190,156 @@ def sample_image(
         media_type=image_resp.headers.get("content-type", "application/octet-stream"),
     )
 
+@router.get("/qa/pre-testing")
+def qa_pre_testing_queue(
+    current_user=Depends(require_roles(ROLE_QA, ROLE_ADMIN)),
+):
+    data = list_samples()
+
+    allowed_payment = {
+        "Downpayment Paid",
+        "PO Submitted",
+        "Fully Paid",
+    }
+
+    output = []
+
+    for item in data:
+        metadata = item.get("device_metadata") or {}
+        payment = metadata.get("payment") or {}
+        qa = metadata.get("qa") or {}
+
+        if (
+            item.get("current_state") == "Registered"
+            and payment.get("payment_status") in allowed_payment
+            and not qa.get("pre_testing_reviewed")
+        ):
+            output.append(item)
+
+    return output
+
+
+@router.get("/qa/release")
+def qa_release_queue(
+    current_user=Depends(require_roles(ROLE_QA, ROLE_ADMIN)),
+):
+    data = list_samples()
+    output = []
+
+    for item in data:
+        metadata = item.get("device_metadata") or {}
+        payment = metadata.get("payment") or {}
+
+        if (
+            item.get("current_state") == "For Review"
+            and payment.get("payment_status") == "Fully Paid"
+        ):
+            output.append(item)
+
+    return output
+
+
+@router.patch("/samples/{sample_id}/qa-pretesting")
+def qa_pretesting_review(
+    sample_id: str,
+    request: Request,
+    current_user=Depends(require_roles(ROLE_QA, ROLE_ADMIN)),
+):
+    from ..database import execute
+
+    item = get_sample(sample_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Sample not found")
+
+    if item.get("current_state") != "Registered":
+        raise HTTPException(status_code=400, detail="Only Registered samples can be reviewed before testing")
+
+    metadata = item.get("device_metadata") or {}
+    metadata["qa"] = metadata.get("qa") or {}
+    metadata["qa"]["pre_testing_reviewed"] = True
+    metadata["qa"]["pre_testing_reviewed_by"] = current_user["user_id"]
+    metadata["qa"]["pre_testing_reviewed_at"] = datetime.now().isoformat()
+
+    execute(
+        """
+        UPDATE samples
+        SET device_metadata = %s,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE sample_id = %s
+        """,
+        (json.dumps(metadata), sample_id),
+    )
+
+    log_event(
+        action="QA_PRE_TESTING_REVIEW",
+        endpoint_accessed=f"/api/samples/{sample_id}/qa-pretesting",
+        user_id=current_user["user_id"],
+        sample_id=sample_id,
+        new_value={"qa_pre_testing_reviewed": True},
+        ip_address=request.client.host if request.client else None,
+    )
+
+    return get_sample(sample_id)
+
+
+@router.patch("/samples/{sample_id}/qa-release")
+def qa_release_review(
+    sample_id: str,
+    request: Request,
+    current_user=Depends(require_roles(ROLE_QA, ROLE_ADMIN)),
+):
+    from ..database import execute
+
+    item = get_sample(sample_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Sample not found")
+
+    if item.get("current_state") != "For Review":
+        raise HTTPException(status_code=400, detail="Only For Review samples can be released")
+
+    metadata = item.get("device_metadata") or {}
+    payment_status = metadata.get("payment", {}).get("payment_status")
+
+    if payment_status != "Fully Paid" and current_user["role"] != ROLE_ADMIN:
+        raise HTTPException(status_code=400, detail="Full payment is required before release")
+
+    metadata["qa"] = metadata.get("qa") or {}
+    metadata["qa"]["release_reviewed"] = True
+    metadata["qa"]["release_reviewed_by"] = current_user["user_id"]
+    metadata["qa"]["release_reviewed_at"] = datetime.now().isoformat()
+
+    execute(
+        """
+        UPDATE samples
+        SET status = %s,
+            current_state = %s,
+            is_immutable = %s,
+            decision = %s,
+            device_metadata = %s,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE sample_id = %s
+        """,
+        (
+            "Released",
+            "Released",
+            True,
+            "Released",
+            json.dumps(metadata),
+            sample_id,
+        ),
+    )
+
+    log_event(
+        action="QA_RELEASE_REVIEW",
+        endpoint_accessed=f"/api/samples/{sample_id}/qa-release",
+        user_id=current_user["user_id"],
+        sample_id=sample_id,
+        new_value={"status": "Released"},
+        ip_address=request.client.host if request.client else None,
+    )
+
+    return get_sample(sample_id)
+
 @router.get("/samples/{sample_id}")
 def sample_detail(
     sample_id: str,
@@ -250,16 +401,90 @@ def update_sample_status(
     sample_id: str,
     payload: dict,
     request: Request,
-    current_user=Depends(require_roles(ROLE_QA, ROLE_ADMIN)),
+    current_user=Depends(
+        require_roles(
+            ROLE_LAB_TECH,
+            ROLE_SENIOR_TECH,
+            ROLE_QA,
+            ROLE_ADMIN,
+            ROLE_ACCOUNTING,
+        )
+    ),
 ):
     item = get_sample(sample_id)
     if not item:
         raise HTTPException(status_code=404, detail="Sample not found")
 
     new_state = payload.get("status")
-
-    if new_state not in {"Released", "Archived"}:
+    if new_state not in {"Registered", "In Testing", "For Review", "Released", "Archived"}:
         raise HTTPException(status_code=400, detail="Invalid status")
+
+    current_state = item.get("current_state")
+    role = current_user["role"]
+    metadata = item.get("device_metadata") or {}
+    payment = metadata.get("payment") or {}
+    payment_status = payment.get("payment_status")
+
+    allowed_initial_payment = {
+        "Downpayment Paid",
+        "PO Submitted",
+        "Fully Paid",
+    }
+
+    if current_state == "Archived":
+        raise HTTPException(status_code=400, detail="Archived samples cannot be modified")
+
+    if new_state == "In Testing":
+        if role not in {ROLE_LAB_TECH, ROLE_ADMIN}:
+            raise HTTPException(status_code=403, detail="Only Lab Technicians can start testing")
+
+        if current_state != "Registered":
+            raise HTTPException(status_code=400, detail="Only Registered samples can move to In Testing")
+
+        if payment_status not in allowed_initial_payment and role != ROLE_ADMIN:
+            raise HTTPException(
+                status_code=400,
+                detail="Initial payment or purchase order is required before testing",
+            )
+            
+        qa = metadata.get("qa") or {}
+
+        if not qa.get("pre_testing_reviewed") and role != ROLE_ADMIN:
+            raise HTTPException(
+                status_code=400,
+                detail="QA pre-testing review is required before testing",
+            )
+
+    elif new_state == "For Review":
+        if role not in {ROLE_SENIOR_TECH, ROLE_ADMIN}:
+            raise HTTPException(status_code=403, detail="Only Senior Technicians can submit for review")
+
+        if current_state != "In Testing":
+            raise HTTPException(status_code=400, detail="Only In Testing samples can move to For Review")
+
+    elif new_state == "Released":
+        if role not in {ROLE_QA, ROLE_ADMIN}:
+            raise HTTPException(status_code=403, detail="Only QA Engineers can release samples")
+
+        if current_state != "For Review" and role != ROLE_ADMIN:
+            raise HTTPException(status_code=400, detail="Only For Review samples can be released")
+
+        if payment_status != "Fully Paid" and role != ROLE_ADMIN:
+            raise HTTPException(
+                status_code=400,
+                detail="Full payment is required before releasing official reports",
+            )
+
+    elif new_state == "Archived":
+        if role not in {ROLE_QA, ROLE_ADMIN}:
+            raise HTTPException(status_code=403, detail="Only QA or Admin can archive samples")
+
+        if current_state != "Released":
+            raise HTTPException(status_code=400, detail="Only Released samples can be archived")
+
+    elif new_state == "Registered":
+        if role != ROLE_ADMIN:
+            raise HTTPException(status_code=403, detail="Only Admin can move samples back to Registered")
 
     from ..database import execute
 
@@ -292,7 +517,11 @@ def update_sample_status(
         endpoint_accessed=f"/api/samples/{sample_id}/status",
         user_id=current_user["user_id"],
         sample_id=sample_id,
-        new_value={"status": new_state},
+        new_value={
+            "from": current_state,
+            "to": new_state,
+            "payment_status": payment_status,
+        },
         ip_address=request.client.host if request.client else None,
     )
 

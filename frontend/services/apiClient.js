@@ -13,7 +13,7 @@ export function saveAuthSession(payload) {
       name: payload.name,
       user_id: payload.user_id,
       branch_id: payload.branch_id,
-    })
+    }),
   );
 }
 
@@ -115,5 +115,24 @@ export const apiClient = {
     request(`/api/samples/${sampleId}/status`, {
       method: "PATCH",
       body: JSON.stringify(payload),
+    }),
+
+  updateSamplePayment: (sampleId, payload) =>
+    request(`/api/accounting/samples/${sampleId}/payment`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+
+  getQaPreTestingQueue: () => request("/api/qa/pre-testing"),
+  getQaReleaseQueue: () => request("/api/qa/release"),
+
+  qaApprovePreTesting: (sampleId) =>
+    request(`/api/samples/${sampleId}/qa-pretesting`, {
+      method: "PATCH",
+    }),
+
+  qaApproveRelease: (sampleId) =>
+    request(`/api/samples/${sampleId}/qa-release`, {
+      method: "PATCH",
     }),
 };
