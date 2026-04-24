@@ -93,10 +93,11 @@ export const apiClient = {
   getSamples: () => request("/api/samples"),
   getSample: (id) => request(`/api/samples/${id}`),
   getReviews: () => request("/api/reviews"),
-  getAuditLogs: () => request("/audit-logs"),
+  getAuditLogs: () => request("/api/audit-logs"),
   getAccountingDashboard: () => request("/api/accounting/dashboard"),
   getAccountingBilling: () => request("/api/accounting/billing"),
   getAccountingInvoices: () => request("/api/accounting/invoices"),
+  getUsers: () => request("/api/users"),
 
   classify: (fd) =>
     request("/api/classify", {

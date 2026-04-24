@@ -38,7 +38,7 @@ const NAV_CONFIG = {
     { label: "Dashboard", href: "/admin", icon: SquaresFour },
     { label: "Users", href: "/admin/users", icon: Users },
     { label: "Branches", href: "/admin/branches", icon: Buildings },
-    { label: "Audit Logs", href: "/technical/audit", icon: ClipboardText },
+    { label: "Audit Logs", href: "/admin/audit-logs", icon: ClipboardText },
     { label: "Reports", href: "/admin/reports", icon: FileText },
   ],
   "Accounting Staff": [
