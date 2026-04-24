@@ -13,6 +13,7 @@ class ValidateRequest(BaseModel):
     sample_id: str
     corrected_label: str
     justification: str
+    decision: str  # "approve" or "reject"
 
 
 VALID_LABELS = {
@@ -43,6 +44,9 @@ def validate(
 
     if not payload.justification or not payload.justification.strip():
         raise HTTPException(status_code=400, detail="justification is required.")
+    
+    if payload.decision not in ["approve", "reject"]:
+        raise HTTPException(status_code=400, detail="decision must be 'approve' or 'reject'")
 
     review = get_review_by_sample_id(payload.sample_id)
     if not review:
@@ -56,11 +60,11 @@ def validate(
         corrected_label_db=corrected,
         justification=payload.justification.strip(),
         reviewed_by=current_user["user_id"],
+        decision=payload.decision,
     )
 
     log_event(
-        action="MANUAL_VALIDATION_SUBMITTED",
-        endpoint_accessed="/api/validate",
+        action="VALIDATION_APPROVED" if payload.decision == "approve" else "VALIDATION_REJECTED",        endpoint_accessed="/api/validate",
         user_id=current_user["user_id"],
         sample_id=None,
         new_value={
@@ -73,8 +77,9 @@ def validate(
 
     return {
         "success": True,
-        "message": "Manual override completed and sample updated.",
+        "message": f"Sample {'approved' if payload.decision == 'approve' else 'rejected'} successfully.",
         "sample_id": payload.sample_id,
         "final_label": corrected,
+        "decision": payload.decision,
         "sample_registration": sample,
     }

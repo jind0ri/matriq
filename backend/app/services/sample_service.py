@@ -351,11 +351,26 @@ def complete_review(
     corrected_label_db: str,
     justification: str,
     reviewed_by: int,
+    decision: str,
 ):
     sample_before = get_sample(sample_id)
 
     if not sample_before:
         raise ValueError("Sample not found.")
+    
+    if decision not in ["approve", "reject"]:
+        raise ValueError("Invalid decision")
+    
+    if decision == "approve":
+        new_status = "Released"
+        new_state = "Released"
+        is_immutable = True
+        new_decision = "Approved"
+    else:
+        new_status = "In Testing"
+        new_state = "In Testing"
+        is_immutable = False
+        new_decision = "Rejected"
 
     execute(
         """
@@ -372,11 +387,11 @@ def complete_review(
         """,
         (
             corrected_label_db,
-            "Registered",
-            "Registered",
-            True,
+            new_status,
+            new_state,
+            is_immutable,
             justification,
-            "Completed",
+            new_decision,
             sample_id,
         ),
     )
