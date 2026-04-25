@@ -7,11 +7,12 @@ export default function Table({
   renderRow,
   className = "",
   density = "comfortable",
+  variant = "default",
 }) {
   return (
     <>
-      <div className={["tableShell", density, className].join(" ")}>
-        <div className="tableWrap">
+      <div className={["matriqTable", density, variant, className].join(" ")}>
+        <div className="matriqTableWrap">
           <table>
             <thead>
               <tr>
@@ -19,6 +20,7 @@ export default function Table({
                   <th
                     key={column.key || column.label}
                     className={column.align === "right" ? "right" : ""}
+                    style={column.width ? { width: column.width } : undefined}
                   >
                     {column.label}
                   </th>
@@ -58,7 +60,7 @@ export default function Table({
       </div>
 
       <style jsx>{`
-        .tableShell {
+        .matriqTable {
           width: 100%;
           background: var(--color-surface);
           border: 1px solid var(--color-border);
@@ -67,108 +69,148 @@ export default function Table({
           overflow: hidden;
         }
 
-        .tableWrap {
+        .matriqTable.minimal {
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-lg);
+          box-shadow: none;
+        }
+
+        .matriqTableWrap {
           width: 100%;
           overflow-x: auto;
         }
 
-        .tableWrap::-webkit-scrollbar {
-          height: 10px;
+        .matriqTableWrap::-webkit-scrollbar {
+          height: 8px;
         }
 
-        .tableWrap::-webkit-scrollbar-track {
+        .matriqTableWrap::-webkit-scrollbar-track {
           background: var(--color-overlay);
         }
 
-        .tableWrap::-webkit-scrollbar-thumb {
+        .matriqTableWrap::-webkit-scrollbar-thumb {
           background: var(--color-border-strong);
           border-radius: var(--radius-full);
           border: 2px solid var(--color-overlay);
         }
 
-        table {
+        :global(.matriqTable table) {
           width: 100%;
           min-width: 760px;
-          border-collapse: collapse;
-          table-layout: auto;
+          border-collapse: separate;
+          border-spacing: 0;
+          table-layout: fixed;
         }
 
-        th {
+        :global(.matriqTable th) {
           text-align: left;
-          padding: 15px 18px;
+          padding: 14px 18px;
           background: var(--color-overlay);
           color: var(--color-text-secondary);
-          font-size: var(--text-xs);
+          font-size: 10px;
           font-weight: 900;
           text-transform: uppercase;
-          letter-spacing: 0.05em;
+          letter-spacing: 0.06em;
           border-bottom: 1px solid var(--color-border);
           white-space: nowrap;
         }
 
-        td {
-          padding: 18px;
+        :global(.matriqTable td) {
+          padding: 17px 18px;
           border-bottom: 1px solid var(--color-border-soft);
           color: var(--color-text-primary);
-          font-size: var(--text-sm);
+          font-size: 12px;
           font-weight: 650;
-          line-height: 1.5;
+          line-height: 1.45;
           vertical-align: middle;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
         }
 
-        .comfortable td {
-          padding-top: 18px;
-          padding-bottom: 18px;
+        :global(.matriqTable.compact th) {
+          padding: 11px 14px;
         }
 
-        .compact td {
-          padding-top: 12px;
-          padding-bottom: 12px;
+        :global(.matriqTable.compact td) {
+          padding: 12px 14px;
+          font-size: 11px;
         }
 
-        .spacious td {
-          padding-top: 22px;
-          padding-bottom: 22px;
+        :global(.matriqTable.comfortable th) {
+          padding: 14px 18px;
         }
 
-        tbody tr {
+        :global(.matriqTable.comfortable td) {
+          padding: 17px 18px;
+        }
+
+        :global(.matriqTable.spacious th) {
+          padding: 16px 20px;
+        }
+
+        :global(.matriqTable.spacious td) {
+          padding: 21px 20px;
+        }
+
+        :global(.matriqTable tbody tr) {
           background: var(--color-surface);
-          transition:
-            background-color var(--transition-base),
-            box-shadow var(--transition-base);
+          transition: background-color var(--transition-base);
         }
 
-        tbody tr:hover {
-          background: var(--color-overlay);
+        :global(.matriqTable tbody tr:hover) {
+          background: color-mix(
+            in srgb,
+            var(--color-overlay) 68%,
+            var(--color-surface)
+          );
         }
 
-        tbody tr:last-child td {
+        :global(.matriqTable tbody tr:last-child td) {
           border-bottom: none;
         }
 
-        .right {
+        :global(.matriqTable .right) {
           text-align: right;
         }
 
-        .emptyCell {
+        :global(.matriqTable .emptyCell) {
           text-align: center;
           color: var(--color-text-secondary);
-          padding: 34px 18px;
+          padding: 36px 18px;
           font-size: var(--text-sm);
           font-weight: 750;
+          white-space: normal;
+        }
+
+        :global(.matriqTable a) {
+          color: var(--color-brand);
+          font-weight: 850;
+          text-decoration: none;
+        }
+
+        :global(.matriqTable a:hover) {
+          color: var(--color-brand-dark);
+          text-decoration: underline;
+          transform: none;
+        }
+
+        :global(.matriqTable .badge),
+        :global(.matriqTable [class*="badge"]) {
+          vertical-align: middle;
         }
 
         @media (max-width: 760px) {
-          table {
-            min-width: 680px;
+          :global(.matriqTable table) {
+            min-width: 700px;
           }
 
-          th {
-            padding: 13px 14px;
+          :global(.matriqTable th) {
+            padding: 12px 14px;
           }
 
-          td {
-            padding: 15px 14px;
+          :global(.matriqTable td) {
+            padding: 14px;
           }
         }
       `}</style>

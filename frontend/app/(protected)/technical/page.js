@@ -6,15 +6,13 @@ import { apiClient, getStoredUser } from "@/services/apiClient";
 
 import Badge from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
-import Card from "@/components/ui/Card";
 import EmptyState from "@/components/ui/EmptyState";
 import Loader from "@/components/ui/Loader";
-import StatCard from "@/components/ui/StatCard";
+import Select from "@/components/ui/Select";
 import Table from "@/components/ui/Table";
 
 const LIFECYCLE_STATES = [
   "Registered",
-  "Ready for Testing",
   "In Testing",
   "For Review",
   "Released",
@@ -24,10 +22,18 @@ const LIFECYCLE_STATES = [
 const RECENT_SAMPLE_COLUMNS = [
   { key: "sample_id", label: "Sample ID" },
   { key: "material_type", label: "Material" },
-  { key: "client_name", label: "Client" },
   { key: "branch_id", label: "Branch" },
   { key: "current_state", label: "Status" },
-  { key: "result", label: "Result" },
+  { key: "action", label: "Action" },
+];
+
+const MATERIAL_COLORS = [
+  "#4f6f8f",
+  "#5b5f97",
+  "#8a6f5a",
+  "#9a7b4f",
+  "#58745d",
+  "#6b7280",
 ];
 
 export default function TechnicalDashboardPage() {
@@ -42,6 +48,7 @@ export default function TechnicalDashboardPage() {
   });
 
   const [samples, setSamples] = useState([]);
+  const [branchFilter, setBranchFilter] = useState("All");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -78,10 +85,17 @@ export default function TechnicalDashboardPage() {
   }, []);
 
   const role = user?.role || "Technical User";
-  const isLabTech = role === "Lab Technician";
-  const isSeniorTech = role === "Senior Technician";
-  const isQa = role === "QA Engineer";
   const isAdmin = role === "Administrator";
+
+  const visibleSamples = useMemo(() => {
+    if (branchFilter === "All") return samples;
+
+    return samples.filter((sample) => {
+      if (branchFilter === "Marikina") return Number(sample.branch_id) === 1;
+      if (branchFilter === "Pateros") return Number(sample.branch_id) === 2;
+      return true;
+    });
+  }, [samples, branchFilter]);
 
   const lifecycleCounts = useMemo(() => {
     const counts = {};
@@ -90,18 +104,21 @@ export default function TechnicalDashboardPage() {
       counts[state] = 0;
     });
 
-    samples.forEach((sample) => {
-      const state = sample.current_state || sample.status || "Registered";
+    visibleSamples.forEach((sample) => {
+      const state = normalizeLifecycleState(
+        sample.current_state || sample.status || "Registered",
+      );
+
       counts[state] = (counts[state] || 0) + 1;
     });
 
     return counts;
-  }, [samples]);
+  }, [visibleSamples]);
 
   const materialCounts = useMemo(() => {
     const counts = {};
 
-    samples.forEach((sample) => {
+    visibleSamples.forEach((sample) => {
       const material = sample.material_type || "Unspecified";
       counts[material] = (counts[material] || 0) + 1;
     });
@@ -109,352 +126,186 @@ export default function TechnicalDashboardPage() {
     return Object.entries(counts)
       .map(([label, value]) => ({ label, value }))
       .sort((a, b) => b.value - a.value)
-      .slice(0, 6);
-  }, [samples]);
-
-  const testResultCounts = useMemo(() => {
-    return samples.reduce(
-      (acc, sample) => {
-        const testData = sample.device_metadata?.test_data || {};
-        const finalResult = getFinalResult(testData);
-
-        if (finalResult === "PASS") acc.pass += 1;
-        else if (finalResult === "FAIL") acc.fail += 1;
-        else if (finalResult === "RECORDED") acc.recorded += 1;
-        else acc.noResult += 1;
-
-        return acc;
-      },
-      {
-        pass: 0,
-        fail: 0,
-        recorded: 0,
-        noResult: 0,
-      },
-    );
-  }, [samples]);
-
-  const paymentCounts = useMemo(() => {
-    return samples.reduce(
-      (acc, sample) => {
-        const status =
-          sample.device_metadata?.payment?.payment_status || "Unpaid";
-
-        if (status === "Fully Paid") acc.fullyPaid += 1;
-        else if (status === "Downpayment Paid") acc.downpayment += 1;
-        else if (status === "PO Submitted") acc.po += 1;
-        else acc.unpaid += 1;
-
-        return acc;
-      },
-      {
-        unpaid: 0,
-        downpayment: 0,
-        po: 0,
-        fullyPaid: 0,
-      },
-    );
-  }, [samples]);
+      .slice(0, 5);
+  }, [visibleSamples]);
 
   const recentSamples = useMemo(() => {
     const source =
       Array.isArray(dashboard.recent_samples) &&
       dashboard.recent_samples.length > 0
         ? dashboard.recent_samples
-        : samples;
+        : visibleSamples;
 
-    return [...source].slice(0, 8);
-  }, [dashboard.recent_samples, samples]);
+    return [...source].slice(0, 5);
+  }, [dashboard.recent_samples, visibleSamples]);
 
-  const roleCards = getRoleCards({
+  const topMetrics = getTopMetrics({
     role,
     lifecycleCounts,
     dashboard,
-    testResultCounts,
-    paymentCounts,
+    totalSamples: visibleSamples.length,
   });
 
   const maxLifecycleValue = Math.max(
     1,
-    ...Object.values(lifecycleCounts).map((value) => Number(value) || 0),
-  );
-
-  const maxMaterialValue = Math.max(
-    1,
-    ...materialCounts.map((item) => Number(item.value) || 0),
+    ...LIFECYCLE_STATES.map((state) => Number(lifecycleCounts[state]) || 0),
   );
 
   return (
     <div className="page">
-      <div className="header">
+      <header className="header">
         <div>
-          <p className="kicker">Technical Module</p>
-          <h1 className="page-title">{getDashboardTitle(role)}</h1>
-          <p className="page-subtitle">
-            {isAdmin
-              ? "Administrator oversight for sample lifecycle, testing activity, QA review, and released reports."
-              : "Operational overview for sample testing, QA review, and laboratory workflow monitoring."}
-          </p>
+          <h1>{getDashboardTitle(role)}</h1>
+          <p>Operational overview across all testing branches.</p>
         </div>
 
-        <Button onClick={loadDashboard} variant="primary">
-          Refresh
-        </Button>
-      </div>
+        <div className="headerControls">
+          <Select
+            name="branchFilter"
+            value={branchFilter}
+            onChange={(event) => setBranchFilter(event.target.value)}
+          >
+            <option value="All">All Branches</option>
+            <option value="Marikina">Marikina</option>
+            <option value="Pateros">Pateros</option>
+          </Select>
+
+          <Button onClick={loadDashboard} variant="secondary" size="sm">
+            Refresh
+          </Button>
+        </div>
+      </header>
 
       {isAdmin && (
-        <div className="adminNotice">
+        <section className="notice">
           <strong>Administrator Oversight Mode</strong>
           <span>
-            This dashboard is for monitoring technical operations. Routine
-            testing, classification review, and QA release actions remain
-            assigned to their respective operational roles.
+            Actions remain assigned to operational roles. This page is for
+            monitoring only.
           </span>
-        </div>
+        </section>
       )}
 
       {loading && <Loader label="Loading technical dashboard..." />}
 
-      {!loading && error && (
-        <Card>
-          <div className="errorText">{error}</div>
-        </Card>
-      )}
+      {!loading && error && <div className="errorBox">{error}</div>}
 
       {!loading && !error && (
         <>
-          <div className="statsRow">
-            {roleCards.map((item) => (
-              <StatCard
-                key={item.label}
-                label={item.label}
-                value={item.value}
-                note={item.note}
-                variant={item.variant}
-              />
+          <section className="metrics">
+            {topMetrics.map((metric) => (
+              <div className="metric" key={metric.label}>
+                <span>{metric.label}</span>
+                <strong>{metric.value}</strong>
+              </div>
             ))}
-          </div>
+          </section>
 
-          <div className="dashboardGrid">
-            <Card
-              title="Sample Lifecycle Distribution"
-              subtitle="Current movement of samples through the laboratory workflow."
-              className="largePanel"
-              actions={
-                <Link href="/technical/registry" className="panelLink">
-                  View Registry
-                </Link>
-              }
-            >
-              <div className="barList">
+          <section className="charts">
+            <div className="chartBlock">
+              <div className="sectionHeader">
+                <h2>Sample Lifecycle Progression</h2>
+              </div>
+
+              <div className="barChart">
                 {LIFECYCLE_STATES.map((state) => {
                   const value = lifecycleCounts[state] || 0;
-                  const width = Math.max(5, (value / maxLifecycleValue) * 100);
+                  const height = Math.max(
+                    10,
+                    (value / maxLifecycleValue) * 170,
+                  );
 
                   return (
-                    <div className="barRow" key={state}>
-                      <div className="barMeta">
-                        <span>{state}</span>
-                        <strong>{value}</strong>
-                      </div>
-
+                    <div className="barColumn" key={state}>
+                      <div className="barValue">{value}</div>
                       <div className="barTrack">
                         <div
-                          className={`barFill ${getLifecycleClass(state)}`}
-                          style={{ width: `${width}%` }}
+                          className={`bar ${getLifecycleClass(state)}`}
+                          style={{ height: `${height}px` }}
                         />
                       </div>
+                      <span>{shortenState(state)}</span>
                     </div>
                   );
                 })}
               </div>
-            </Card>
+            </div>
 
-            <Card
-              title="System Result Summary"
-              subtitle="QA final result is counted when available."
-            >
-              <div className="resultGrid">
-                <ResultTile
-                  label="PASS"
-                  value={testResultCounts.pass}
-                  variant="success"
-                />
-                <ResultTile
-                  label="FAIL"
-                  value={testResultCounts.fail}
-                  variant="danger"
-                />
-                <ResultTile
-                  label="RECORDED"
-                  value={testResultCounts.recorded}
-                  variant="info"
-                />
-                <ResultTile
-                  label="NO RESULT"
-                  value={testResultCounts.noResult}
-                  variant="neutral"
-                />
+            <div className="chartBlock">
+              <div className="sectionHeader">
+                <h2>Distribution by Material Category</h2>
               </div>
-            </Card>
 
-            <Card
-              title="Material Distribution"
-              subtitle="Most common registered sample materials."
-            >
-              <div className="miniBarList">
-                {materialCounts.length === 0 && (
-                  <EmptyState
-                    title="No material data yet"
-                    description="Material distribution will appear after samples are registered."
-                  />
-                )}
+              {materialCounts.length === 0 ? (
+                <EmptyState
+                  title="No material data yet"
+                  description="Material distribution will appear after samples are registered."
+                />
+              ) : (
+                <div className="donutSection">
+                  <DonutChart data={materialCounts} />
 
-                {materialCounts.map((item) => {
-                  const width = Math.max(
-                    6,
-                    (item.value / maxMaterialValue) * 100,
-                  );
-
-                  return (
-                    <div className="miniBarRow" key={item.label}>
-                      <div className="miniBarText">
+                  <div className="legend">
+                    {materialCounts.map((item, index) => (
+                      <div className="legendItem" key={item.label}>
+                        <i
+                          style={{
+                            background:
+                              MATERIAL_COLORS[index % MATERIAL_COLORS.length],
+                          }}
+                        />
                         <span>{item.label}</span>
                         <strong>{item.value}</strong>
                       </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </section>
 
-                      <div className="miniTrack">
-                        <div
-                          className="miniFill"
-                          style={{ width: `${width}%` }}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
+          <section className="tableSection">
+            <div className="tableHeader">
+              <div>
+                <h2>Recent Registered Samples</h2>
               </div>
-            </Card>
 
-            <Card
-              title="Payment Readiness"
-              subtitle="Financial status affecting testing and report release."
-            >
-              <div className="paymentGrid">
-                <PaymentTile label="Unpaid" value={paymentCounts.unpaid} />
-                <PaymentTile
-                  label="Downpayment"
-                  value={paymentCounts.downpayment}
-                />
-                <PaymentTile label="PO Submitted" value={paymentCounts.po} />
-                <PaymentTile
-                  label="Fully Paid"
-                  value={paymentCounts.fullyPaid}
-                />
-              </div>
-            </Card>
+              <Link href="/technical/registry">View All</Link>
+            </div>
 
-            <Card
-              title={getActionTitle(role)}
-              subtitle={getActionSubtitle(role)}
-            >
-              <div className="actionLinks">
-                {isLabTech && (
-                  <>
-                    <ActionLink href="/technical/intake">
-                      Register Sample
-                    </ActionLink>
-                    <ActionLink href="/technical/workflow">
-                      Start Testing Queue
-                    </ActionLink>
-                    <ActionLink href="/technical/registry">
-                      Open Registry
-                    </ActionLink>
-                  </>
-                )}
-
-                {isSeniorTech && (
-                  <>
-                    <ActionLink href="/technical/workflow">
-                      Review AI Classifications
-                    </ActionLink>
-                    <ActionLink href="/technical/registry">
-                      Open Registry
-                    </ActionLink>
-                  </>
-                )}
-
-                {isQa && (
-                  <>
-                    <ActionLink href="/technical/workflow">
-                      QA Review Queue
-                    </ActionLink>
-                    <ActionLink href="/technical/reports">
-                      Released Reports
-                    </ActionLink>
-                    <ActionLink href="/technical/registry">
-                      Open Registry
-                    </ActionLink>
-                  </>
-                )}
-
-                {isAdmin && (
-                  <>
-                    <ActionLink href="/technical/workflow">
-                      Workflow Oversight
-                    </ActionLink>
-                    <ActionLink href="/technical/reports">
-                      Technical Reports
-                    </ActionLink>
-                    <ActionLink href="/admin/audit-logs">
-                      Audit Logs
-                    </ActionLink>
-                  </>
-                )}
-              </div>
-            </Card>
-          </div>
-
-          <Card
-            title="Recent Samples"
-            subtitle="Latest sample records visible to the technical module."
-            actions={
-              <Link href="/technical/registry" className="panelLink">
-                View All
-              </Link>
-            }
-          >
             <Table
               columns={RECENT_SAMPLE_COLUMNS}
               data={recentSamples}
               emptyText="No samples registered yet."
-              renderRow={(sample) => {
-                const testData = sample.device_metadata?.test_data || {};
-                const finalResult = getFinalResult(testData);
-
-                return (
-                  <tr key={sample.sample_id}>
-                    <td>
-                      <Link
-                        href={`/technical/tracking/${sample.sample_id}`}
-                        className="sampleLink"
-                      >
-                        {sample.sample_id}
-                      </Link>
-                    </td>
-                    <td>{sample.material_type || "-"}</td>
-                    <td>{sample.client_name || "-"}</td>
-                    <td>{formatBranch(sample.branch_id)}</td>
-                    <td>
-                      <LifecycleBadge status={sample.current_state} />
-                    </td>
-                    <td>
-                      <ResultBadge result={finalResult} />
-                    </td>
-                  </tr>
-                );
-              }}
+              density="comfortable"
+              variant="minimal"
+              renderRow={(sample) => (
+                <tr key={sample.sample_id}>
+                  <td>
+                    <Link
+                      href={`/technical/tracking/${sample.sample_id}`}
+                      className="sampleLink"
+                    >
+                      {sample.sample_id}
+                    </Link>
+                  </td>
+                  <td>{sample.material_type || "-"}</td>
+                  <td>{formatBranch(sample.branch_id)}</td>
+                  <td>
+                    <LifecycleBadge status={sample.current_state} />
+                  </td>
+                  <td>
+                    <Link
+                      href={`/technical/tracking/${sample.sample_id}`}
+                      className="rowAction"
+                    >
+                      Open
+                    </Link>
+                  </td>
+                </tr>
+              )}
             />
-          </Card>
+          </section>
         </>
       )}
 
@@ -468,116 +319,153 @@ export default function TechnicalDashboardPage() {
 
         .header {
           display: flex;
-          justify-content: space-between;
           align-items: flex-start;
-          gap: 16px;
+          justify-content: space-between;
+          gap: 18px;
         }
 
-        .adminNotice {
+        .header h1 {
+          margin: 0;
+          font-size: 18px;
+          font-weight: 850;
+          letter-spacing: -0.02em;
+          color: var(--color-text-primary);
+        }
+
+        .header p {
+          margin: 4px 0 0;
+          color: var(--color-text-secondary);
+          font-size: 11px;
+          line-height: 1.4;
+        }
+
+        .headerControls {
+          display: flex;
+          align-items: flex-start;
+          gap: 8px;
+          min-width: 260px;
+        }
+
+        .notice {
           display: grid;
-          gap: 4px;
-          border-radius: var(--radius-lg);
-          padding: 14px 16px;
+          gap: 3px;
+          padding: 11px 13px;
+          border-radius: var(--radius-md);
           background: var(--color-info-bg);
-          color: var(--color-info);
           border: 1px solid var(--color-info-border);
-          font-size: var(--text-sm);
-          line-height: 1.5;
-        }
-
-        .adminNotice strong {
           color: var(--color-info);
-          font-size: var(--text-sm);
+          font-size: 12px;
+          line-height: 1.45;
         }
 
-        .errorText {
+        .notice strong {
+          font-size: 12px;
+        }
+
+        .errorBox {
+          padding: 14px;
+          border-radius: var(--radius-md);
+          background: var(--color-danger-bg);
+          border: 1px solid var(--color-danger-border);
           color: var(--color-danger);
-          font-size: var(--text-sm);
+          font-size: 12px;
           font-weight: 800;
         }
 
-        .statsRow {
+        .metrics {
           display: grid;
           grid-template-columns: repeat(4, minmax(0, 1fr));
-          gap: 16px;
+          gap: 24px;
+          padding: 4px 0 2px;
         }
 
-        .dashboardGrid {
+        .metric {
           display: grid;
-          grid-template-columns: 1.35fr 1fr;
+          gap: 8px;
+        }
+
+        .metric span {
+          color: var(--color-text-secondary);
+          font-size: 10px;
+          font-weight: 750;
+        }
+
+        .metric strong {
+          color: var(--color-text-primary);
+          font-size: 18px;
+          font-weight: 850;
+          line-height: 1;
+        }
+
+        .charts {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 34px;
+          align-items: start;
+        }
+
+        .chartBlock {
+          min-width: 0;
+        }
+
+        .sectionHeader {
+          margin-bottom: 16px;
+        }
+
+        .sectionHeader h2,
+        .tableHeader h2 {
+          margin: 0;
+          color: var(--color-text-primary);
+          font-size: 12px;
+          font-weight: 800;
+          letter-spacing: -0.01em;
+        }
+
+        .barChart {
+          height: 235px;
+          display: grid;
+          grid-template-columns: repeat(5, minmax(0, 1fr));
+          align-items: end;
           gap: 18px;
-          align-items: stretch;
         }
 
-        :global(.largePanel) {
-          grid-row: span 2;
-        }
-
-        .panelLink {
-          color: var(--color-brand);
-          font-size: var(--text-sm);
-          font-weight: 900;
-          text-decoration: none;
-          white-space: nowrap;
-        }
-
-        .panelLink:hover {
-          color: var(--color-brand-dark);
-        }
-
-        .barList {
+        .barColumn {
+          min-width: 0;
           display: grid;
-          gap: 15px;
-        }
-
-        .barRow {
-          display: grid;
+          justify-items: center;
           gap: 7px;
         }
 
-        .barMeta,
-        .miniBarText {
-          display: flex;
-          justify-content: space-between;
-          gap: 12px;
-          align-items: center;
-        }
-
-        .barMeta span,
-        .miniBarText span {
-          color: var(--color-text-secondary);
-          font-size: var(--text-sm);
-          font-weight: 850;
-        }
-
-        .barMeta strong,
-        .miniBarText strong {
-          color: var(--color-text-primary);
-          font-size: var(--text-sm);
-          font-weight: 900;
-        }
-
-        .barTrack,
-        .miniTrack {
-          width: 100%;
+        .barValue {
           height: 12px;
-          border-radius: var(--radius-full);
+          color: var(--color-text-secondary);
+          font-size: 9px;
+          font-weight: 750;
+          line-height: 1;
+        }
+
+        .barTrack {
+          height: 178px;
+          width: 100%;
+          max-width: 46px;
+          display: flex;
+          align-items: end;
+          justify-content: center;
+          border-radius: var(--radius-md);
           background: var(--color-overlay);
           border: 1px solid var(--color-border-soft);
           overflow: hidden;
         }
 
-        .barFill,
-        .miniFill {
-          height: 100%;
-          border-radius: var(--radius-full);
+        .bar {
+          width: 100%;
+          border-radius: var(--radius-md) var(--radius-md) 0 0;
         }
 
         .lifeRegistered,
         .lifeReady,
         .lifeReview,
-        .lifeDefault,
-        .miniFill {
+        .lifeDefault {
           background: var(--color-brand);
         }
 
@@ -593,133 +481,133 @@ export default function TechnicalDashboardPage() {
           background: var(--color-text-muted);
         }
 
-        .resultGrid,
-        .paymentGrid {
-          display: grid;
-          grid-template-columns: repeat(2, 1fr);
-          gap: 12px;
-        }
-
-        .resultTile,
-        .paymentTile {
-          border: 1px solid var(--color-border);
-          border-radius: var(--radius-lg);
-          padding: 14px;
-          display: grid;
-          gap: 8px;
-          background: var(--color-surface);
-        }
-
-        .resultTile span,
-        .paymentTile span {
-          font-size: var(--text-xs);
-          font-weight: 900;
+        .barColumn span {
           color: var(--color-text-secondary);
-          text-transform: uppercase;
-          letter-spacing: 0.05em;
+          font-size: 9px;
+          font-weight: 650;
+          text-align: center;
+          line-height: 1.25;
+          min-height: 22px;
         }
 
-        .resultTile strong,
-        .paymentTile strong {
-          font-size: var(--text-xl);
+        .donutSection {
+          display: grid;
+          grid-template-columns: 210px minmax(0, 1fr);
+          gap: 22px;
+          align-items: center;
+        }
+
+        .legend {
+          display: grid;
+          gap: 9px;
+        }
+
+        .legendItem {
+          display: grid;
+          grid-template-columns: 10px minmax(0, 1fr) auto;
+          gap: 8px;
+          align-items: center;
+          color: var(--color-text-secondary);
+          font-size: 10px;
+          font-weight: 700;
+        }
+
+        .legendItem i {
+          width: 9px;
+          height: 9px;
+          border-radius: var(--radius-full);
+        }
+
+        .legendItem span {
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .legendItem strong {
           color: var(--color-text-primary);
-          line-height: 1;
+          font-size: 10px;
+          font-weight: 850;
         }
 
-        .resultTile.success {
-          border-color: var(--color-success-border);
-          background: var(--color-success-bg);
+        .tableSection {
+          margin-top: 4px;
         }
 
-        .resultTile.danger {
-          border-color: var(--color-danger-border);
-          background: var(--color-danger-bg);
-        }
-
-        .resultTile.info {
-          border-color: var(--color-info-border);
-          background: var(--color-info-bg);
-        }
-
-        .resultTile.neutral {
-          border-color: var(--color-border);
-          background: var(--color-overlay);
-        }
-
-        .miniBarList {
-          display: grid;
-          gap: 13px;
-        }
-
-        .miniBarRow {
-          display: grid;
-          gap: 7px;
-        }
-
-        .actionLinks {
-          display: grid;
-          gap: 10px;
-        }
-
-        .actionLink {
+        .tableHeader {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          text-decoration: none;
-          color: var(--color-text-primary);
-          background: var(--color-surface);
-          border: 1px solid var(--color-border);
-          border-radius: var(--radius-md);
-          padding: 12px 14px;
-          font-size: var(--text-sm);
-          font-weight: 900;
-          box-shadow: none;
+          gap: 14px;
+          margin-bottom: 10px;
         }
 
-        .actionLink:hover {
-          background: var(--color-overlay);
-          border-color: var(--color-border-strong);
-          transform: translateY(-1px);
-          box-shadow: var(--shadow-xs);
-        }
-
-        .actionLink span {
+        .tableHeader a,
+        .sampleLink,
+        .rowAction {
           color: var(--color-brand);
-          font-size: var(--text-sm);
-        }
-
-        .sampleLink {
-          color: var(--color-brand);
-          font-weight: 900;
+          font-size: 10px;
+          font-weight: 850;
           text-decoration: none;
+          white-space: nowrap;
         }
 
-        .sampleLink:hover {
+        .tableHeader a:hover,
+        .sampleLink:hover,
+        .rowAction:hover {
           color: var(--color-brand-dark);
+          text-decoration: underline;
+          transform: none;
         }
 
-        @media (max-width: 1100px) {
-          .statsRow,
-          .dashboardGrid {
-            grid-template-columns: 1fr 1fr;
+        @media (max-width: 1080px) {
+          .charts {
+            grid-template-columns: 1fr;
           }
 
-          :global(.largePanel) {
-            grid-row: auto;
-            grid-column: 1 / -1;
+          .donutSection {
+            grid-template-columns: 210px minmax(0, 1fr);
           }
         }
 
-        @media (max-width: 720px) {
+        @media (max-width: 760px) {
           .header {
             flex-direction: column;
           }
 
-          .statsRow,
-          .dashboardGrid,
-          .resultGrid,
-          .paymentGrid {
+          .headerControls {
+            width: 100%;
+            min-width: 0;
+            display: grid;
+            grid-template-columns: 1fr auto;
+          }
+
+          .metrics {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 18px;
+          }
+
+          .donutSection {
             grid-template-columns: 1fr;
+            justify-items: center;
+          }
+
+          .legend {
+            width: 100%;
+          }
+        }
+
+        @media (max-width: 520px) {
+          .metrics {
+            grid-template-columns: 1fr;
+          }
+
+          .headerControls {
+            grid-template-columns: 1fr;
+          }
+
+          .barChart {
+            gap: 10px;
           }
         }
       `}</style>
@@ -727,235 +615,127 @@ export default function TechnicalDashboardPage() {
   );
 }
 
-function ResultTile({ label, value, variant }) {
-  return (
-    <div className={`resultTile ${variant}`}>
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
-  );
-}
+function DonutChart({ data }) {
+  const total = data.reduce((sum, item) => sum + item.value, 0);
+  const radius = 62;
+  const circumference = 2 * Math.PI * radius;
 
-function PaymentTile({ label, value }) {
-  return (
-    <div className="paymentTile">
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
-  );
-}
+  let offset = 0;
 
-function ActionLink({ href, children }) {
   return (
-    <Link href={href} className="actionLink">
-      {children}
-      <span>Open</span>
-    </Link>
+    <svg width="210" height="210" viewBox="0 0 210 210" aria-hidden="true">
+      <circle
+        cx="105"
+        cy="105"
+        r={radius}
+        fill="none"
+        stroke="var(--color-overlay)"
+        strokeWidth="32"
+      />
+
+      {data.map((item, index) => {
+        const segment = total === 0 ? 0 : (item.value / total) * circumference;
+        const dashArray = `${segment} ${circumference - segment}`;
+        const dashOffset = -offset;
+
+        offset += segment;
+
+        return (
+          <circle
+            key={item.label}
+            cx="105"
+            cy="105"
+            r={radius}
+            fill="none"
+            stroke={MATERIAL_COLORS[index % MATERIAL_COLORS.length]}
+            strokeWidth="32"
+            strokeDasharray={dashArray}
+            strokeDashoffset={dashOffset}
+            transform="rotate(-90 105 105)"
+          />
+        );
+      })}
+
+      <circle cx="105" cy="105" r="38" fill="var(--color-surface)" />
+    </svg>
   );
 }
 
 function LifecycleBadge({ status }) {
+  const normalized = normalizeLifecycleState(status);
+
   const variant =
-    status === "Released"
+    normalized === "Released"
       ? "success"
-      : status === "In Testing"
+      : normalized === "In Testing"
         ? "warning"
-        : status === "For Review" || status === "Ready for Testing"
+        : normalized === "For Review"
           ? "info"
-          : status === "Archived"
+          : normalized === "Archived"
             ? "neutral"
             : "brand";
 
-  return <Badge variant={variant}>{status || "-"}</Badge>;
-}
-
-function ResultBadge({ result }) {
-  const variant =
-    result === "PASS"
-      ? "success"
-      : result === "FAIL"
-        ? "danger"
-        : result === "RECORDED"
-          ? "info"
-          : "neutral";
-
-  return <Badge variant={variant}>{result || "No Result"}</Badge>;
+  return (
+    <Badge variant={variant} size="sm">
+      {normalized || "-"}
+    </Badge>
+  );
 }
 
 function getDashboardTitle(role) {
-  if (role === "Lab Technician") return "Lab Technician Dashboard";
-  if (role === "Senior Technician") return "Senior Technician Dashboard";
-  if (role === "QA Engineer") return "QA Engineer Dashboard";
-  if (role === "Administrator") return "Technical Oversight Dashboard";
+  if (role === "Lab Technician") return "Sample Real-Time Monitor";
+  if (role === "Senior Technician") return "Sample Real-Time Monitor";
+  if (role === "QA Engineer") return "Sample Real-Time Monitor";
+  if (role === "Administrator") return "Sample Real-Time Monitor";
   return "Sample Real-Time Monitor";
 }
 
-function getRoleCards({
-  role,
-  lifecycleCounts,
-  dashboard,
-  testResultCounts,
-  paymentCounts,
-}) {
-  if (role === "Lab Technician") {
-    return [
-      {
-        label: "Ready for Testing",
-        value: lifecycleCounts["Ready for Testing"] || 0,
-        note: "Samples cleared for lab work",
-        variant: "info",
-      },
-      {
-        label: "In Testing",
-        value: lifecycleCounts["In Testing"] || 0,
-        note: "Active testing workload",
-        variant: "warning",
-      },
-      {
-        label: "Registered",
-        value: dashboard.registered ?? lifecycleCounts.Registered ?? 0,
-        note: "Samples awaiting routing",
-        variant: "brand",
-      },
-      {
-        label: "No Result Yet",
-        value: testResultCounts.noResult,
-        note: "Samples without entered results",
-        variant: "neutral",
-      },
-    ];
-  }
-
+function getTopMetrics({ role, lifecycleCounts, dashboard, totalSamples }) {
   if (role === "Senior Technician") {
     return [
-      {
-        label: "Manual Review",
-        value: dashboard.manual_review ?? 0,
-        note: "AI classifications needing review",
-        variant: "warning",
-      },
-      {
-        label: "Mandatory Override",
-        value: dashboard.mandatory_override ?? 0,
-        note: "Low-confidence classifications",
-        variant: "danger",
-      },
-      {
-        label: "Completed Reviews",
-        value: dashboard.completed_reviews ?? 0,
-        note: "Reviewed classification cases",
-        variant: "success",
-      },
-      {
-        label: "Registered",
-        value: dashboard.registered ?? 0,
-        note: "Current registered samples",
-        variant: "brand",
-      },
+      { label: "Registered", value: dashboard.registered ?? 0 },
+      { label: "Manual Review", value: dashboard.manual_review ?? 0 },
+      { label: "Mandatory Override", value: dashboard.mandatory_override ?? 0 },
+      { label: "Completed", value: dashboard.completed_reviews ?? 0 },
     ];
   }
 
   if (role === "QA Engineer") {
     return [
-      {
-        label: "For Review",
-        value: lifecycleCounts["For Review"] || 0,
-        note: "Reports requiring QA review",
-        variant: "info",
-      },
-      {
-        label: "Released",
-        value: lifecycleCounts.Released || 0,
-        note: "Finalized official reports",
-        variant: "success",
-      },
-      {
-        label: "Failed Results",
-        value: testResultCounts.fail,
-        note: "Requires careful QA review",
-        variant: "danger",
-      },
-      {
-        label: "Fully Paid",
-        value: paymentCounts.fullyPaid,
-        note: "Financially cleared samples",
-        variant: "brand",
-      },
+      { label: "Registered", value: lifecycleCounts.Registered || 0 },
+      { label: "For Review", value: lifecycleCounts["For Review"] || 0 },
+      { label: "Released", value: lifecycleCounts.Released || 0 },
+      { label: "Total", value: totalSamples },
     ];
   }
 
   return [
-    {
-      label: "Total Samples",
-      value: Object.values(lifecycleCounts).reduce(
-        (sum, value) => sum + Number(value || 0),
-        0,
-      ),
-      note: "All visible technical records",
-      variant: "brand",
-    },
-    {
-      label: "For Review",
-      value: lifecycleCounts["For Review"] || 0,
-      note: "Awaiting QA authorization",
-      variant: "info",
-    },
-    {
-      label: "Released",
-      value: lifecycleCounts.Released || 0,
-      note: "Finalized official reports",
-      variant: "success",
-    },
-    {
-      label: "Manual Review",
-      value: dashboard.manual_review ?? 0,
-      note: "AI classification review cases",
-      variant: "warning",
-    },
+    { label: "Registered", value: lifecycleCounts.Registered || 0 },
+    { label: "In Testing", value: lifecycleCounts["In Testing"] || 0 },
+    { label: "Completed", value: lifecycleCounts.Released || 0 },
+    { label: "Overdue", value: 0 },
   ];
 }
 
-function getActionTitle(role) {
-  if (role === "Lab Technician") return "Lab Technician Actions";
-  if (role === "Senior Technician") return "Senior Technician Actions";
-  if (role === "QA Engineer") return "QA Engineer Actions";
-  if (role === "Administrator") return "Oversight Links";
-  return "Workflow Actions";
+function normalizeLifecycleState(status) {
+  if (status === "Ready for Testing") return "Registered";
+  if (!status) return "Registered";
+  return status;
 }
 
-function getActionSubtitle(role) {
-  if (role === "Lab Technician") {
-    return "Register and process samples assigned for laboratory testing.";
-  }
-
-  if (role === "Senior Technician") {
-    return "Review low-confidence AI classifications and manual override cases.";
-  }
-
-  if (role === "QA Engineer") {
-    return "Review testing results, override when justified, and release reports.";
-  }
-
-  if (role === "Administrator") {
-    return "Monitor technical operations and inspect audit activity.";
-  }
-
-  return "Open available workflow modules.";
+function shortenState(state) {
+  if (state === "In Testing") return "In-Test";
+  if (state === "For Review") return "For Review";
+  return state;
 }
 
 function getLifecycleClass(state) {
   if (state === "Registered") return "lifeRegistered";
-  if (state === "Ready for Testing") return "lifeReady";
   if (state === "In Testing") return "lifeTesting";
   if (state === "For Review") return "lifeReview";
   if (state === "Released") return "lifeReleased";
   if (state === "Archived") return "lifeArchived";
   return "lifeDefault";
-}
-
-function getFinalResult(testData) {
-  if (!testData) return null;
-  return testData.qa_final_result || testData.result || null;
 }
 
 function formatBranch(branchId) {

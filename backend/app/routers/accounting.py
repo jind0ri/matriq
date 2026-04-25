@@ -1,10 +1,11 @@
 import json
 from datetime import datetime
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ..config import ROLE_ACCOUNTING, ROLE_ADMIN
-from ..database import fetchall
+from ..database import execute, fetchall, fetchone
 from ..services.auth_service import require_roles
 from ..services.audit_service import log_event
 
@@ -34,6 +35,22 @@ def is_blank(value):
     return value is None or str(value).strip() == ""
 
 
+def make_json_safe(value):
+    if isinstance(value, Decimal):
+        return float(value)
+
+    if isinstance(value, datetime):
+        return value.isoformat()
+
+    if isinstance(value, dict):
+        return {key: make_json_safe(item) for key, item in value.items()}
+
+    if isinstance(value, list):
+        return [make_json_safe(item) for item in value]
+
+    return value
+
+
 def normalize_amount(value, field_name):
     if value is None or value == "":
         return None
@@ -49,6 +66,18 @@ def normalize_amount(value, field_name):
     return number
 
 
+def normalize_invoice_amount(value):
+    amount = normalize_amount(value, "amount")
+
+    if amount is None:
+        return 2500
+
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="amount must be greater than zero")
+
+    return amount
+
+
 def get_payment_stage(status):
     stage_order = {
         PAYMENT_UNPAID: 0,
@@ -60,27 +89,225 @@ def get_payment_stage(status):
     return stage_order.get(status, 0)
 
 
+def user_can_access_branch(current_user, branch_id):
+    if current_user["role"] == ROLE_ADMIN:
+        return True
+
+    return str(current_user.get("branch_id")) == str(branch_id)
+
+
+def require_branch_access(current_user, branch_id):
+    if not user_can_access_branch(current_user, branch_id):
+        raise HTTPException(
+            status_code=403,
+            detail="You do not have access to this branch.",
+        )
+
+
+def get_invoice(invoice_id):
+    return fetchone(
+        """
+        SELECT
+            invoice_id,
+            sample_id,
+            branch_id,
+            client_name,
+            amount,
+            status,
+            created_by,
+            created_at,
+            updated_at,
+            paid_at,
+            notes
+        FROM invoices
+        WHERE invoice_id = %s
+        """,
+        (invoice_id,),
+    )
+
+
+def get_sample_for_payment_sync(sample_id):
+    return fetchone(
+        """
+        SELECT
+            sample_id,
+            branch_id,
+            current_state,
+            status,
+            device_metadata,
+            is_immutable
+        FROM samples
+        WHERE sample_id = %s
+        """,
+        (sample_id,),
+    )
+
+
+def sync_sample_payment_from_invoice(
+    invoice,
+    new_invoice_status,
+    current_user,
+    request,
+    notes=None,
+):
+    sample_id = invoice.get("sample_id")
+    sample = get_sample_for_payment_sync(sample_id)
+
+    if not sample:
+        raise HTTPException(status_code=404, detail="Linked sample not found")
+
+    require_branch_access(current_user, sample.get("branch_id"))
+
+    metadata = sample.get("device_metadata") or {}
+    payment = metadata.get("payment") or {}
+
+    old_payment_status = payment.get("payment_status") or PAYMENT_UNPAID
+    payment_history = payment.get("payment_history") or []
+
+    if new_invoice_status == "Paid":
+        new_payment_status = PAYMENT_FULLY_PAID
+        amount_paid = float(invoice.get("amount") or 0)
+        balance = 0
+        billing_notes = notes or f"Invoice {invoice.get('invoice_id')} marked as paid."
+        confirmation_note = f"Invoice {invoice.get('invoice_id')} payment confirmed."
+
+        history_entry = {
+            "from_status": old_payment_status,
+            "to_status": new_payment_status,
+            "amount_paid": amount_paid,
+            "balance": balance,
+            "billing_notes": billing_notes,
+            "confirmation_note": confirmation_note,
+            "invoice_id": invoice.get("invoice_id"),
+            "updated_by": current_user["user_id"],
+            "updated_by_role": current_user["role"],
+            "updated_at": datetime.now().isoformat(),
+        }
+
+        payment_history.append(history_entry)
+
+        payment["payment_status"] = new_payment_status
+        payment["amount_paid"] = amount_paid
+        payment["balance"] = balance
+        payment["billing_notes"] = billing_notes
+        payment["confirmation_note"] = confirmation_note
+        payment["payment_updated_by"] = current_user["user_id"]
+        payment["payment_updated_by_role"] = current_user["role"]
+        payment["payment_updated_at"] = datetime.now().isoformat()
+        payment["payment_history"] = payment_history
+        payment["financially_cleared_for_testing"] = True
+        payment["financially_cleared_for_release"] = True
+
+    elif new_invoice_status == "Cancelled":
+        billing_notes = notes or f"Invoice {invoice.get('invoice_id')} cancelled."
+
+        history_entry = {
+            "from_status": old_payment_status,
+            "to_status": old_payment_status,
+            "amount_paid": payment.get("amount_paid"),
+            "balance": payment.get("balance"),
+            "billing_notes": billing_notes,
+            "confirmation_note": "",
+            "invoice_id": invoice.get("invoice_id"),
+            "updated_by": current_user["user_id"],
+            "updated_by_role": current_user["role"],
+            "updated_at": datetime.now().isoformat(),
+        }
+
+        payment_history.append(history_entry)
+
+        payment["billing_notes"] = billing_notes
+        payment["payment_updated_by"] = current_user["user_id"]
+        payment["payment_updated_by_role"] = current_user["role"]
+        payment["payment_updated_at"] = datetime.now().isoformat()
+        payment["payment_history"] = payment_history
+
+    else:
+        return sample
+
+    metadata["payment"] = payment
+
+    execute(
+        """
+        UPDATE samples
+        SET device_metadata = %s,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE sample_id = %s
+        """,
+        (json.dumps(metadata), sample_id),
+    )
+
+    log_event(
+        action="SYNC_SAMPLE_PAYMENT_FROM_INVOICE",
+        endpoint_accessed=f"/api/accounting/invoices/{invoice.get('invoice_id')}/status",
+        user_id=current_user["user_id"],
+        sample_id=sample_id,
+        old_value={
+            "payment_status": old_payment_status,
+        },
+        new_value=make_json_safe(
+            {
+                "invoice_id": invoice.get("invoice_id"),
+                "invoice_status": new_invoice_status,
+                "payment_status": payment.get("payment_status"),
+                "amount_paid": payment.get("amount_paid"),
+                "balance": payment.get("balance"),
+                "financially_cleared_for_testing": payment.get(
+                    "financially_cleared_for_testing"
+                ),
+                "financially_cleared_for_release": payment.get(
+                    "financially_cleared_for_release"
+                ),
+            }
+        ),
+        ip_address=request.client.host if request.client else None,
+    )
+
+    return get_sample_for_payment_sync(sample_id)
+
+
 @router.get("/dashboard")
 def get_accounting_dashboard(
     current_user=Depends(require_roles(ROLE_ACCOUNTING, ROLE_ADMIN)),
 ):
-    samples = fetchall(
-        """
-        SELECT
-            sample_id,
-            client_name,
-            material_type,
-            status,
-            current_state,
-            branch_id,
-            decision,
-            device_metadata,
-            created_at,
-            updated_at
-        FROM samples
-        ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST
-        """,
-    )
+    if current_user["role"] == ROLE_ADMIN:
+        samples = fetchall(
+            """
+            SELECT
+                sample_id,
+                client_name,
+                material_type,
+                status,
+                current_state,
+                branch_id,
+                decision,
+                device_metadata,
+                created_at,
+                updated_at
+            FROM samples
+            ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST
+            """,
+        )
+    else:
+        samples = fetchall(
+            """
+            SELECT
+                sample_id,
+                client_name,
+                material_type,
+                status,
+                current_state,
+                branch_id,
+                decision,
+                device_metadata,
+                created_at,
+                updated_at
+            FROM samples
+            WHERE branch_id = %s
+            ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST
+            """,
+            (current_user.get("branch_id"),),
+        )
 
     unpaid = 0
     downpayment = 0
@@ -94,13 +321,13 @@ def get_accounting_dashboard(
         payment_status = payment.get("payment_status") or PAYMENT_UNPAID
 
         if payment_status == PAYMENT_UNPAID:
-          unpaid += 1
+            unpaid += 1
         elif payment_status == PAYMENT_DOWNPAYMENT:
-          downpayment += 1
+            downpayment += 1
         elif payment_status == PAYMENT_PO:
-          po_submitted += 1
+            po_submitted += 1
         elif payment_status == PAYMENT_FULLY_PAID:
-          fully_paid += 1
+            fully_paid += 1
 
         if (
             sample.get("current_state") == "For Review"
@@ -124,6 +351,25 @@ def get_accounting_dashboard(
 def get_billing_queue(
     current_user=Depends(require_roles(ROLE_ACCOUNTING, ROLE_ADMIN)),
 ):
+    if current_user["role"] == ROLE_ADMIN:
+        return fetchall(
+            """
+            SELECT
+                sample_id,
+                client_name,
+                material_type,
+                status,
+                current_state,
+                branch_id,
+                decision,
+                device_metadata,
+                updated_at,
+                created_at
+            FROM samples
+            ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST
+            """,
+        )
+
     return fetchall(
         """
         SELECT
@@ -138,8 +384,10 @@ def get_billing_queue(
             updated_at,
             created_at
         FROM samples
+        WHERE branch_id = %s
         ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST
         """,
+        (current_user.get("branch_id"),),
     )
 
 
@@ -147,50 +395,239 @@ def get_billing_queue(
 def get_invoices(
     current_user=Depends(require_roles(ROLE_ACCOUNTING, ROLE_ADMIN)),
 ):
-    rows = fetchall(
+    if current_user["role"] == ROLE_ADMIN:
+        return fetchall(
+            """
+            SELECT
+                i.invoice_id,
+                i.sample_id,
+                i.branch_id,
+                i.client_name,
+                i.amount,
+                i.status,
+                i.created_by,
+                i.created_at,
+                i.updated_at,
+                i.paid_at,
+                i.notes,
+                s.material_type,
+                s.current_state
+            FROM invoices i
+            LEFT JOIN samples s ON s.sample_id = i.sample_id
+            ORDER BY i.updated_at DESC NULLS LAST, i.created_at DESC NULLS LAST
+            """,
+        )
+
+    return fetchall(
+        """
+        SELECT
+            i.invoice_id,
+            i.sample_id,
+            i.branch_id,
+            i.client_name,
+            i.amount,
+            i.status,
+            i.created_by,
+            i.created_at,
+            i.updated_at,
+            i.paid_at,
+            i.notes,
+            s.material_type,
+            s.current_state
+        FROM invoices i
+        LEFT JOIN samples s ON s.sample_id = i.sample_id
+        WHERE i.branch_id = %s
+        ORDER BY i.updated_at DESC NULLS LAST, i.created_at DESC NULLS LAST
+        """,
+        (current_user.get("branch_id"),),
+    )
+
+
+@router.post("/invoices")
+def create_invoice(
+    payload: dict,
+    request: Request,
+    current_user=Depends(require_roles(ROLE_ACCOUNTING, ROLE_ADMIN)),
+):
+    sample_id = payload.get("sample_id")
+    amount = normalize_invoice_amount(payload.get("amount"))
+    notes = (payload.get("notes") or "").strip() or None
+
+    if is_blank(sample_id):
+        raise HTTPException(status_code=400, detail="sample_id is required")
+
+    sample = fetchone(
         """
         SELECT
             sample_id,
             client_name,
-            material_type,
-            status,
-            current_state,
             branch_id,
-            device_metadata,
-            updated_at
+            current_state,
+            status
         FROM samples
-        WHERE status IN (%s, %s)
-           OR current_state IN (%s, %s)
-        ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST
+        WHERE sample_id = %s
         """,
-        ("Released", "Archived", "Released", "Archived"),
+        (sample_id,),
     )
 
-    invoices = []
+    if not sample:
+        raise HTTPException(status_code=404, detail="Sample not found")
 
-    for index, row in enumerate(rows, start=1):
-        metadata = row.get("device_metadata") or {}
-        payment = metadata.get("payment") or {}
-        payment_status = payment.get("payment_status") or PAYMENT_UNPAID
+    require_branch_access(current_user, sample.get("branch_id"))
 
-        is_paid = payment_status == PAYMENT_FULLY_PAID
-        amount = payment.get("amount_paid") or 2500
-
-        invoices.append(
-            {
-                "invoice_id": f"INV-{index:04d}",
-                "sample_id": row.get("sample_id"),
-                "client_name": row.get("client_name"),
-                "material_type": row.get("material_type"),
-                "amount": amount,
-                "status": "Paid" if is_paid else "Pending",
-                "payment_status": payment_status,
-                "branch_id": row.get("branch_id"),
-                "updated_at": row.get("updated_at"),
-            }
+    if sample.get("current_state") != "Released" and sample.get("status") != "Released":
+        raise HTTPException(
+            status_code=400,
+            detail="Only released samples can be invoiced.",
         )
 
-    return invoices
+    existing_invoice = fetchone(
+        """
+        SELECT invoice_id
+        FROM invoices
+        WHERE sample_id = %s
+          AND status != %s
+        LIMIT 1
+        """,
+        (sample_id, "Cancelled"),
+    )
+
+    if existing_invoice:
+        raise HTTPException(
+            status_code=400,
+            detail="An active invoice already exists for this sample.",
+        )
+
+    invoice = execute(
+        """
+        INSERT INTO invoices (
+            sample_id,
+            branch_id,
+            client_name,
+            amount,
+            status,
+            created_by,
+            notes
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        RETURNING
+            invoice_id,
+            sample_id,
+            branch_id,
+            client_name,
+            amount,
+            status,
+            created_by,
+            created_at,
+            updated_at,
+            paid_at,
+            notes
+        """,
+        (
+            sample.get("sample_id"),
+            sample.get("branch_id"),
+            sample.get("client_name"),
+            amount,
+            "Pending",
+            current_user["user_id"],
+            notes,
+        ),
+        fetch="one",
+    )
+
+    log_event(
+        action="CREATE_INVOICE",
+        endpoint_accessed="/api/accounting/invoices",
+        user_id=current_user["user_id"],
+        sample_id=sample_id,
+        new_value=make_json_safe(invoice),
+        ip_address=request.client.host if request.client else None,
+    )
+
+    return make_json_safe(invoice)
+
+
+@router.patch("/invoices/{invoice_id}/status")
+def update_invoice_status(
+    invoice_id: str,
+    payload: dict,
+    request: Request,
+    current_user=Depends(require_roles(ROLE_ACCOUNTING, ROLE_ADMIN)),
+):
+    new_status = payload.get("status")
+    notes = (payload.get("notes") or "").strip() or None
+
+    if new_status not in {"Pending", "Paid", "Cancelled"}:
+        raise HTTPException(status_code=400, detail="Invalid invoice status")
+
+    invoice = get_invoice(invoice_id)
+
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    require_branch_access(current_user, invoice.get("branch_id"))
+
+    old_status = invoice.get("status")
+
+    if (
+        old_status == "Paid"
+        and new_status != "Paid"
+        and current_user["role"] != ROLE_ADMIN
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Paid invoices cannot be downgraded by Accounting Staff. Ask an Administrator to perform a correction.",
+        )
+
+    updated_invoice = execute(
+        """
+        UPDATE invoices
+        SET status = %s,
+            notes = COALESCE(%s, notes),
+            paid_at = CASE
+                WHEN %s = 'Paid' THEN CURRENT_TIMESTAMP
+                WHEN %s != 'Paid' THEN NULL
+                ELSE paid_at
+            END,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE invoice_id = %s
+        RETURNING
+            invoice_id,
+            sample_id,
+            branch_id,
+            client_name,
+            amount,
+            status,
+            created_by,
+            created_at,
+            updated_at,
+            paid_at,
+            notes
+        """,
+        (new_status, notes, new_status, new_status, invoice_id),
+        fetch="one",
+    )
+
+    if new_status in {"Paid", "Cancelled"}:
+        sync_sample_payment_from_invoice(
+            invoice=updated_invoice,
+            new_invoice_status=new_status,
+            current_user=current_user,
+            request=request,
+            notes=notes,
+        )
+
+    log_event(
+        action="UPDATE_INVOICE_STATUS",
+        endpoint_accessed=f"/api/accounting/invoices/{invoice_id}/status",
+        user_id=current_user["user_id"],
+        sample_id=invoice.get("sample_id"),
+        old_value={"status": old_status},
+        new_value=make_json_safe({"status": new_status, "notes": notes}),
+        ip_address=request.client.host if request.client else None,
+    )
+
+    return make_json_safe(updated_invoice)
 
 
 @router.patch("/samples/{sample_id}/payment")
@@ -200,7 +637,6 @@ def update_sample_payment(
     request: Request,
     current_user=Depends(require_roles(ROLE_ACCOUNTING, ROLE_ADMIN)),
 ):
-    from ..database import execute
     from ..services.sample_service import get_sample
 
     item = get_sample(sample_id)
@@ -238,7 +674,11 @@ def update_sample_payment(
             detail="Payment updates after report release require Administrator correction.",
         )
 
-    if old_payment_status == PAYMENT_FULLY_PAID and new_payment_status != PAYMENT_FULLY_PAID and role != ROLE_ADMIN:
+    if (
+        old_payment_status == PAYMENT_FULLY_PAID
+        and new_payment_status != PAYMENT_FULLY_PAID
+        and role != ROLE_ADMIN
+    ):
         raise HTTPException(
             status_code=400,
             detail="Fully Paid records cannot be downgraded by Accounting Staff. Ask an Administrator to perform a correction.",
@@ -296,8 +736,12 @@ def update_sample_payment(
     if confirmation_note:
         payment["confirmation_note"] = confirmation_note
 
-    payment["financially_cleared_for_testing"] = new_payment_status in INITIAL_PAYMENT_STATUSES
-    payment["financially_cleared_for_release"] = new_payment_status == PAYMENT_FULLY_PAID
+    payment["financially_cleared_for_testing"] = (
+        new_payment_status in INITIAL_PAYMENT_STATUSES
+    )
+    payment["financially_cleared_for_release"] = (
+        new_payment_status == PAYMENT_FULLY_PAID
+    )
 
     metadata["payment"] = payment
 
@@ -319,15 +763,21 @@ def update_sample_payment(
         old_value={
             "payment_status": old_payment_status,
         },
-        new_value={
-            "payment_status": new_payment_status,
-            "amount_paid": amount_paid,
-            "balance": balance,
-            "billing_notes": billing_notes,
-            "confirmation_note": confirmation_note,
-            "financially_cleared_for_testing": payment["financially_cleared_for_testing"],
-            "financially_cleared_for_release": payment["financially_cleared_for_release"],
-        },
+        new_value=make_json_safe(
+            {
+                "payment_status": new_payment_status,
+                "amount_paid": amount_paid,
+                "balance": balance,
+                "billing_notes": billing_notes,
+                "confirmation_note": confirmation_note,
+                "financially_cleared_for_testing": payment[
+                    "financially_cleared_for_testing"
+                ],
+                "financially_cleared_for_release": payment[
+                    "financially_cleared_for_release"
+                ],
+            }
+        ),
         ip_address=request.client.host if request.client else None,
     )
 

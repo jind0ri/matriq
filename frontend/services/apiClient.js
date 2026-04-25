@@ -97,6 +97,18 @@ export const apiClient = {
   getAccountingDashboard: () => request("/api/accounting/dashboard"),
   getAccountingBilling: () => request("/api/accounting/billing"),
   getAccountingInvoices: () => request("/api/accounting/invoices"),
+  createInvoice: (payload) =>
+    request("/api/accounting/invoices", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  updateInvoiceStatus: (invoiceId, payload) =>
+    request(`/api/accounting/invoices/${invoiceId}/status`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+
   getUsers: () => request("/api/users"),
   getLabTechWorkflow: () => request("/api/lab-tech/workflow"),
 

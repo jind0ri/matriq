@@ -1,22 +1,68 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { apiClient } from "@/services/apiClient";
+import { apiClient, getStoredUser } from "@/services/apiClient";
+
+import Badge from "@/components/ui/Badge";
+import Button from "@/components/ui/Button";
+import Card from "@/components/ui/Card";
+import EmptyState from "@/components/ui/EmptyState";
+import Input from "@/components/ui/Input";
+import Loader from "@/components/ui/Loader";
+import MetricStrip from "@/components/ui/MetricStrip";
+import Modal from "@/components/ui/Modal";
+import Select from "@/components/ui/Select";
+import StatCard from "@/components/ui/StatCard";
+import Table from "@/components/ui/Table";
+import Textarea from "@/components/ui/Textarea";
 
 const BASE_FEE = 2500;
 
+const INVOICE_COLUMNS = [
+  { key: "invoice_id", label: "Invoice ID" },
+  { key: "sample_id", label: "Sample ID" },
+  { key: "client_name", label: "Client" },
+  { key: "amount", label: "Amount", align: "right" },
+  { key: "status", label: "Status" },
+  { key: "action", label: "Action", align: "right" },
+];
+
+const SAMPLE_COLUMNS = [
+  { key: "sample_id", label: "Sample ID" },
+  { key: "material_type", label: "Material" },
+  { key: "branch_id", label: "Branch" },
+  { key: "billing_status", label: "Billing Status" },
+];
+
 export default function AccountingDashboard() {
+  const user = getStoredUser();
+
   const [samples, setSamples] = useState([]);
+  const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [creatingInvoice, setCreatingInvoice] = useState(false);
+  const [invoiceModalOpen, setInvoiceModalOpen] = useState(false);
+  const [selectedSampleId, setSelectedSampleId] = useState("");
+  const [invoiceAmount, setInvoiceAmount] = useState(String(BASE_FEE));
+  const [invoiceNotes, setInvoiceNotes] = useState("");
   const [error, setError] = useState("");
+  const [modalError, setModalError] = useState("");
+
+  const isAdmin = user?.role === "Administrator";
+  const userBranchId = user?.branch_id;
 
   async function loadData() {
     setLoading(true);
     setError("");
 
     try {
-      const data = await apiClient.getSamples();
-      setSamples(Array.isArray(data) ? data : []);
+      const [sampleData, invoiceData] = await Promise.all([
+        apiClient.getSamples(),
+        apiClient.getAccountingInvoices(),
+      ]);
+
+      setSamples(Array.isArray(sampleData) ? sampleData : []);
+      setInvoices(Array.isArray(invoiceData) ? invoiceData : []);
     } catch (err) {
       setError(err.message || "Failed to load accounting dashboard.");
     } finally {
@@ -28,378 +74,701 @@ export default function AccountingDashboard() {
     loadData();
   }, []);
 
-  const releasedSamples = useMemo(() => {
+  const visibleSamples = useMemo(() => {
+    if (isAdmin) return samples;
+
     return samples.filter(
-      (item) =>
-        item.current_state === "Released" || item.current_state === "Archived"
+      (item) => Number(item.branch_id) === Number(userBranchId),
     );
-  }, [samples]);
+  }, [samples, isAdmin, userBranchId]);
 
-  const pendingBilling = releasedSamples.filter(
-    (item) => item.current_state === "Released"
-  );
+  const visibleInvoices = useMemo(() => {
+    if (isAdmin) return invoices;
 
-  const paidSamples = releasedSamples.filter(
-    (item) => item.current_state === "Archived"
-  );
+    return invoices.filter(
+      (item) => Number(item.branch_id) === Number(userBranchId),
+    );
+  }, [invoices, isAdmin, userBranchId]);
 
-  const outstandingBalance = pendingBilling.length * BASE_FEE;
+  const releasedSamples = useMemo(() => {
+    return visibleSamples.filter(
+      (item) =>
+        item.current_state === "Released" || item.current_state === "Archived",
+    );
+  }, [visibleSamples]);
 
-  const invoices = releasedSamples.slice(0, 5).map((item, index) => ({
-    id: `INV-${String(index + 1).padStart(4, "0")}`,
-    sample_id: item.sample_id,
-    client: item.client_name || "-",
-    amount: BASE_FEE,
-    status: item.current_state === "Archived" ? "Paid" : "Pending",
-  }));
+  const activeInvoiceSampleIds = useMemo(() => {
+    return new Set(
+      visibleInvoices
+        .filter((invoice) => invoice.status !== "Cancelled")
+        .map((invoice) => invoice.sample_id),
+    );
+  }, [visibleInvoices]);
 
-  const stats = [
-    { label: "Pending Invoices", value: pendingBilling.length },
-    { label: "Paid Samples", value: paidSamples.length },
-    { label: "Released Samples", value: releasedSamples.length },
-    {
-      label: "Outstanding Balance",
-      value: `₱${outstandingBalance.toLocaleString()}`,
-    },
-  ];
+  const invoiceableSamples = useMemo(() => {
+    return visibleSamples.filter(
+      (item) =>
+        item.current_state === "Released" &&
+        !activeInvoiceSampleIds.has(item.sample_id),
+    );
+  }, [visibleSamples, activeInvoiceSampleIds]);
+
+  const pendingInvoices = useMemo(() => {
+    return visibleInvoices.filter((invoice) => invoice.status === "Pending");
+  }, [visibleInvoices]);
+
+  const paidInvoices = useMemo(() => {
+    return visibleInvoices.filter((invoice) => invoice.status === "Paid");
+  }, [visibleInvoices]);
+
+  const outstandingBalance = useMemo(() => {
+    return pendingInvoices.reduce(
+      (sum, invoice) => sum + Number(invoice.amount || 0),
+      0,
+    );
+  }, [pendingInvoices]);
+
+  const paidAmount = useMemo(() => {
+    return paidInvoices.reduce(
+      (sum, invoice) => sum + Number(invoice.amount || 0),
+      0,
+    );
+  }, [paidInvoices]);
+
+  const totalBillableAmount = releasedSamples.length * BASE_FEE;
+
+  const recentInvoices = useMemo(() => {
+    return visibleInvoices.slice(0, 6);
+  }, [visibleInvoices]);
+
+  const billableSamples = useMemo(() => {
+    return releasedSamples.slice(0, 6);
+  }, [releasedSamples]);
+
+  const selectedSample = useMemo(() => {
+    return invoiceableSamples.find(
+      (sample) => sample.sample_id === selectedSampleId,
+    );
+  }, [invoiceableSamples, selectedSampleId]);
+
+  const branchLabel = isAdmin ? "All Branches" : formatBranch(userBranchId);
+
+  function openCreateInvoiceModal() {
+    const firstSample = invoiceableSamples[0];
+
+    setSelectedSampleId(firstSample?.sample_id || "");
+    setInvoiceAmount(String(BASE_FEE));
+    setInvoiceNotes("");
+    setModalError("");
+    setInvoiceModalOpen(true);
+  }
+
+  function closeCreateInvoiceModal() {
+    if (creatingInvoice) return;
+
+    setInvoiceModalOpen(false);
+    setModalError("");
+  }
+
+  async function handleCreateInvoice() {
+    setModalError("");
+
+    if (!selectedSampleId) {
+      setModalError("Please select a released sample.");
+      return;
+    }
+
+    const parsedAmount = Number(invoiceAmount);
+
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+      setModalError("Invoice amount must be greater than zero.");
+      return;
+    }
+
+    setCreatingInvoice(true);
+
+    try {
+      await apiClient.createInvoice({
+        sample_id: selectedSampleId,
+        amount: parsedAmount,
+        notes: invoiceNotes,
+      });
+
+      setInvoiceModalOpen(false);
+      setSelectedSampleId("");
+      setInvoiceAmount(String(BASE_FEE));
+      setInvoiceNotes("");
+
+      await loadData();
+    } catch (err) {
+      setModalError(err.message || "Failed to create invoice.");
+    } finally {
+      setCreatingInvoice(false);
+    }
+  }
+
+  async function handleMarkPaid(invoiceId) {
+    try {
+      await apiClient.updateInvoiceStatus(invoiceId, {
+        status: "Paid",
+        notes: "Marked as paid from accounting dashboard.",
+      });
+
+      await loadData();
+    } catch (err) {
+      setError(err.message || "Failed to update invoice status.");
+    }
+  }
 
   return (
-    <>
-      <div className="page">
-        <div className="header">
-          <div>
-            <h1>Accounting Dashboard</h1>
-            <p>Track billing, released samples, and invoice activity.</p>
-          </div>
-
-          <div className="actions">
-            <button type="button" className="primaryButton">
-              Create Invoice
-            </button>
-
-            <button type="button" className="secondaryButton">
-              View Billing Reports
-            </button>
-          </div>
+    <div className="page">
+      <header className="header">
+        <div>
+          <h1>Accounting Dashboard</h1>
+          <p>
+            Billing and payment overview for <strong>{branchLabel}</strong>.
+          </p>
         </div>
 
-        {loading && <div className="panel">Loading accounting data...</div>}
-        {!loading && error && <div className="panel error">{error}</div>}
+        <div className="headerActions">
+          <Button variant="secondary" size="sm" onClick={loadData}>
+            Refresh
+          </Button>
 
-        {!loading && !error && (
-          <>
-            <div className="statsRow">
-              {stats.map((stat) => (
-                <div key={stat.label} className="statCard">
-                  <span>{stat.label}</span>
-                  <strong>{stat.value}</strong>
-                </div>
-              ))}
-            </div>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={openCreateInvoiceModal}
+            disabled={invoiceableSamples.length === 0}
+            title={
+              invoiceableSamples.length === 0
+                ? "No released samples available for invoicing."
+                : "Create invoice"
+            }
+          >
+            Create Invoice
+          </Button>
+        </div>
+      </header>
 
-            <div className="contentGrid">
-              <div className="panel">
-                <div className="panelHeader">
-                  <h3>Recent Invoices</h3>
-                  <button type="button">View All</button>
-                </div>
+      {!isAdmin && !userBranchId && (
+        <section className="warningNotice">
+          <strong>No branch assigned</strong>
+          <span>
+            This accounting account does not have a branch assigned, so billing
+            records may not appear correctly.
+          </span>
+        </section>
+      )}
 
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Invoice ID</th>
-                      <th>Client</th>
-                      <th>Amount</th>
-                      <th>Status</th>
-                    </tr>
-                  </thead>
+      {isAdmin && (
+        <section className="adminNotice">
+          <strong>Administrator View</strong>
+          <span>You are viewing accounting records from all branches.</span>
+        </section>
+      )}
 
-                  <tbody>
-                    {invoices.map((item) => (
-                      <tr key={item.id}>
-                        <td>{item.id}</td>
-                        <td>{item.client}</td>
-                        <td>₱{item.amount.toLocaleString()}</td>
-                        <td>
-                          <span
-                            className={
-                              item.status === "Paid"
-                                ? "status paid"
-                                : "status pending"
-                            }
+      {loading && <Loader label="Loading accounting data..." />}
+
+      {!loading && error && (
+        <Card>
+          <div className="errorText">{error}</div>
+        </Card>
+      )}
+
+      {!loading && !error && (
+        <>
+          <section className="statsRow">
+            <StatCard
+              label="Pending"
+              value={pendingInvoices.length}
+              note="Invoices awaiting payment"
+              variant="warning"
+            />
+
+            <StatCard
+              label="Paid"
+              value={paidInvoices.length}
+              note="Completed invoices"
+              variant="success"
+            />
+
+            <StatCard
+              label="Collected"
+              value={formatCurrency(paidAmount)}
+              note="Total paid invoice value"
+              variant="brand"
+            />
+
+            <StatCard
+              label="Outstanding"
+              value={formatCurrency(outstandingBalance)}
+              note="Pending invoice value"
+              variant="danger"
+            />
+          </section>
+
+          <MetricStrip
+            items={[
+              {
+                label: "Billable Samples",
+                value: releasedSamples.length,
+              },
+              {
+                label: "Ready to Invoice",
+                value: invoiceableSamples.length,
+              },
+              {
+                label: "Total Billable Value",
+                value: formatCurrency(totalBillableAmount),
+              },
+              {
+                label: "Branch Scope",
+                value: branchLabel,
+              },
+            ]}
+          />
+
+          <section className="contentGrid">
+            <Card
+              title="Recent Invoices"
+              subtitle="Invoices stored in the database."
+              actions={
+                <button type="button" className="textAction">
+                  View All
+                </button>
+              }
+            >
+              {recentInvoices.length === 0 ? (
+                <EmptyState
+                  title="No invoices yet"
+                  description="Create an invoice from a released sample to begin tracking billing."
+                />
+              ) : (
+                <Table
+                  columns={INVOICE_COLUMNS}
+                  data={recentInvoices}
+                  emptyText="No invoices found."
+                  density="comfortable"
+                  variant="minimal"
+                  renderRow={(item) => (
+                    <tr key={item.invoice_id}>
+                      <td>{item.invoice_id}</td>
+                      <td>{item.sample_id}</td>
+                      <td>{item.client_name || "-"}</td>
+                      <td className="right">{formatCurrency(item.amount)}</td>
+                      <td>
+                        <InvoiceStatusBadge status={item.status} />
+                      </td>
+                      <td className="right">
+                        {item.status === "Pending" ? (
+                          <button
+                            type="button"
+                            className="rowAction"
+                            onClick={() => handleMarkPaid(item.invoice_id)}
                           >
-                            {item.status}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-
-                    {invoices.length === 0 && (
-                      <tr>
-                        <td colSpan={4} className="empty">
-                          No released samples available for invoicing.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="panel">
-                <div className="panelHeader">
-                  <h3>Released Samples for Billing</h3>
-                  <button type="button">View All</button>
-                </div>
-
-                <div className="sampleList">
-                  {releasedSamples.slice(0, 5).map((item) => (
-                    <div key={item.sample_id} className="sampleCard">
-                      <strong>{item.sample_id}</strong>
-                      <p>{item.material_type || item.ai_predicted_label || "-"}</p>
-                      <span>Branch {item.branch_id || "-"}</span>
-
-                      <div className="statusRow">
-                        <span
-                          className={
-                            item.current_state === "Archived"
-                              ? "status paid"
-                              : "status ready"
-                          }
-                        >
-                          {item.current_state === "Archived" ? "Paid" : "Ready"}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-
-                  {releasedSamples.length === 0 && (
-                    <div className="sampleCard">
-                      <strong>No released samples yet</strong>
-                      <p>Samples will appear here after QA release.</p>
-                    </div>
+                            Mark Paid
+                          </button>
+                        ) : (
+                          <span className="mutedText">Done</span>
+                        )}
+                      </td>
+                    </tr>
                   )}
+                />
+              )}
+            </Card>
+
+            <Card
+              title="Released Samples"
+              subtitle="Samples ready for invoice preparation or payment review."
+              actions={
+                <button type="button" className="textAction">
+                  View All
+                </button>
+              }
+            >
+              {billableSamples.length === 0 ? (
+                <EmptyState
+                  title="No released samples yet"
+                  description="Samples for this branch will appear here after QA release."
+                />
+              ) : (
+                <Table
+                  columns={SAMPLE_COLUMNS}
+                  data={billableSamples}
+                  emptyText="No released samples yet."
+                  density="comfortable"
+                  variant="minimal"
+                  renderRow={(item) => (
+                    <tr key={item.sample_id}>
+                      <td>{item.sample_id}</td>
+                      <td>
+                        {item.material_type || item.ai_predicted_label || "-"}
+                      </td>
+                      <td>{formatBranch(item.branch_id)}</td>
+                      <td>
+                        <BillingStatusBadge
+                          status={item.current_state}
+                          hasInvoice={activeInvoiceSampleIds.has(item.sample_id)}
+                        />
+                      </td>
+                    </tr>
+                  )}
+                />
+              )}
+            </Card>
+          </section>
+        </>
+      )}
+
+      <Modal
+        open={invoiceModalOpen}
+        title="Create Invoice"
+        description="Create a stored invoice for a released sample."
+        onClose={closeCreateInvoiceModal}
+        size="md"
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              onClick={closeCreateInvoiceModal}
+              disabled={creatingInvoice}
+            >
+              Cancel
+            </Button>
+
+            <Button
+              variant="primary"
+              onClick={handleCreateInvoice}
+              disabled={creatingInvoice || !selectedSampleId}
+            >
+              {creatingInvoice ? "Creating..." : "Create Invoice"}
+            </Button>
+          </>
+        }
+      >
+        {invoiceableSamples.length === 0 ? (
+          <EmptyState
+            title="No samples ready for invoice"
+            description="Only released samples without an active invoice can be invoiced."
+          />
+        ) : (
+          <div className="invoiceForm">
+            {modalError && <div className="modalError">{modalError}</div>}
+
+            <Select
+              label="Released Sample"
+              name="selectedSampleId"
+              value={selectedSampleId}
+              onChange={(event) => setSelectedSampleId(event.target.value)}
+            >
+              {invoiceableSamples.map((sample) => (
+                <option key={sample.sample_id} value={sample.sample_id}>
+                  {sample.sample_id} — {sample.client_name || "No client"}
+                </option>
+              ))}
+            </Select>
+
+            <Input
+              label="Invoice Amount"
+              name="invoiceAmount"
+              type="number"
+              value={invoiceAmount}
+              onChange={(event) => setInvoiceAmount(event.target.value)}
+              helperText="Default laboratory invoice amount can be adjusted before saving."
+            />
+
+            <Textarea
+              label="Notes"
+              name="invoiceNotes"
+              value={invoiceNotes}
+              onChange={(event) => setInvoiceNotes(event.target.value)}
+              placeholder="Optional invoice notes..."
+              rows={3}
+            />
+
+            {selectedSample && (
+              <div className="invoicePreview">
+                <div>
+                  <span>Client</span>
+                  <strong>{selectedSample.client_name || "-"}</strong>
+                </div>
+
+                <div>
+                  <span>Material</span>
+                  <strong>
+                    {selectedSample.material_type ||
+                      selectedSample.ai_predicted_label ||
+                      "-"}
+                  </strong>
+                </div>
+
+                <div>
+                  <span>Branch</span>
+                  <strong>{formatBranch(selectedSample.branch_id)}</strong>
                 </div>
               </div>
-            </div>
-          </>
+            )}
+          </div>
         )}
-      </div>
+      </Modal>
 
       <style jsx>{`
         .page {
           display: flex;
           flex-direction: column;
-          gap: 28px;
+          gap: 22px;
+          color: var(--color-text-primary);
         }
 
         .header {
           display: flex;
-          justify-content: space-between;
           align-items: flex-start;
-          gap: 24px;
+          justify-content: space-between;
+          gap: 18px;
         }
 
-        h1 {
+        .header h1 {
           margin: 0;
-          font-size: 24px;
-          color: #1f2937;
+          color: var(--color-text-primary);
+          font-size: 18px;
+          font-weight: 850;
+          letter-spacing: -0.02em;
         }
 
-        p {
-          margin: 6px 0 0;
-          font-size: 14px;
-          color: #4b5563;
+        .header p {
+          margin: 4px 0 0;
+          color: var(--color-text-secondary);
+          font-size: 11px;
+          line-height: 1.45;
         }
 
-        h3 {
-          margin: 0;
-          color: #1f2937;
-          font-size: 15px;
-          font-weight: 700;
+        .header p strong {
+          color: var(--color-text-primary);
+          font-weight: 850;
         }
 
-        .actions {
+        .headerActions {
           display: flex;
-          gap: 12px;
+          align-items: center;
+          justify-content: flex-end;
+          gap: 8px;
           flex-wrap: wrap;
         }
 
-        .primaryButton,
-        .secondaryButton {
-          height: 44px;
-          border-radius: 12px;
-          padding: 0 16px;
-          font-size: 13px;
-          font-weight: 700;
-          cursor: pointer;
+        .adminNotice,
+        .warningNotice {
+          display: grid;
+          gap: 4px;
+          border-radius: var(--radius-md);
+          padding: 12px 14px;
+          font-size: var(--text-sm);
+          line-height: 1.5;
         }
 
-        .primaryButton {
-          border: none;
-          background: #080026;
-          color: #ffffff;
+        .adminNotice {
+          background: var(--color-info-bg);
+          color: var(--color-info);
+          border: 1px solid var(--color-info-border);
         }
 
-        .secondaryButton {
-          border: 1px solid #d1d5db;
-          background: #ffffff;
-          color: #1f2937;
+        .warningNotice {
+          background: var(--color-warning-bg);
+          color: var(--color-warning);
+          border: 1px solid var(--color-warning-border);
+        }
+
+        .adminNotice strong,
+        .warningNotice strong {
+          font-size: var(--text-sm);
+        }
+
+        .errorText {
+          color: var(--color-danger);
+          font-size: var(--text-sm);
+          font-weight: 800;
         }
 
         .statsRow {
           display: grid;
-          grid-template-columns: repeat(4, 1fr);
-          gap: 18px;
-        }
-
-        .statCard,
-        .panel {
-          background: #ffffff;
-          border: 1px solid #e5e7eb;
-          border-radius: 16px;
-          padding: 18px;
-        }
-
-        .statCard span {
-          font-size: 12px;
-          color: #374151;
-        }
-
-        .statCard strong {
-          display: block;
-          margin-top: 8px;
-          font-size: 24px;
-          color: #111827;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 14px;
         }
 
         .contentGrid {
           display: grid;
-          grid-template-columns: 1.1fr 0.9fr;
-          gap: 20px;
+          grid-template-columns: 1fr 1fr;
+          gap: 18px;
+          align-items: start;
         }
 
-        .panelHeader {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          gap: 12px;
-          margin-bottom: 16px;
-        }
-
-        .panelHeader button {
+        .textAction,
+        .rowAction {
           border: none;
           background: transparent;
-          color: #4b5563;
-          font-size: 12px;
-          font-weight: 700;
+          color: var(--color-brand);
+          font-size: var(--text-xs);
+          font-weight: 900;
+          padding: 0;
           cursor: pointer;
         }
 
-        table {
-          width: 100%;
-          border-collapse: collapse;
+        .textAction:hover,
+        .rowAction:hover {
+          color: var(--color-brand-dark);
+          text-decoration: underline;
+          transform: none;
+          box-shadow: none;
         }
 
-        th {
-          text-align: left;
-          font-size: 11px;
-          font-weight: 700;
-          color: #4b5563;
-          padding-bottom: 10px;
+        .mutedText {
+          color: var(--color-text-muted);
+          font-size: var(--text-xs);
+          font-weight: 800;
         }
 
-        td {
-          padding: 14px 0;
-          font-size: 13px;
-          color: #1f2937;
-          border-top: 1px solid #f1f5f9;
+        .invoiceForm {
+          display: grid;
+          gap: 14px;
         }
 
-        .empty {
-          text-align: center;
-          color: #6b7280;
+        .modalError {
+          border: 1px solid var(--color-danger-border);
+          border-radius: var(--radius-md);
+          background: var(--color-danger-bg);
+          color: var(--color-danger);
+          padding: 11px 12px;
+          font-size: var(--text-xs);
+          font-weight: 800;
+          line-height: 1.45;
         }
 
-        .status {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          min-width: 72px;
-          padding: 6px 10px;
-          border-radius: 999px;
-          font-size: 11px;
-          font-weight: 700;
+        .invoicePreview {
+          display: grid;
+          gap: 9px;
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-md);
+          background: var(--color-overlay);
+          padding: 13px;
         }
 
-        .status.pending {
-          background: #fff7ed;
-          color: #c2410c;
-        }
-
-        .status.paid {
-          background: #ecfdf5;
-          color: #047857;
-        }
-
-        .status.ready {
-          background: #eff6ff;
-          color: #1d4ed8;
-        }
-
-        .sampleList {
-          display: flex;
-          flex-direction: column;
+        .invoicePreview div {
+          display: grid;
+          grid-template-columns: 90px minmax(0, 1fr);
           gap: 12px;
+          align-items: center;
         }
 
-        .sampleCard {
-          background: #f8fafc;
-          border: 1px solid #e5e7eb;
-          border-radius: 14px;
-          padding: 14px;
+        .invoicePreview span {
+          color: var(--color-text-secondary);
+          font-size: 10px;
+          font-weight: 850;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
         }
 
-        .sampleCard strong {
-          display: block;
-          font-size: 13px;
-          color: #111827;
+        .invoicePreview strong {
+          color: var(--color-text-primary);
+          font-size: var(--text-xs);
+          font-weight: 850;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
         }
 
-        .sampleCard p {
-          margin: 6px 0 4px;
-          font-size: 12px;
-          color: #374151;
+        :global(.right) {
+          text-align: right;
         }
 
-        .sampleCard span {
-          font-size: 11px;
-          color: #6b7280;
-        }
-
-        .statusRow {
-          margin-top: 10px;
-        }
-
-        .error {
-          color: #b91c1c;
-          border-color: #fecaca;
-          background: #fff7f7;
-        }
-
-        @media (max-width: 980px) {
-          .header {
-            flex-direction: column;
-          }
-
+        @media (max-width: 1100px) {
           .statsRow {
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
           }
 
           .contentGrid {
             grid-template-columns: 1fr;
           }
         }
+
+        @media (max-width: 720px) {
+          .header {
+            flex-direction: column;
+          }
+
+          .headerActions {
+            justify-content: flex-start;
+          }
+        }
+
+        @media (max-width: 520px) {
+          .statsRow {
+            grid-template-columns: 1fr;
+          }
+
+          .invoicePreview div {
+            grid-template-columns: 1fr;
+            gap: 3px;
+          }
+        }
       `}</style>
-    </>
+    </div>
   );
+}
+
+function InvoiceStatusBadge({ status }) {
+  const variant =
+    status === "Paid"
+      ? "success"
+      : status === "Cancelled"
+        ? "danger"
+        : "warning";
+
+  return (
+    <Badge variant={variant} size="sm">
+      {status || "Pending"}
+    </Badge>
+  );
+}
+
+function BillingStatusBadge({ status, hasInvoice }) {
+  if (hasInvoice) {
+    return (
+      <Badge variant="info" size="sm">
+        Invoiced
+      </Badge>
+    );
+  }
+
+  if (status === "Archived") {
+    return (
+      <Badge variant="success" size="sm">
+        Paid
+      </Badge>
+    );
+  }
+
+  if (status === "Released") {
+    return (
+      <Badge variant="warning" size="sm">
+        Ready
+      </Badge>
+    );
+  }
+
+  return (
+    <Badge variant="neutral" size="sm">
+      {status || "-"}
+    </Badge>
+  );
+}
+
+function formatBranch(branchId) {
+  if (Number(branchId) === 1) return "Marikina";
+  if (Number(branchId) === 2) return "Pateros";
+  return branchId ? `Branch ${branchId}` : "-";
+}
+
+function formatCurrency(value) {
+  return `₱${Number(value || 0).toLocaleString()}`;
 }
