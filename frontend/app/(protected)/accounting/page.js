@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { apiClient, getStoredUser } from "@/services/apiClient";
 
 import Badge from "@/components/ui/Badge";
@@ -45,6 +46,8 @@ export default function AccountingDashboard() {
   const [selectedSampleId, setSelectedSampleId] = useState("");
   const [invoiceAmount, setInvoiceAmount] = useState(String(BASE_FEE));
   const [invoiceNotes, setInvoiceNotes] = useState("");
+  const [selectedSampleDetails, setSelectedSampleDetails] = useState(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [error, setError] = useState("");
   const [modalError, setModalError] = useState("");
 
@@ -57,7 +60,7 @@ export default function AccountingDashboard() {
 
     try {
       const [sampleData, invoiceData] = await Promise.all([
-        apiClient.getSamples(),
+        apiClient.getAccountingBilling(),
         apiClient.getAccountingInvoices(),
       ]);
 
@@ -89,6 +92,25 @@ export default function AccountingDashboard() {
       (item) => Number(item.branch_id) === Number(userBranchId),
     );
   }, [invoices, isAdmin, userBranchId]);
+
+  const invoiceBySampleId = useMemo(() => {
+    const map = new Map();
+
+    visibleInvoices.forEach((invoice) => {
+      const existing = map.get(invoice.sample_id);
+
+      if (!existing) {
+        map.set(invoice.sample_id, invoice);
+        return;
+      }
+
+      if (existing.status === "Cancelled" && invoice.status !== "Cancelled") {
+        map.set(invoice.sample_id, invoice);
+      }
+    });
+
+    return map;
+  }, [visibleInvoices]);
 
   const releasedSamples = useMemo(() => {
     return visibleSamples.filter(
@@ -142,8 +164,16 @@ export default function AccountingDashboard() {
   }, [visibleInvoices]);
 
   const billableSamples = useMemo(() => {
-    return releasedSamples.slice(0, 6);
-  }, [releasedSamples]);
+    return releasedSamples.slice(0, 6).map((sample) => {
+      const invoice = invoiceBySampleId.get(sample.sample_id);
+
+      return {
+        ...sample,
+        invoice,
+        billing_status: getBillingStatus(sample, invoice),
+      };
+    });
+  }, [releasedSamples, invoiceBySampleId]);
 
   const selectedSample = useMemo(() => {
     return invoiceableSamples.find(
@@ -168,6 +198,16 @@ export default function AccountingDashboard() {
 
     setInvoiceModalOpen(false);
     setModalError("");
+  }
+
+  function openSampleDetails(sample) {
+    setSelectedSampleDetails(sample);
+    setDetailsOpen(true);
+  }
+
+  function closeSampleDetails() {
+    setDetailsOpen(false);
+    setSelectedSampleDetails(null);
   }
 
   async function handleCreateInvoice() {
@@ -204,19 +244,6 @@ export default function AccountingDashboard() {
       setModalError(err.message || "Failed to create invoice.");
     } finally {
       setCreatingInvoice(false);
-    }
-  }
-
-  async function handleMarkPaid(invoiceId) {
-    try {
-      await apiClient.updateInvoiceStatus(invoiceId, {
-        status: "Paid",
-        notes: "Marked as paid from accounting dashboard.",
-      });
-
-      await loadData();
-    } catch (err) {
-      setError(err.message || "Failed to update invoice status.");
     }
   }
 
@@ -332,11 +359,11 @@ export default function AccountingDashboard() {
           <section className="contentGrid">
             <Card
               title="Recent Invoices"
-              subtitle="Invoices stored in the database."
+              subtitle="Invoices stored in the database. Open the invoices page to update payment status safely."
               actions={
-                <button type="button" className="textAction">
+                <Link href="/accounting/invoices" className="textAction">
                   View All
-                </button>
+                </Link>
               }
             >
               {recentInvoices.length === 0 ? (
@@ -361,17 +388,9 @@ export default function AccountingDashboard() {
                         <InvoiceStatusBadge status={item.status} />
                       </td>
                       <td className="right">
-                        {item.status === "Pending" ? (
-                          <button
-                            type="button"
-                            className="rowAction"
-                            onClick={() => handleMarkPaid(item.invoice_id)}
-                          >
-                            Mark Paid
-                          </button>
-                        ) : (
-                          <span className="mutedText">Done</span>
-                        )}
+                        <Link href="/accounting/invoices" className="rowAction">
+                          Open
+                        </Link>
                       </td>
                     </tr>
                   )}
@@ -381,11 +400,11 @@ export default function AccountingDashboard() {
 
             <Card
               title="Released Samples"
-              subtitle="Samples ready for invoice preparation or payment review."
+              subtitle="Samples ready for invoice preparation or payment review. Click a row to view details."
               actions={
-                <button type="button" className="textAction">
+                <Link href="/accounting/billing" className="textAction">
                   View All
-                </button>
+                </Link>
               }
             >
               {billableSamples.length === 0 ? (
@@ -400,18 +419,27 @@ export default function AccountingDashboard() {
                   emptyText="No released samples yet."
                   density="comfortable"
                   variant="minimal"
+                  className="sampleTable"
                   renderRow={(item) => (
-                    <tr key={item.sample_id}>
+                    <tr
+                      key={item.sample_id}
+                      className="clickableRow"
+                      onClick={() => openSampleDetails(item)}
+                      tabIndex={0}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          openSampleDetails(item);
+                        }
+                      }}
+                    >
                       <td>{item.sample_id}</td>
                       <td>
                         {item.material_type || item.ai_predicted_label || "-"}
                       </td>
                       <td>{formatBranch(item.branch_id)}</td>
                       <td>
-                        <BillingStatusBadge
-                          status={item.current_state}
-                          hasInvoice={activeInvoiceSampleIds.has(item.sample_id)}
-                        />
+                        <BillingStatusBadge status={item.billing_status} />
                       </td>
                     </tr>
                   )}
@@ -514,6 +542,29 @@ export default function AccountingDashboard() {
         )}
       </Modal>
 
+      <Modal
+        open={detailsOpen}
+        title="Sample Billing Details"
+        description="Billing, invoice, and payment context for this sample."
+        onClose={closeSampleDetails}
+        size="lg"
+        footer={
+          selectedSampleDetails?.invoice?.invoice_id ? (
+            <Link href="/accounting/invoices" className="footerButton">
+              Open Invoices
+            </Link>
+          ) : (
+            <Link href="/accounting/billing" className="footerButton">
+              Open Billing Queue
+            </Link>
+          )
+        }
+      >
+        {selectedSampleDetails && (
+          <SampleBillingDetails record={selectedSampleDetails} />
+        )}
+      </Modal>
+
       <style jsx>{`
         .page {
           display: flex;
@@ -612,6 +663,8 @@ export default function AccountingDashboard() {
           font-weight: 900;
           padding: 0;
           cursor: pointer;
+          text-decoration: none;
+          white-space: nowrap;
         }
 
         .textAction:hover,
@@ -620,6 +673,28 @@ export default function AccountingDashboard() {
           text-decoration: underline;
           transform: none;
           box-shadow: none;
+        }
+
+        .footerButton {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-height: 34px;
+          padding: 0 14px;
+          border: 1px solid var(--color-brand);
+          border-radius: var(--radius-md);
+          background: var(--color-brand);
+          color: #ffffff;
+          font-size: var(--text-xs);
+          font-weight: 900;
+          text-decoration: none;
+          line-height: 1;
+        }
+
+        .footerButton:hover {
+          background: var(--color-brand-dark);
+          border-color: var(--color-brand-dark);
+          text-decoration: none;
         }
 
         .mutedText {
@@ -681,6 +756,21 @@ export default function AccountingDashboard() {
           text-align: right;
         }
 
+        :global(.sampleTable .clickableRow) {
+          cursor: pointer;
+          transition: background-color var(--transition-base);
+        }
+
+        :global(.sampleTable .clickableRow:hover) {
+          background: var(--color-overlay);
+        }
+
+        :global(.sampleTable .clickableRow:focus-visible) {
+          outline: 2px solid var(--color-brand);
+          outline-offset: -2px;
+          background: var(--color-overlay);
+        }
+
         @media (max-width: 1100px) {
           .statsRow {
             grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -716,6 +806,268 @@ export default function AccountingDashboard() {
   );
 }
 
+function SampleBillingDetails({ record }) {
+  const metadata = record.device_metadata || {};
+  const payment = metadata.payment || {};
+  const invoice = record.invoice || null;
+  const history = Array.isArray(payment.payment_history)
+    ? payment.payment_history
+    : [];
+
+  return (
+    <div className="details">
+      <section className="detailGrid">
+        <Detail label="Sample ID" value={record.sample_id} />
+        <Detail label="Client" value={record.client_name} />
+        <Detail label="Project Reference" value={record.project_reference} />
+        <Detail
+          label="Material"
+          value={record.material_type || record.ai_predicted_label}
+        />
+        <Detail label="Branch" value={formatBranch(record.branch_id)} />
+        <Detail label="Lifecycle Status" value={record.current_state} />
+        <Detail label="Billing Status" value={record.billing_status} />
+        <Detail
+          label="Test Result"
+          value={getFinalResult(metadata.test_data) || "No Result"}
+        />
+      </section>
+
+      <section className="sectionBox">
+        <div className="sectionTitle">
+          <h3>Invoice</h3>
+          {invoice ? (
+            <InvoiceStatusBadge status={invoice.status} />
+          ) : (
+            <Badge variant="warning" size="sm">
+              No Invoice
+            </Badge>
+          )}
+        </div>
+
+        <div className="detailGrid">
+          <Detail label="Invoice ID" value={invoice?.invoice_id} />
+          <Detail
+            label="Invoice Amount"
+            value={invoice ? formatCurrency(invoice.amount) : "-"}
+          />
+          <Detail label="Invoice Status" value={invoice?.status} />
+          <Detail
+            label="Created By"
+            value={invoice?.created_by_name || formatUser(invoice?.created_by)}
+          />
+          <Detail label="Created At" value={formatDate(invoice?.created_at)} />
+          <Detail label="Paid At" value={formatDate(invoice?.paid_at)} />
+          <Detail label="Invoice Notes" value={invoice?.notes} wide />
+        </div>
+      </section>
+
+      <section className="sectionBox">
+        <div className="sectionTitle">
+          <h3>Payment Metadata</h3>
+          <PaymentStatusBadge status={payment.payment_status} />
+        </div>
+
+        <div className="detailGrid">
+          <Detail
+            label="Payment Status"
+            value={payment.payment_status || "Unpaid"}
+          />
+          <Detail label="Amount Paid" value={formatCurrency(payment.amount_paid)} />
+          <Detail label="Balance" value={formatCurrency(payment.balance)} />
+          <Detail
+            label="Updated By"
+            value={
+              payment.payment_updated_by_name ||
+              payment.payment_updated_by_display ||
+              payment.payment_updated_by_full_name ||
+              formatUser(payment.payment_updated_by)
+            }
+          />
+          <Detail label="Updated At" value={formatDate(payment.payment_updated_at)} />
+          <Detail
+            label="Release Cleared"
+            value={payment.financially_cleared_for_release ? "Yes" : "No"}
+          />
+          <Detail label="Billing Notes" value={payment.billing_notes} wide />
+          <Detail
+            label="Confirmation Note"
+            value={payment.confirmation_note}
+            wide
+          />
+        </div>
+      </section>
+
+      <section className="sectionBox">
+        <div className="sectionTitle">
+          <h3>Payment History</h3>
+          <span>{history.length} record(s)</span>
+        </div>
+
+        {history.length === 0 ? (
+          <p className="emptyHistory">No payment history recorded yet.</p>
+        ) : (
+          <div className="historyList">
+            {history
+              .slice()
+              .reverse()
+              .map((entry, index) => (
+                <div className="historyItem" key={`${entry.updated_at}-${index}`}>
+                  <div>
+                    <strong>
+                      {entry.from_status || "-"} → {entry.to_status || "-"}
+                    </strong>
+                    <span>
+                      {entry.updated_by_name ||
+                        entry.updated_by_display ||
+                        entry.updated_by_full_name ||
+                        formatUser(entry.updated_by)}
+                      {" · "}
+                      {formatDate(entry.updated_at)}
+                    </span>
+                  </div>
+
+                  <p>
+                    {entry.billing_notes ||
+                      entry.confirmation_note ||
+                      "No notes."}
+                  </p>
+                </div>
+              ))}
+          </div>
+        )}
+      </section>
+
+      <style jsx>{`
+        .details {
+          display: grid;
+          gap: 16px;
+        }
+
+        .detailGrid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 12px;
+        }
+
+        .sectionBox {
+          display: grid;
+          gap: 13px;
+          padding: 14px;
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-md);
+          background: var(--color-surface);
+        }
+
+        .sectionTitle {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+        }
+
+        .sectionTitle h3 {
+          margin: 0;
+          color: var(--color-text-primary);
+          font-size: var(--text-sm);
+          font-weight: 900;
+        }
+
+        .sectionTitle span {
+          color: var(--color-text-muted);
+          font-size: var(--text-xs);
+          font-weight: 800;
+        }
+
+        .emptyHistory {
+          margin: 0;
+          color: var(--color-text-secondary);
+          font-size: var(--text-xs);
+          font-weight: 700;
+        }
+
+        .historyList {
+          display: grid;
+          gap: 10px;
+        }
+
+        .historyItem {
+          display: grid;
+          gap: 5px;
+          padding: 11px 12px;
+          border: 1px solid var(--color-border-soft);
+          border-radius: var(--radius-md);
+          background: var(--color-overlay);
+        }
+
+        .historyItem div {
+          display: flex;
+          justify-content: space-between;
+          gap: 12px;
+          flex-wrap: wrap;
+        }
+
+        .historyItem strong {
+          color: var(--color-text-primary);
+          font-size: var(--text-xs);
+          font-weight: 900;
+        }
+
+        .historyItem span,
+        .historyItem p {
+          margin: 0;
+          color: var(--color-text-secondary);
+          font-size: var(--text-xs);
+          line-height: 1.45;
+        }
+
+        @media (max-width: 640px) {
+          .detailGrid {
+            grid-template-columns: 1fr;
+          }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function Detail({ label, value, wide = false }) {
+  return (
+    <div className={wide ? "detail wide" : "detail"}>
+      <span>{label}</span>
+      <strong>{formatEmpty(value)}</strong>
+
+      <style jsx>{`
+        .detail {
+          display: grid;
+          gap: 4px;
+          min-width: 0;
+        }
+
+        .detail.wide {
+          grid-column: 1 / -1;
+        }
+
+        span {
+          color: var(--color-text-secondary);
+          font-size: 10px;
+          font-weight: 850;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+
+        strong {
+          color: var(--color-text-primary);
+          font-size: var(--text-xs);
+          font-weight: 800;
+          line-height: 1.45;
+          overflow-wrap: anywhere;
+        }
+      `}</style>
+    </div>
+  );
+}
+
 function InvoiceStatusBadge({ status }) {
   const variant =
     status === "Paid"
@@ -731,36 +1083,54 @@ function InvoiceStatusBadge({ status }) {
   );
 }
 
-function BillingStatusBadge({ status, hasInvoice }) {
-  if (hasInvoice) {
-    return (
-      <Badge variant="info" size="sm">
-        Invoiced
-      </Badge>
-    );
-  }
-
-  if (status === "Archived") {
-    return (
-      <Badge variant="success" size="sm">
-        Paid
-      </Badge>
-    );
-  }
-
-  if (status === "Released") {
-    return (
-      <Badge variant="warning" size="sm">
-        Ready
-      </Badge>
-    );
-  }
+function BillingStatusBadge({ status }) {
+  const variant =
+    status === "Paid"
+      ? "success"
+      : status === "Cancelled"
+        ? "danger"
+        : status === "Invoiced"
+          ? "info"
+          : "warning";
 
   return (
-    <Badge variant="neutral" size="sm">
-      {status || "-"}
+    <Badge variant={variant} size="sm">
+      {status || "Ready"}
     </Badge>
   );
+}
+
+function PaymentStatusBadge({ status }) {
+  const variant =
+    status === "Fully Paid"
+      ? "success"
+      : status === "PO Submitted"
+        ? "info"
+        : status === "Downpayment Paid"
+          ? "warning"
+          : "danger";
+
+  return (
+    <Badge variant={variant} size="sm">
+      {status || "Unpaid"}
+    </Badge>
+  );
+}
+
+function getBillingStatus(sample, invoice) {
+  if (invoice?.status === "Paid") return "Paid";
+  if (invoice?.status === "Pending") return "Invoiced";
+  if (invoice?.status === "Cancelled") return "Cancelled";
+
+  if (sample.current_state === "Released") return "Ready";
+  if (sample.current_state === "Archived") return "Paid";
+
+  return "Ready";
+}
+
+function getFinalResult(testData) {
+  if (!testData) return null;
+  return testData.qa_final_result || testData.result || null;
 }
 
 function formatBranch(branchId) {
@@ -769,6 +1139,34 @@ function formatBranch(branchId) {
   return branchId ? `Branch ${branchId}` : "-";
 }
 
+function formatUser(userId) {
+  if (!userId) return "-";
+
+  const value = String(userId);
+
+  if (Number.isNaN(Number(value))) {
+    return value;
+  }
+
+  return `User ${value}`;
+}
+
+function formatDate(value) {
+  if (!value) return "-";
+
+  try {
+    return new Date(value).toLocaleString();
+  } catch {
+    return value;
+  }
+}
+
+function formatEmpty(value) {
+  if (value === null || value === undefined || value === "") return "-";
+  return value;
+}
+
 function formatCurrency(value) {
+  if (value === null || value === undefined || value === "") return "-";
   return `₱${Number(value || 0).toLocaleString()}`;
 }

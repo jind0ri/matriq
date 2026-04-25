@@ -13,14 +13,17 @@ import Table from "@/components/ui/Table";
 import Textarea from "@/components/ui/Textarea";
 
 const INVOICE_COLUMNS = [
-  { key: "invoice_id", label: "Invoice ID" },
-  { key: "sample_id", label: "Sample ID" },
-  { key: "client_name", label: "Client" },
-  { key: "material_type", label: "Material" },
-  { key: "amount", label: "Amount", align: "right" },
-  { key: "status", label: "Status" },
-  { key: "action", label: "Action", align: "right" },
+  { key: "invoice_id", label: "Invoice ID", width: "130px" },
+  { key: "sample_id", label: "Sample ID", width: "130px" },
+  { key: "client_name", label: "Client", width: "160px" },
+  { key: "material_type", label: "Material", width: "160px" },
+  { key: "amount", label: "Amount", align: "right", width: "120px" },
+  { key: "status", label: "Status", width: "120px" },
+  { key: "action", label: "Action", align: "right", width: "155px" },
 ];
+
+const ACTION_MARK_PAID = "mark_paid";
+const ACTION_CANCEL = "cancel";
 
 export default function InvoicesPage() {
   const [invoices, setInvoices] = useState([]);
@@ -29,8 +32,11 @@ export default function InvoicesPage() {
   const [error, setError] = useState("");
 
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
+  const [detailsModalOpen, setDetailsModalOpen] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
-  const [paymentNote, setPaymentNote] = useState("");
+  const [selectedDetailsInvoice, setSelectedDetailsInvoice] = useState(null);
+  const [selectedAction, setSelectedAction] = useState(null);
+  const [actionNote, setActionNote] = useState("");
   const [modalError, setModalError] = useState("");
 
   async function loadData() {
@@ -51,12 +57,20 @@ export default function InvoicesPage() {
     loadData();
   }, []);
 
+  const activeInvoices = useMemo(() => {
+    return invoices.filter((invoice) => invoice.status !== "Cancelled");
+  }, [invoices]);
+
   const pendingInvoices = useMemo(() => {
     return invoices.filter((invoice) => invoice.status === "Pending");
   }, [invoices]);
 
   const paidInvoices = useMemo(() => {
     return invoices.filter((invoice) => invoice.status === "Paid");
+  }, [invoices]);
+
+  const cancelledInvoices = useMemo(() => {
+    return invoices.filter((invoice) => invoice.status === "Cancelled");
   }, [invoices]);
 
   const outstandingAmount = useMemo(() => {
@@ -73,49 +87,98 @@ export default function InvoicesPage() {
     );
   }, [paidInvoices]);
 
-  function openMarkPaidModal(invoice) {
+  function openDetailsModal(invoice) {
+    setSelectedDetailsInvoice(invoice);
+    setDetailsModalOpen(true);
+  }
+
+  function closeDetailsModal() {
+    setDetailsModalOpen(false);
+    setSelectedDetailsInvoice(null);
+  }
+
+  function openActionModal(invoice, action) {
     setSelectedInvoice(invoice);
-    setPaymentNote(`Invoice ${invoice.invoice_id} marked as paid.`);
+    setSelectedAction(action);
     setModalError("");
+
+    if (action === ACTION_MARK_PAID) {
+      setActionNote(`Invoice ${invoice.invoice_id} marked as paid.`);
+    } else if (action === ACTION_CANCEL) {
+      setActionNote(`Invoice ${invoice.invoice_id} cancelled.`);
+    } else {
+      setActionNote("");
+    }
+
     setConfirmModalOpen(true);
   }
 
-  function closeMarkPaidModal() {
+  function closeActionModal() {
     if (updating) return;
 
     setConfirmModalOpen(false);
     setSelectedInvoice(null);
-    setPaymentNote("");
+    setSelectedAction(null);
+    setActionNote("");
     setModalError("");
   }
 
-  async function handleMarkPaid() {
-    if (!selectedInvoice) return;
+  async function handleConfirmAction() {
+    if (!selectedInvoice || !selectedAction) return;
 
     setUpdating(true);
     setModalError("");
 
     try {
+      const nextStatus =
+        selectedAction === ACTION_MARK_PAID ? "Paid" : "Cancelled";
+
       await apiClient.updateInvoiceStatus(selectedInvoice.invoice_id, {
-        status: "Paid",
-        notes: paymentNote,
+        status: nextStatus,
+        notes: actionNote,
       });
 
-      closeMarkPaidModal();
+      closeActionModal();
+      closeDetailsModal();
       await loadData();
     } catch (err) {
-      setModalError(err.message || "Failed to mark invoice as paid.");
+      setModalError(err.message || "Failed to update invoice.");
     } finally {
       setUpdating(false);
     }
   }
+
+  const modalTitle =
+    selectedAction === ACTION_CANCEL
+      ? "Cancel Invoice"
+      : "Mark Invoice as Paid";
+
+  const modalDescription =
+    selectedAction === ACTION_CANCEL
+      ? "Confirm that this pending invoice should be cancelled."
+      : "Confirm that payment has been received for this invoice.";
+
+  const confirmButtonLabel =
+    selectedAction === ACTION_CANCEL
+      ? updating
+        ? "Cancelling..."
+        : "Confirm Cancel"
+      : updating
+        ? "Updating..."
+        : "Confirm Paid";
+
+  const confirmButtonVariant =
+    selectedAction === ACTION_CANCEL ? "danger" : "success";
 
   return (
     <div className="page">
       <header className="header">
         <div>
           <h1>Invoices</h1>
-          <p>Review generated invoices and update payment status.</p>
+          <p>
+            Review generated invoices and update payment status. Click a row to
+            view invoice details.
+          </p>
         </div>
 
         <Button variant="secondary" size="sm" onClick={loadData}>
@@ -135,8 +198,8 @@ export default function InvoicesPage() {
         <>
           <section className="summary">
             <div>
-              <span>Total Invoices</span>
-              <strong>{invoices.length}</strong>
+              <span>Active Invoices</span>
+              <strong>{activeInvoices.length}</strong>
             </div>
 
             <div>
@@ -147,6 +210,11 @@ export default function InvoicesPage() {
             <div>
               <span>Paid</span>
               <strong>{paidInvoices.length}</strong>
+            </div>
+
+            <div>
+              <span>Cancelled</span>
+              <strong>{cancelledInvoices.length}</strong>
             </div>
 
             <div>
@@ -176,8 +244,20 @@ export default function InvoicesPage() {
                 emptyText="No invoices found."
                 density="comfortable"
                 variant="minimal"
+                className="invoiceTable"
                 renderRow={(item) => (
-                  <tr key={item.invoice_id}>
+                  <tr
+                    key={item.invoice_id}
+                    className="clickableRow"
+                    onClick={() => openDetailsModal(item)}
+                    tabIndex={0}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        openDetailsModal(item);
+                      }
+                    }}
+                  >
                     <td>{item.invoice_id}</td>
                     <td>{item.sample_id}</td>
                     <td>{item.client_name || "-"}</td>
@@ -186,17 +266,34 @@ export default function InvoicesPage() {
                     <td>
                       <InvoiceStatusBadge status={item.status} />
                     </td>
-                    <td className="right">
+                    <td
+                      className="right actionCell"
+                      onClick={(event) => event.stopPropagation()}
+                    >
                       {item.status === "Pending" ? (
-                        <button
-                          type="button"
-                          className="rowAction"
-                          onClick={() => openMarkPaidModal(item)}
-                        >
-                          Mark Paid
-                        </button>
+                        <div className="rowActions">
+                          <button
+                            type="button"
+                            className="rowAction"
+                            onClick={() =>
+                              openActionModal(item, ACTION_MARK_PAID)
+                            }
+                          >
+                            Paid
+                          </button>
+
+                          <button
+                            type="button"
+                            className="rowAction danger"
+                            onClick={() => openActionModal(item, ACTION_CANCEL)}
+                          >
+                            Cancel
+                          </button>
+                        </div>
                       ) : item.status === "Paid" ? (
                         <span className="mutedText">Paid</span>
+                      ) : item.status === "Cancelled" ? (
+                        <span className="mutedText">Cancelled</span>
                       ) : (
                         <span className="mutedText">{item.status || "-"}</span>
                       )}
@@ -210,27 +307,62 @@ export default function InvoicesPage() {
       )}
 
       <Modal
+        open={detailsModalOpen}
+        title="Invoice Details"
+        description="Invoice, sample, and payment information for review."
+        onClose={closeDetailsModal}
+        size="lg"
+        footer={
+          selectedDetailsInvoice?.status === "Pending" ? (
+            <div className="detailsFooter">
+              <Button
+                variant="success"
+                onClick={() =>
+                  openActionModal(selectedDetailsInvoice, ACTION_MARK_PAID)
+                }
+              >
+                Mark Paid
+              </Button>
+
+              <Button
+                variant="danger"
+                onClick={() =>
+                  openActionModal(selectedDetailsInvoice, ACTION_CANCEL)
+                }
+              >
+                Cancel Invoice
+              </Button>
+            </div>
+          ) : null
+        }
+      >
+        {selectedDetailsInvoice && (
+          <InvoiceDetails invoice={selectedDetailsInvoice} />
+        )}
+      </Modal>
+
+      <Modal
         open={confirmModalOpen}
-        title="Mark Invoice as Paid"
-        description="Confirm that payment has been received for this invoice."
-        onClose={closeMarkPaidModal}
+        title={modalTitle}
+        description={modalDescription}
+        onClose={closeActionModal}
         size="sm"
         footer={
           <>
             <Button
               variant="secondary"
-              onClick={closeMarkPaidModal}
+              onClick={closeActionModal}
               disabled={updating}
             >
-              Cancel
+              Close
             </Button>
 
             <Button
-              variant="success"
-              onClick={handleMarkPaid}
+              variant={confirmButtonVariant}
+              onClick={handleConfirmAction}
               disabled={updating}
             >
-              {updating ? "Updating..." : "Confirm Paid"}
+              {confirmButtonLabel}
             </Button>
           </>
         }
@@ -262,12 +394,20 @@ export default function InvoicesPage() {
             </div>
 
             <Textarea
-              label="Payment Note"
-              name="paymentNote"
-              value={paymentNote}
-              onChange={(event) => setPaymentNote(event.target.value)}
+              label={
+                selectedAction === ACTION_CANCEL
+                  ? "Cancellation Note"
+                  : "Payment Note"
+              }
+              name="actionNote"
+              value={actionNote}
+              onChange={(event) => setActionNote(event.target.value)}
               rows={3}
-              helperText="This note will be saved in the invoice and sample payment history."
+              helperText={
+                selectedAction === ACTION_CANCEL
+                  ? "This note will be saved with the cancelled invoice."
+                  : "This note will be saved in the invoice and sample payment history."
+              }
             />
           </div>
         )}
@@ -305,7 +445,7 @@ export default function InvoicesPage() {
 
         .summary {
           display: grid;
-          grid-template-columns: repeat(5, minmax(0, 1fr));
+          grid-template-columns: repeat(6, minmax(0, 1fr));
           gap: 14px;
           padding: 14px 0;
           border-top: 1px solid var(--color-border-soft);
@@ -342,6 +482,14 @@ export default function InvoicesPage() {
           font-weight: 800;
         }
 
+        .rowActions {
+          display: inline-flex;
+          align-items: center;
+          justify-content: flex-end;
+          gap: 10px;
+          white-space: nowrap;
+        }
+
         .rowAction {
           border: none;
           background: transparent;
@@ -353,11 +501,20 @@ export default function InvoicesPage() {
           white-space: nowrap;
         }
 
+        .rowAction.danger {
+          color: var(--color-danger);
+        }
+
         .rowAction:hover {
           color: var(--color-brand-dark);
           text-decoration: underline;
           transform: none;
           box-shadow: none;
+        }
+
+        .rowAction.danger:hover {
+          color: var(--color-danger);
+          text-decoration: underline;
         }
 
         .mutedText {
@@ -415,19 +572,61 @@ export default function InvoicesPage() {
           white-space: nowrap;
         }
 
+        .detailsFooter {
+          display: flex;
+          align-items: center;
+          justify-content: flex-end;
+          gap: 10px;
+          width: 100%;
+        }
+
         :global(.right) {
           text-align: right;
         }
 
-        @media (max-width: 920px) {
+        :global(.invoiceTable table) {
+          min-width: 980px;
+        }
+
+        :global(.invoiceTable .clickableRow) {
+          cursor: pointer;
+          transition: background-color var(--transition-base);
+        }
+
+        :global(.invoiceTable .clickableRow:hover) {
+          background: var(--color-overlay);
+        }
+
+        :global(.invoiceTable .clickableRow:focus-visible) {
+          outline: 2px solid var(--color-brand);
+          outline-offset: -2px;
+          background: var(--color-overlay);
+        }
+
+        :global(.invoiceTable td.actionCell) {
+          overflow: visible;
+          text-overflow: unset;
+          white-space: nowrap;
+        }
+
+        @media (max-width: 1080px) {
           .summary {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
+            grid-template-columns: repeat(3, minmax(0, 1fr));
           }
         }
 
         @media (max-width: 720px) {
           .header {
             flex-direction: column;
+          }
+
+          .summary {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+
+          .detailsFooter {
+            flex-direction: column;
+            align-items: stretch;
           }
         }
 
@@ -440,6 +639,129 @@ export default function InvoicesPage() {
             grid-template-columns: 1fr;
             gap: 3px;
           }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function InvoiceDetails({ invoice }) {
+  return (
+    <div className="details">
+      <section className="detailGrid">
+        <Detail label="Invoice ID" value={invoice.invoice_id} />
+        <Detail label="Sample ID" value={invoice.sample_id} />
+        <Detail label="Client" value={invoice.client_name} />
+        <Detail label="Material" value={invoice.material_type} />
+        <Detail label="Branch" value={formatBranch(invoice.branch_id)} />
+        <Detail label="Amount" value={formatCurrency(invoice.amount)} />
+        <Detail label="Status" value={invoice.status} />
+        <Detail
+          label="Created By"
+          value={invoice.created_by_name || formatUser(invoice.created_by)}
+        />
+        <Detail label="Created At" value={formatDate(invoice.created_at)} />
+        <Detail label="Updated At" value={formatDate(invoice.updated_at)} />
+        <Detail label="Paid At" value={formatDate(invoice.paid_at)} />
+        <Detail label="Sample State" value={invoice.current_state} />
+        <Detail label="Notes" value={invoice.notes} wide />
+      </section>
+
+      <section className="sectionBox">
+        <div className="sectionTitle">
+          <h3>Invoice Status</h3>
+          <InvoiceStatusBadge status={invoice.status} />
+        </div>
+
+        <p>
+          Payment changes should be made carefully. Marking an invoice as paid
+          will also update the linked sample payment metadata.
+        </p>
+      </section>
+
+      <style jsx>{`
+        .details {
+          display: grid;
+          gap: 16px;
+        }
+
+        .detailGrid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 12px;
+        }
+
+        .sectionBox {
+          display: grid;
+          gap: 8px;
+          padding: 14px;
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-md);
+          background: var(--color-surface);
+        }
+
+        .sectionTitle {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 12px;
+        }
+
+        .sectionTitle h3 {
+          margin: 0;
+          color: var(--color-text-primary);
+          font-size: var(--text-sm);
+          font-weight: 900;
+        }
+
+        p {
+          margin: 0;
+          color: var(--color-text-secondary);
+          font-size: var(--text-xs);
+          line-height: 1.5;
+        }
+
+        @media (max-width: 640px) {
+          .detailGrid {
+            grid-template-columns: 1fr;
+          }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function Detail({ label, value, wide = false }) {
+  return (
+    <div className={wide ? "detail wide" : "detail"}>
+      <span>{label}</span>
+      <strong>{formatEmpty(value)}</strong>
+
+      <style jsx>{`
+        .detail {
+          display: grid;
+          gap: 4px;
+          min-width: 0;
+        }
+
+        .detail.wide {
+          grid-column: 1 / -1;
+        }
+
+        span {
+          color: var(--color-text-secondary);
+          font-size: 10px;
+          font-weight: 850;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+
+        strong {
+          color: var(--color-text-primary);
+          font-size: var(--text-xs);
+          font-weight: 800;
+          line-height: 1.45;
+          overflow-wrap: anywhere;
         }
       `}</style>
     </div>
@@ -461,6 +783,40 @@ function InvoiceStatusBadge({ status }) {
   );
 }
 
+function formatBranch(branchId) {
+  if (Number(branchId) === 1) return "Marikina";
+  if (Number(branchId) === 2) return "Pateros";
+  return branchId ? `Branch ${branchId}` : "-";
+}
+
+function formatUser(userId) {
+  if (!userId) return "-";
+
+  const value = String(userId);
+
+  if (Number.isNaN(Number(value))) {
+    return value;
+  }
+
+  return `User ${value}`;
+}
+
+function formatDate(value) {
+  if (!value) return "-";
+
+  try {
+    return new Date(value).toLocaleString();
+  } catch {
+    return value;
+  }
+}
+
+function formatEmpty(value) {
+  if (value === null || value === undefined || value === "") return "-";
+  return value;
+}
+
 function formatCurrency(value) {
+  if (value === null || value === undefined || value === "") return "-";
   return `₱${Number(value || 0).toLocaleString()}`;
 }

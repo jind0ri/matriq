@@ -1,4 +1,5 @@
 import json
+import re
 from datetime import datetime
 from decimal import Decimal
 
@@ -104,6 +105,116 @@ def require_branch_access(current_user, branch_id):
         )
 
 
+def extract_user_id(value):
+    if value is None or value == "":
+        return None
+
+    text = str(value).strip()
+
+    if text.isdigit():
+        return text
+
+    match = re.search(r"\bUser\s+(\d+)\b", text, flags=re.IGNORECASE)
+    if match:
+        return match.group(1)
+
+    return text
+
+
+def get_user_name_map():
+    rows = fetchall(
+        """
+        SELECT
+            user_id,
+            full_name,
+            username
+        FROM users
+        """
+    )
+
+    names = {}
+
+    for row in rows:
+        user_id = row.get("user_id")
+        if user_id is None:
+            continue
+
+        display_name = row.get("full_name") or row.get("username") or f"User {user_id}"
+        names[str(user_id)] = display_name
+
+    return names
+
+
+def resolve_user_name(user_id, user_names):
+    normalized_id = extract_user_id(user_id)
+
+    if normalized_id is None or normalized_id == "":
+        return None
+
+    return user_names.get(str(normalized_id), f"User {normalized_id}")
+
+
+def get_current_user_display_name(current_user):
+    user_names = get_user_name_map()
+    user_id = current_user.get("user_id")
+
+    resolved_name = resolve_user_name(user_id, user_names)
+    if resolved_name:
+        return resolved_name
+
+    return (
+        current_user.get("full_name")
+        or current_user.get("name")
+        or current_user.get("username")
+        or f"User {user_id}"
+    )
+
+
+def hydrate_payment_user_names(samples):
+    user_names = get_user_name_map()
+
+    hydrated = []
+
+    for sample in samples:
+        item = dict(sample)
+        metadata = item.get("device_metadata") or {}
+
+        if isinstance(metadata, str):
+            try:
+                metadata = json.loads(metadata)
+            except Exception:
+                metadata = {}
+
+        payment = metadata.get("payment") or {}
+
+        updated_by = payment.get("payment_updated_by")
+        updated_by_name = resolve_user_name(updated_by, user_names)
+
+        if updated_by_name:
+            payment["payment_updated_by_name"] = updated_by_name
+            payment["payment_updated_by_display"] = updated_by_name
+            payment["payment_updated_by_full_name"] = updated_by_name
+
+        payment_history = payment.get("payment_history") or []
+
+        for history_item in payment_history:
+            history_updated_by = history_item.get("updated_by")
+            history_updated_by_name = resolve_user_name(history_updated_by, user_names)
+
+            if history_updated_by_name:
+                history_item["updated_by_name"] = history_updated_by_name
+                history_item["updated_by_display"] = history_updated_by_name
+                history_item["updated_by_full_name"] = history_updated_by_name
+
+        payment["payment_history"] = payment_history
+        metadata["payment"] = payment
+        item["device_metadata"] = metadata
+
+        hydrated.append(item)
+
+    return hydrated
+
+
 def get_invoice(invoice_id):
     return fetchone(
         """
@@ -159,10 +270,19 @@ def sync_sample_payment_from_invoice(
     require_branch_access(current_user, sample.get("branch_id"))
 
     metadata = sample.get("device_metadata") or {}
+
+    if isinstance(metadata, str):
+        try:
+            metadata = json.loads(metadata)
+        except Exception:
+            metadata = {}
+
     payment = metadata.get("payment") or {}
 
     old_payment_status = payment.get("payment_status") or PAYMENT_UNPAID
     payment_history = payment.get("payment_history") or []
+
+    user_display_name = get_current_user_display_name(current_user)
 
     if new_invoice_status == "Paid":
         new_payment_status = PAYMENT_FULLY_PAID
@@ -180,6 +300,9 @@ def sync_sample_payment_from_invoice(
             "confirmation_note": confirmation_note,
             "invoice_id": invoice.get("invoice_id"),
             "updated_by": current_user["user_id"],
+            "updated_by_name": user_display_name,
+            "updated_by_display": user_display_name,
+            "updated_by_full_name": user_display_name,
             "updated_by_role": current_user["role"],
             "updated_at": datetime.now().isoformat(),
         }
@@ -192,6 +315,9 @@ def sync_sample_payment_from_invoice(
         payment["billing_notes"] = billing_notes
         payment["confirmation_note"] = confirmation_note
         payment["payment_updated_by"] = current_user["user_id"]
+        payment["payment_updated_by_name"] = user_display_name
+        payment["payment_updated_by_display"] = user_display_name
+        payment["payment_updated_by_full_name"] = user_display_name
         payment["payment_updated_by_role"] = current_user["role"]
         payment["payment_updated_at"] = datetime.now().isoformat()
         payment["payment_history"] = payment_history
@@ -210,6 +336,9 @@ def sync_sample_payment_from_invoice(
             "confirmation_note": "",
             "invoice_id": invoice.get("invoice_id"),
             "updated_by": current_user["user_id"],
+            "updated_by_name": user_display_name,
+            "updated_by_display": user_display_name,
+            "updated_by_full_name": user_display_name,
             "updated_by_role": current_user["role"],
             "updated_at": datetime.now().isoformat(),
         }
@@ -218,6 +347,9 @@ def sync_sample_payment_from_invoice(
 
         payment["billing_notes"] = billing_notes
         payment["payment_updated_by"] = current_user["user_id"]
+        payment["payment_updated_by_name"] = user_display_name
+        payment["payment_updated_by_display"] = user_display_name
+        payment["payment_updated_by_full_name"] = user_display_name
         payment["payment_updated_by_role"] = current_user["role"]
         payment["payment_updated_at"] = datetime.now().isoformat()
         payment["payment_history"] = payment_history
@@ -258,6 +390,7 @@ def sync_sample_payment_from_invoice(
                 "financially_cleared_for_release": payment.get(
                     "financially_cleared_for_release"
                 ),
+                "payment_updated_by_name": user_display_name,
             }
         ),
         ip_address=request.client.host if request.client else None,
@@ -303,11 +436,13 @@ def get_accounting_dashboard(
                 created_at,
                 updated_at
             FROM samples
-            WHERE branch_id = %s
+            WHERE branch_id::text = %s
             ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST
             """,
-            (current_user.get("branch_id"),),
+            (str(current_user.get("branch_id")),),
         )
+
+    samples = hydrate_payment_user_names(samples)
 
     unpaid = 0
     downpayment = 0
@@ -352,7 +487,7 @@ def get_billing_queue(
     current_user=Depends(require_roles(ROLE_ACCOUNTING, ROLE_ADMIN)),
 ):
     if current_user["role"] == ROLE_ADMIN:
-        return fetchall(
+        samples = fetchall(
             """
             SELECT
                 sample_id,
@@ -369,26 +504,28 @@ def get_billing_queue(
             ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST
             """,
         )
+    else:
+        samples = fetchall(
+            """
+            SELECT
+                sample_id,
+                client_name,
+                material_type,
+                status,
+                current_state,
+                branch_id,
+                decision,
+                device_metadata,
+                updated_at,
+                created_at
+            FROM samples
+            WHERE branch_id::text = %s
+            ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST
+            """,
+            (str(current_user.get("branch_id")),),
+        )
 
-    return fetchall(
-        """
-        SELECT
-            sample_id,
-            client_name,
-            material_type,
-            status,
-            current_state,
-            branch_id,
-            decision,
-            device_metadata,
-            updated_at,
-            created_at
-        FROM samples
-        WHERE branch_id = %s
-        ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST
-        """,
-        (current_user.get("branch_id"),),
-    )
+    return hydrate_payment_user_names(samples)
 
 
 @router.get("/invoices")
@@ -406,6 +543,7 @@ def get_invoices(
                 i.amount,
                 i.status,
                 i.created_by,
+                COALESCE(u.full_name, u.username, 'User ' || i.created_by::text) AS created_by_name,
                 i.created_at,
                 i.updated_at,
                 i.paid_at,
@@ -414,6 +552,7 @@ def get_invoices(
                 s.current_state
             FROM invoices i
             LEFT JOIN samples s ON s.sample_id = i.sample_id
+            LEFT JOIN users u ON u.user_id = i.created_by
             ORDER BY i.updated_at DESC NULLS LAST, i.created_at DESC NULLS LAST
             """,
         )
@@ -428,6 +567,7 @@ def get_invoices(
             i.amount,
             i.status,
             i.created_by,
+            COALESCE(u.full_name, u.username, 'User ' || i.created_by::text) AS created_by_name,
             i.created_at,
             i.updated_at,
             i.paid_at,
@@ -436,6 +576,7 @@ def get_invoices(
             s.current_state
         FROM invoices i
         LEFT JOIN samples s ON s.sample_id = i.sample_id
+        LEFT JOIN users u ON u.user_id = i.created_by
         WHERE i.branch_id = %s
         ORDER BY i.updated_at DESC NULLS LAST, i.created_at DESC NULLS LAST
         """,
@@ -649,6 +790,13 @@ def update_sample_payment(
     is_immutable = item.get("is_immutable")
 
     metadata = item.get("device_metadata") or {}
+
+    if isinstance(metadata, str):
+        try:
+            metadata = json.loads(metadata)
+        except Exception:
+            metadata = {}
+
     payment = metadata.get("payment") or {}
 
     old_payment_status = payment.get("payment_status") or PAYMENT_UNPAID
@@ -702,6 +850,8 @@ def update_sample_payment(
     if new_payment_status in INITIAL_PAYMENT_STATUSES and is_blank(billing_notes):
         billing_notes = f"Payment status updated to {new_payment_status}."
 
+    user_display_name = get_current_user_display_name(current_user)
+
     payment_history = payment.get("payment_history") or []
 
     history_entry = {
@@ -712,6 +862,9 @@ def update_sample_payment(
         "billing_notes": billing_notes,
         "confirmation_note": confirmation_note,
         "updated_by": current_user["user_id"],
+        "updated_by_name": user_display_name,
+        "updated_by_display": user_display_name,
+        "updated_by_full_name": user_display_name,
         "updated_by_role": role,
         "updated_at": datetime.now().isoformat(),
     }
@@ -720,6 +873,9 @@ def update_sample_payment(
 
     payment["payment_status"] = new_payment_status
     payment["payment_updated_by"] = current_user["user_id"]
+    payment["payment_updated_by_name"] = user_display_name
+    payment["payment_updated_by_display"] = user_display_name
+    payment["payment_updated_by_full_name"] = user_display_name
     payment["payment_updated_by_role"] = role
     payment["payment_updated_at"] = datetime.now().isoformat()
     payment["payment_history"] = payment_history
@@ -776,9 +932,12 @@ def update_sample_payment(
                 "financially_cleared_for_release": payment[
                     "financially_cleared_for_release"
                 ],
+                "payment_updated_by_name": user_display_name,
             }
         ),
         ip_address=request.client.host if request.client else None,
     )
 
-    return get_sample(sample_id)
+    updated_item = get_sample(sample_id)
+    hydrated = hydrate_payment_user_names([updated_item])
+    return hydrated[0] if hydrated else updated_item

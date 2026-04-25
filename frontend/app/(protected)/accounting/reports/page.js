@@ -1,13 +1,44 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { apiClient } from "@/services/apiClient";
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { apiClient, getStoredUser } from "@/services/apiClient";
+
+import Badge from "@/components/ui/Badge";
+import Button from "@/components/ui/Button";
+import Card from "@/components/ui/Card";
+import EmptyState from "@/components/ui/EmptyState";
+import Loader from "@/components/ui/Loader";
+import MetricStrip from "@/components/ui/MetricStrip";
+import StatCard from "@/components/ui/StatCard";
+import Table from "@/components/ui/Table";
+
+const SUMMARY_COLUMNS = [
+  { key: "status", label: "Status" },
+  { key: "count", label: "Count", align: "right" },
+  { key: "amount", label: "Total Amount", align: "right" },
+];
+
+const RECENT_INVOICE_COLUMNS = [
+  { key: "invoice_id", label: "Invoice ID" },
+  { key: "sample_id", label: "Sample ID" },
+  { key: "client_name", label: "Client" },
+  { key: "branch_id", label: "Branch" },
+  { key: "created_by", label: "Created By" },
+  { key: "amount", label: "Amount", align: "right" },
+  { key: "status", label: "Status" },
+];
 
 export default function AccountingReportsPage() {
-  const [data, setData] = useState(null);
+  const user = getStoredUser();
+
+  const [dashboard, setDashboard] = useState(null);
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  const isAdmin = user?.role === "Administrator";
+  const branchLabel = isAdmin ? "All Branches" : formatBranch(user?.branch_id);
 
   async function loadData() {
     setLoading(true);
@@ -19,7 +50,7 @@ export default function AccountingReportsPage() {
         apiClient.getAccountingInvoices(),
       ]);
 
-      setData(dashboardData);
+      setDashboard(dashboardData || null);
       setInvoices(Array.isArray(invoiceData) ? invoiceData : []);
     } catch (err) {
       setError(err.message || "Failed to load accounting reports.");
@@ -32,197 +63,402 @@ export default function AccountingReportsPage() {
     loadData();
   }, []);
 
-  const paidInvoices = invoices.filter((item) => item.status === "Paid");
-  const pendingInvoices = invoices.filter((item) => item.status === "Pending");
+  const paidInvoices = useMemo(() => {
+    return invoices.filter((item) => item.status === "Paid");
+  }, [invoices]);
 
-  const totalRevenue = paidInvoices.reduce(
-    (sum, item) => sum + Number(item.amount || 0),
-    0
-  );
+  const pendingInvoices = useMemo(() => {
+    return invoices.filter((item) => item.status === "Pending");
+  }, [invoices]);
 
-  const outstanding = pendingInvoices.reduce(
-    (sum, item) => sum + Number(item.amount || 0),
-    0
-  );
+  const cancelledInvoices = useMemo(() => {
+    return invoices.filter((item) => item.status === "Cancelled");
+  }, [invoices]);
+
+  const totalRevenue = useMemo(() => {
+    return paidInvoices.reduce(
+      (sum, item) => sum + Number(item.amount || 0),
+      0,
+    );
+  }, [paidInvoices]);
+
+  const outstanding = useMemo(() => {
+    return pendingInvoices.reduce(
+      (sum, item) => sum + Number(item.amount || 0),
+      0,
+    );
+  }, [pendingInvoices]);
+
+  const cancelledValue = useMemo(() => {
+    return cancelledInvoices.reduce(
+      (sum, item) => sum + Number(item.amount || 0),
+      0,
+    );
+  }, [cancelledInvoices]);
+
+  const totalInvoiceValue = useMemo(() => {
+    return invoices.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  }, [invoices]);
+
+  const summaryRows = [
+    {
+      status: "Paid",
+      count: paidInvoices.length,
+      amount: totalRevenue,
+    },
+    {
+      status: "Pending",
+      count: pendingInvoices.length,
+      amount: outstanding,
+    },
+    {
+      status: "Cancelled",
+      count: cancelledInvoices.length,
+      amount: cancelledValue,
+    },
+  ];
+
+  const recentInvoices = invoices.slice(0, 8);
 
   return (
     <div className="page">
-      <div className="header">
+      <header className="header">
         <div>
           <h1>Accounting Reports</h1>
-          <p>Summarized billing activity, revenue, and outstanding balances.</p>
+          <p>
+            Billing activity, revenue, and outstanding balances for{" "}
+            <strong>{branchLabel}</strong>.
+          </p>
         </div>
 
-        <button onClick={loadData}>Refresh</button>
-      </div>
+        <div className="headerActions">
+          <Link href="/accounting/invoices" className="textLink">
+            View Invoices
+          </Link>
 
-      {loading && <div className="card">Loading reports...</div>}
-      {!loading && error && <div className="card error">{error}</div>}
+          <Button variant="secondary" size="sm" onClick={loadData}>
+            Refresh
+          </Button>
+        </div>
+      </header>
+
+      {loading && <Loader label="Loading accounting reports..." />}
+
+      {!loading && error && (
+        <Card>
+          <div className="errorText">{error}</div>
+        </Card>
+      )}
 
       {!loading && !error && (
         <>
-          <div className="stats">
-            <div className="statCard">
-              <span>Total Revenue</span>
-              <strong>₱{totalRevenue.toLocaleString()}</strong>
-            </div>
+          <section className="statsRow">
+            <StatCard
+              label="Total Revenue"
+              value={formatCurrency(totalRevenue)}
+              note="Paid invoice value"
+              variant="success"
+            />
 
-            <div className="statCard">
-              <span>Outstanding</span>
-              <strong>₱{outstanding.toLocaleString()}</strong>
-            </div>
+            <StatCard
+              label="Outstanding"
+              value={formatCurrency(outstanding)}
+              note="Pending invoice value"
+              variant="danger"
+            />
 
-            <div className="statCard">
-              <span>Pending Invoices</span>
-              <strong>{data?.pending_invoices ?? pendingInvoices.length}</strong>
-            </div>
+            <StatCard
+              label="Pending Invoices"
+              value={pendingInvoices.length}
+              note="Awaiting payment"
+              variant="warning"
+            />
 
-            <div className="statCard">
-              <span>Paid Samples</span>
-              <strong>{data?.paid_samples ?? paidInvoices.length}</strong>
-            </div>
-          </div>
+            <StatCard
+              label="Paid Invoices"
+              value={paidInvoices.length}
+              note="Completed billing records"
+              variant="brand"
+            />
+          </section>
 
-          <div className="card">
-            <h2>Invoice Summary</h2>
+          <MetricStrip
+            items={[
+              {
+                label: "Total Invoices",
+                value: invoices.length,
+              },
+              {
+                label: "Cancelled",
+                value: cancelledInvoices.length,
+              },
+              {
+                label: "Total Invoice Value",
+                value: formatCurrency(totalInvoiceValue),
+              },
+              {
+                label: "Branch Scope",
+                value: branchLabel,
+              },
+            ]}
+          />
 
-            <table>
-              <thead>
-                <tr>
-                  <th>Status</th>
-                  <th>Count</th>
-                  <th>Total Amount</th>
-                </tr>
-              </thead>
+          {dashboard && (
+            <section className="dashboardStrip">
+              <div>
+                <span>Unpaid Samples</span>
+                <strong>{dashboard.unpaid_samples ?? 0}</strong>
+              </div>
 
-              <tbody>
-                <tr>
-                  <td>
-                    <span className="status paid">Paid</span>
-                  </td>
-                  <td>{paidInvoices.length}</td>
-                  <td>₱{totalRevenue.toLocaleString()}</td>
-                </tr>
+              <div>
+                <span>Downpayment</span>
+                <strong>{dashboard.downpayment_samples ?? 0}</strong>
+              </div>
 
-                <tr>
-                  <td>
-                    <span className="status pending">Pending</span>
-                  </td>
-                  <td>{pendingInvoices.length}</td>
-                  <td>₱{outstanding.toLocaleString()}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+              <div>
+                <span>PO Submitted</span>
+                <strong>{dashboard.po_submitted_samples ?? 0}</strong>
+              </div>
+
+              <div>
+                <span>Fully Paid Samples</span>
+                <strong>{dashboard.fully_paid_samples ?? 0}</strong>
+              </div>
+            </section>
+          )}
+
+          <section className="contentGrid">
+            <Card
+              title="Invoice Status Summary"
+              subtitle="Amount totals grouped by invoice status."
+            >
+              <Table
+                columns={SUMMARY_COLUMNS}
+                data={summaryRows}
+                emptyText="No invoice summary available."
+                density="comfortable"
+                variant="minimal"
+                renderRow={(item) => (
+                  <tr key={item.status}>
+                    <td>
+                      <InvoiceStatusBadge status={item.status} />
+                    </td>
+                    <td className="right">{item.count}</td>
+                    <td className="right">{formatCurrency(item.amount)}</td>
+                  </tr>
+                )}
+              />
+            </Card>
+
+            <Card
+              title="Recent Invoice Activity"
+              subtitle="Latest invoice records in the selected branch scope."
+              actions={
+                <Link href="/accounting/invoices" className="textLink">
+                  View All
+                </Link>
+              }
+            >
+              {recentInvoices.length === 0 ? (
+                <EmptyState
+                  title="No invoice activity yet"
+                  description="Created invoices will appear here."
+                />
+              ) : (
+                <Table
+                  columns={RECENT_INVOICE_COLUMNS}
+                  data={recentInvoices}
+                  emptyText="No invoices found."
+                  density="comfortable"
+                  variant="minimal"
+                  renderRow={(item) => (
+                    <tr key={item.invoice_id}>
+                      <td>{item.invoice_id}</td>
+                      <td>{item.sample_id}</td>
+                      <td>{item.client_name || "-"}</td>
+                      <td>{formatBranch(item.branch_id)}</td>
+                      <td>{item.created_by_name || formatUser(item.created_by)}</td>
+                      <td className="right">{formatCurrency(item.amount)}</td>
+                      <td>
+                        <InvoiceStatusBadge status={item.status} />
+                      </td>
+                    </tr>
+                  )}
+                />
+              )}
+            </Card>
+          </section>
         </>
       )}
 
       <style jsx>{`
         .page {
-          padding: 24px;
+          display: flex;
+          flex-direction: column;
+          gap: 22px;
+          color: var(--color-text-primary);
         }
 
         .header {
           display: flex;
+          align-items: flex-start;
           justify-content: space-between;
-          margin-bottom: 20px;
+          gap: 18px;
         }
 
-        h1 {
+        .header h1 {
           margin: 0;
-          font-size: 24px;
-        }
-
-        h2 {
-          margin: 0 0 16px;
+          color: var(--color-text-primary);
           font-size: 18px;
+          font-weight: 850;
+          letter-spacing: -0.02em;
         }
 
-        p {
+        .header p {
           margin: 4px 0 0;
-          color: #555;
-        }
-
-        button {
-          background: #080026;
-          color: white;
-          border: none;
-          border-radius: 10px;
-          padding: 10px 14px;
-          cursor: pointer;
-        }
-
-        .stats {
-          display: grid;
-          grid-template-columns: repeat(4, 1fr);
-          gap: 14px;
-          margin-bottom: 18px;
-        }
-
-        .statCard,
-        .card {
-          background: white;
-          padding: 16px;
-          border-radius: 14px;
-          border: 1px solid #eee;
-        }
-
-        .statCard span {
-          font-size: 12px;
-          color: #555;
-        }
-
-        .statCard strong {
-          display: block;
-          margin-top: 8px;
-          font-size: 22px;
-        }
-
-        table {
-          width: 100%;
-          border-collapse: collapse;
-        }
-
-        th {
-          text-align: left;
-          font-size: 12px;
-          color: #555;
-          padding-bottom: 10px;
-        }
-
-        td {
-          padding: 14px 0;
-          border-top: 1px solid #eee;
-          font-size: 14px;
-        }
-
-        .status {
-          padding: 6px 10px;
-          border-radius: 999px;
+          color: var(--color-text-secondary);
           font-size: 11px;
-          font-weight: 700;
+          line-height: 1.45;
         }
 
-        .pending {
-          background: #fff7ed;
-          color: #c2410c;
+        .header p strong {
+          color: var(--color-text-primary);
+          font-weight: 850;
         }
 
-        .paid {
-          background: #ecfdf5;
-          color: #047857;
+        .headerActions {
+          display: flex;
+          align-items: center;
+          justify-content: flex-end;
+          gap: 10px;
+          flex-wrap: wrap;
         }
 
-        .error {
-          color: red;
+        .textLink {
+          color: var(--color-brand);
+          font-size: var(--text-xs);
+          font-weight: 900;
+          text-decoration: none;
+          white-space: nowrap;
         }
 
-        @media (max-width: 980px) {
-          .stats {
-            grid-template-columns: 1fr 1fr;
+        .textLink:hover {
+          color: var(--color-brand-dark);
+          text-decoration: underline;
+          transform: none;
+        }
+
+        .errorText {
+          color: var(--color-danger);
+          font-size: var(--text-sm);
+          font-weight: 800;
+        }
+
+        .statsRow {
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 14px;
+        }
+
+        .dashboardStrip {
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 14px;
+          padding: 14px;
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-lg);
+          background: var(--color-surface);
+        }
+
+        .dashboardStrip div {
+          display: grid;
+          gap: 5px;
+          min-width: 0;
+          text-align: center;
+        }
+
+        .dashboardStrip span {
+          color: var(--color-text-secondary);
+          font-size: 10px;
+          font-weight: 850;
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
+        }
+
+        .dashboardStrip strong {
+          color: var(--color-text-primary);
+          font-size: 14px;
+          font-weight: 850;
+        }
+
+        .contentGrid {
+          display: grid;
+          grid-template-columns: 0.8fr 1.2fr;
+          gap: 18px;
+          align-items: start;
+        }
+
+        :global(.right) {
+          text-align: right;
+        }
+
+        @media (max-width: 1100px) {
+          .statsRow,
+          .dashboardStrip,
+          .contentGrid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+
+          .contentGrid {
+            grid-template-columns: 1fr;
+          }
+        }
+
+        @media (max-width: 720px) {
+          .header {
+            flex-direction: column;
+          }
+
+          .headerActions {
+            justify-content: flex-start;
+          }
+
+          .statsRow,
+          .dashboardStrip {
+            grid-template-columns: 1fr;
           }
         }
       `}</style>
     </div>
   );
+}
+
+function InvoiceStatusBadge({ status }) {
+  const variant =
+    status === "Paid"
+      ? "success"
+      : status === "Cancelled"
+        ? "danger"
+        : "warning";
+
+  return (
+    <Badge variant={variant} size="sm">
+      {status || "Pending"}
+    </Badge>
+  );
+}
+
+function formatBranch(branchId) {
+  if (Number(branchId) === 1) return "Marikina";
+  if (Number(branchId) === 2) return "Pateros";
+  return branchId ? `Branch ${branchId}` : "-";
+}
+
+function formatUser(userId) {
+  if (!userId) return "-";
+  return `User ${userId}`;
+}
+
+function formatCurrency(value) {
+  return `₱${Number(value || 0).toLocaleString()}`;
 }

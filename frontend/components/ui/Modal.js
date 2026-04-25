@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect } from "react";
-import Button from "./Button";
 
 export default function Modal({
   open,
@@ -26,41 +25,57 @@ export default function Modal({
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [open, onClose]);
 
+  useEffect(() => {
+    if (!open) return;
+
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, [open]);
+
   if (!open) return null;
 
   return (
     <>
-      <div className="overlay" onMouseDown={onClose}>
+      <div
+        className="overlay"
+        onMouseDown={() => {
+          if (typeof onClose === "function") onClose();
+        }}
+      >
         <section
           className={["modal", size].join(" ")}
           role="dialog"
           aria-modal="true"
-          aria-label={title || "Dialog"}
+          aria-labelledby={title ? "modal-title" : undefined}
+          aria-label={!title ? "Dialog" : undefined}
           onMouseDown={(event) => event.stopPropagation()}
         >
           <header className="header">
-            <div>
-              {title && <h2>{title}</h2>}
+            <div className="titleBlock">
+              {title && <h2 id="modal-title">{title}</h2>}
               {description && <p>{description}</p>}
             </div>
 
             {onClose && (
-              <button className="closeButton" type="button" onClick={onClose}>
+              <button
+                className="closeButton"
+                type="button"
+                onClick={onClose}
+                aria-label={closeLabel}
+                title={closeLabel}
+              >
                 <span aria-hidden="true">×</span>
-                <span className="srOnly">{closeLabel}</span>
               </button>
             )}
           </header>
 
           <div className="body">{children}</div>
 
-          <footer className="footer">
-            {footer || (
-              <Button variant="secondary" onClick={onClose}>
-                {closeLabel}
-              </Button>
-            )}
-          </footer>
+          {footer && <footer className="footer">{footer}</footer>}
         </section>
       </div>
 
@@ -69,12 +84,12 @@ export default function Modal({
           position: fixed;
           inset: 0;
           z-index: 10000;
-          background: rgba(15, 23, 42, 0.36);
-          backdrop-filter: blur(3px);
           display: flex;
           align-items: center;
           justify-content: center;
           padding: 20px;
+          background: rgba(15, 23, 42, 0.34);
+          backdrop-filter: blur(3px);
         }
 
         .modal {
@@ -107,9 +122,13 @@ export default function Modal({
           justify-content: space-between;
           align-items: flex-start;
           gap: 16px;
-          padding: 20px;
+          padding: 18px 20px;
           border-bottom: 1px solid var(--color-border);
           background: var(--color-surface);
+        }
+
+        .titleBlock {
+          min-width: 0;
         }
 
         h2 {
@@ -118,6 +137,7 @@ export default function Modal({
           font-size: var(--text-lg);
           font-weight: 850;
           letter-spacing: -0.02em;
+          line-height: 1.25;
         }
 
         p {
@@ -128,10 +148,10 @@ export default function Modal({
         }
 
         .closeButton {
-          width: 34px;
-          height: 34px;
+          width: 32px;
+          height: 32px;
           border: 1px solid var(--color-border);
-          border-radius: var(--radius-sm);
+          border-radius: var(--radius-md);
           background: var(--color-surface);
           color: var(--color-text-secondary);
           font-size: 20px;
@@ -140,13 +160,26 @@ export default function Modal({
           align-items: center;
           justify-content: center;
           flex-shrink: 0;
+          cursor: pointer;
+          transition:
+            background-color var(--transition-base),
+            border-color var(--transition-base),
+            color var(--transition-base),
+            transform var(--transition-base),
+            box-shadow var(--transition-base);
         }
 
         .closeButton:hover {
           background: var(--color-overlay);
+          border-color: var(--color-border-strong);
           color: var(--color-text-primary);
           box-shadow: var(--shadow-xs);
           transform: translateY(-1px);
+        }
+
+        .closeButton:focus-visible {
+          outline: 2px solid var(--color-brand);
+          outline-offset: 2px;
         }
 
         .body {
@@ -157,22 +190,11 @@ export default function Modal({
         .footer {
           display: flex;
           justify-content: flex-end;
+          align-items: center;
           gap: 10px;
-          padding: 16px 20px;
+          padding: 14px 20px;
           border-top: 1px solid var(--color-border);
           background: var(--color-overlay);
-        }
-
-        .srOnly {
-          position: absolute;
-          width: 1px;
-          height: 1px;
-          padding: 0;
-          margin: -1px;
-          overflow: hidden;
-          clip: rect(0, 0, 0, 0);
-          white-space: nowrap;
-          border: 0;
         }
 
         @keyframes modalIn {
@@ -207,8 +229,18 @@ export default function Modal({
             max-height: 92vh;
           }
 
+          .header {
+            padding: 16px;
+          }
+
+          .body {
+            padding: 16px;
+          }
+
           .footer {
+            padding: 14px 16px;
             flex-direction: column-reverse;
+            align-items: stretch;
           }
         }
       `}</style>

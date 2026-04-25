@@ -4,57 +4,66 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { apiClient, getStoredUser } from "@/services/apiClient";
 
-const PAYMENT_STATUSES = {
-  UNPAID: "Unpaid",
-  DOWNPAYMENT: "Downpayment Paid",
-  PO: "PO Submitted",
-  FULLY_PAID: "Fully Paid",
+import Badge from "@/components/ui/Badge";
+import Button from "@/components/ui/Button";
+import Card from "@/components/ui/Card";
+import EmptyState from "@/components/ui/EmptyState";
+import Input from "@/components/ui/Input";
+import Loader from "@/components/ui/Loader";
+import MetricStrip from "@/components/ui/MetricStrip";
+import Modal from "@/components/ui/Modal";
+import Select from "@/components/ui/Select";
+import StatCard from "@/components/ui/StatCard";
+import Table from "@/components/ui/Table";
+
+const BASE_FEE = 2500;
+
+const STATUS_FILTERS = {
+  ALL: "All",
+  READY: "Ready to Invoice",
+  INVOICED: "Invoiced",
+  PAID: "Paid",
+  CANCELLED: "Cancelled",
 };
 
-const PAYMENT_ACTIONS = [
-  {
-    label: "Record 50% Downpayment",
-    adminLabel: "Correct to Downpayment Paid",
-    status: PAYMENT_STATUSES.DOWNPAYMENT,
-    description:
-      "Allows the sample to proceed toward QA pre-testing and laboratory testing, but does not clear report release.",
-  },
-  {
-    label: "Record PO Submitted",
-    adminLabel: "Correct to PO Submitted",
-    status: PAYMENT_STATUSES.PO,
-    description:
-      "Allows the sample to proceed based on purchase order documentation, but does not clear report release.",
-  },
-  {
-    label: "Mark Fully Paid",
-    adminLabel: "Correct to Fully Paid",
-    status: PAYMENT_STATUSES.FULLY_PAID,
-    description:
-      "Financially clears the sample for QA official report release once technical requirements are satisfied.",
-  },
+const BILLING_COLUMNS = [
+  { key: "sample_id", label: "Sample ID", width: "135px" },
+  { key: "client_name", label: "Client", width: "135px" },
+  { key: "material_type", label: "Material", width: "170px" },
+  { key: "branch_id", label: "Branch", width: "115px" },
+  { key: "invoice_status", label: "Billing Status", width: "155px" },
+  { key: "amount", label: "Amount", align: "right", width: "115px" },
+  { key: "action", label: "Action", align: "right", width: "120px" },
 ];
 
 export default function BillingPage() {
   const user = getStoredUser();
-  const isAdmin = user?.role === "Administrator";
 
-  const [items, setItems] = useState([]);
-  const [statusFilter, setStatusFilter] = useState("All");
+  const [samples, setSamples] = useState([]);
+  const [invoices, setInvoices] = useState([]);
+  const [statusFilter, setStatusFilter] = useState(STATUS_FILTERS.ALL);
   const [search, setSearch] = useState("");
-  const [paymentDrafts, setPaymentDrafts] = useState({});
-  const [activeUpdate, setActiveUpdate] = useState(null);
-  const [savingSampleId, setSavingSampleId] = useState("");
   const [loading, setLoading] = useState(true);
+  const [creatingSampleId, setCreatingSampleId] = useState("");
+  const [selectedRecord, setSelectedRecord] = useState(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [error, setError] = useState("");
+
+  const isAdmin = user?.role === "Administrator";
+  const userBranchId = user?.branch_id;
 
   async function loadData() {
     setLoading(true);
     setError("");
 
     try {
-      const res = await apiClient.getSamples();
-      setItems(Array.isArray(res) ? res : []);
+      const [sampleData, invoiceData] = await Promise.all([
+        apiClient.getAccountingBilling(),
+        apiClient.getAccountingInvoices(),
+      ]);
+
+      setSamples(Array.isArray(sampleData) ? sampleData : []);
+      setInvoices(Array.isArray(invoiceData) ? invoiceData : []);
     } catch (err) {
       setError(err.message || "Failed to load billing data.");
     } finally {
@@ -62,1008 +71,559 @@ export default function BillingPage() {
     }
   }
 
-  function getDraft(sampleId) {
-    return (
-      paymentDrafts[sampleId] || {
-        amount_paid: "",
-        balance: "",
-        billing_notes: "",
-        confirmation_note: "",
-      }
-    );
-  }
-
-  function updateDraft(sampleId, field, value) {
-    setPaymentDrafts((current) => ({
-      ...current,
-      [sampleId]: {
-        ...(current[sampleId] || {
-          amount_paid: "",
-          balance: "",
-          billing_notes: "",
-          confirmation_note: "",
-        }),
-        [field]: value,
-      },
-    }));
-  }
-
-  function openPaymentUpdate(sampleId, status, currentStatus) {
-    setActiveUpdate({
-      sampleId,
-      status,
-      currentStatus,
-    });
-
-    setPaymentDrafts((current) => ({
-      ...current,
-      [sampleId]: {
-        ...(current[sampleId] || {
-          amount_paid: "",
-          balance: "",
-          billing_notes: "",
-          confirmation_note: "",
-        }),
-        billing_notes:
-          current[sampleId]?.billing_notes ||
-          defaultBillingNote(status, isAdmin),
-      },
-    }));
-  }
-
-  function closePaymentUpdate() {
-    setActiveUpdate(null);
-  }
-
-  async function confirmPaymentUpdate(sampleId, status) {
-    const draft = getDraft(sampleId);
-
-    if (status === PAYMENT_STATUSES.FULLY_PAID) {
-      if (!draft.confirmation_note || draft.confirmation_note.trim().length < 8) {
-        alert(
-          "Please enter a confirmation note before marking this sample as Fully Paid.",
-        );
-        return;
-      }
-    }
-
-    if (isAdmin) {
-      const requiresAdminReason =
-        activeUpdate?.currentStatus === PAYMENT_STATUSES.FULLY_PAID ||
-        status !== activeUpdate?.currentStatus;
-
-      if (requiresAdminReason && draft.billing_notes.trim().length < 10) {
-        alert(
-          "Please enter an administrator correction note with at least 10 characters.",
-        );
-        return;
-      }
-    }
-
-    setSavingSampleId(sampleId);
-
-    try {
-      await apiClient.updateSamplePayment(sampleId, {
-        payment_status: status,
-        amount_paid: draft.amount_paid === "" ? null : Number(draft.amount_paid),
-        balance: draft.balance === "" ? null : Number(draft.balance),
-        billing_notes: draft.billing_notes,
-        confirmation_note: draft.confirmation_note,
-      });
-
-      setActiveUpdate(null);
-
-      setPaymentDrafts((current) => ({
-        ...current,
-        [sampleId]: {
-          amount_paid: "",
-          balance: "",
-          billing_notes: "",
-          confirmation_note: "",
-        },
-      }));
-
-      await loadData();
-    } catch (err) {
-      alert(err.message || "Payment update failed");
-    } finally {
-      setSavingSampleId("");
-    }
-  }
-
   useEffect(() => {
     loadData();
   }, []);
 
-  const visibleItems = useMemo(() => {
+  const visibleSamples = useMemo(() => {
+    if (isAdmin) return samples;
+
+    return samples.filter(
+      (sample) => Number(sample.branch_id) === Number(userBranchId),
+    );
+  }, [samples, isAdmin, userBranchId]);
+
+  const visibleInvoices = useMemo(() => {
+    if (isAdmin) return invoices;
+
+    return invoices.filter(
+      (invoice) => Number(invoice.branch_id) === Number(userBranchId),
+    );
+  }, [invoices, isAdmin, userBranchId]);
+
+  const invoiceBySampleId = useMemo(() => {
+    const map = new Map();
+
+    visibleInvoices.forEach((invoice) => {
+      const existing = map.get(invoice.sample_id);
+
+      if (!existing) {
+        map.set(invoice.sample_id, invoice);
+        return;
+      }
+
+      if (existing.status === "Cancelled" && invoice.status !== "Cancelled") {
+        map.set(invoice.sample_id, invoice);
+      }
+    });
+
+    return map;
+  }, [visibleInvoices]);
+
+  const releasedSamples = useMemo(() => {
+    return visibleSamples.filter(
+      (sample) =>
+        sample.current_state === "Released" ||
+        sample.current_state === "Archived",
+    );
+  }, [visibleSamples]);
+
+  const billingRows = useMemo(() => {
+    return releasedSamples.map((sample) => {
+      const invoice = invoiceBySampleId.get(sample.sample_id);
+      const billingStatus = getBillingStatus(sample, invoice);
+
+      return {
+        ...sample,
+        invoice,
+        billing_status: billingStatus,
+        invoice_id: invoice?.invoice_id || null,
+        invoice_amount: invoice?.amount || BASE_FEE,
+      };
+    });
+  }, [releasedSamples, invoiceBySampleId]);
+
+  const filteredRows = useMemo(() => {
     const q = search.trim().toLowerCase();
 
-    return items.filter((item) => {
-      const payment = item.device_metadata?.payment || {};
-      const paymentStatus = payment.payment_status || PAYMENT_STATUSES.UNPAID;
-
+    return billingRows.filter((item) => {
       const matchesSearch =
         !q ||
         item.sample_id?.toLowerCase().includes(q) ||
         item.client_name?.toLowerCase().includes(q) ||
         item.project_reference?.toLowerCase().includes(q) ||
-        item.material_type?.toLowerCase().includes(q);
+        item.material_type?.toLowerCase().includes(q) ||
+        item.invoice_id?.toLowerCase().includes(q);
 
       const matchesStatus =
-        statusFilter === "All" || paymentStatus === statusFilter;
+        statusFilter === STATUS_FILTERS.ALL ||
+        item.billing_status === statusFilter;
 
       return matchesSearch && matchesStatus;
     });
-  }, [items, search, statusFilter]);
+  }, [billingRows, search, statusFilter]);
 
   const stats = useMemo(() => {
-    return items.reduce(
+    return billingRows.reduce(
       (acc, item) => {
-        const payment = item.device_metadata?.payment || {};
-        const status = payment.payment_status || PAYMENT_STATUSES.UNPAID;
-
-        if (status === PAYMENT_STATUSES.UNPAID) acc.unpaid += 1;
-        if (status === PAYMENT_STATUSES.DOWNPAYMENT) acc.downpayment += 1;
-        if (status === PAYMENT_STATUSES.PO) acc.po += 1;
-        if (status === PAYMENT_STATUSES.FULLY_PAID) acc.fullyPaid += 1;
+        if (item.billing_status === STATUS_FILTERS.READY) acc.ready += 1;
+        if (item.billing_status === STATUS_FILTERS.INVOICED) acc.invoiced += 1;
+        if (item.billing_status === STATUS_FILTERS.PAID) acc.paid += 1;
+        if (item.billing_status === STATUS_FILTERS.CANCELLED) {
+          acc.cancelled += 1;
+        }
 
         return acc;
       },
       {
-        unpaid: 0,
-        downpayment: 0,
-        po: 0,
-        fullyPaid: 0,
+        ready: 0,
+        invoiced: 0,
+        paid: 0,
+        cancelled: 0,
       },
     );
-  }, [items]);
+  }, [billingRows]);
+
+  const outstandingAmount = useMemo(() => {
+    return visibleInvoices
+      .filter((invoice) => invoice.status === "Pending")
+      .reduce((sum, invoice) => sum + Number(invoice.amount || 0), 0);
+  }, [visibleInvoices]);
+
+  const collectedAmount = useMemo(() => {
+    return visibleInvoices
+      .filter((invoice) => invoice.status === "Paid")
+      .reduce((sum, invoice) => sum + Number(invoice.amount || 0), 0);
+  }, [visibleInvoices]);
+
+  const branchLabel = isAdmin ? "All Branches" : formatBranch(userBranchId);
+
+  async function handleCreateInvoice(sample) {
+    setCreatingSampleId(sample.sample_id);
+    setError("");
+
+    try {
+      await apiClient.createInvoice({
+        sample_id: sample.sample_id,
+        amount: BASE_FEE,
+        notes: `Invoice created from billing page for ${sample.sample_id}.`,
+      });
+
+      await loadData();
+    } catch (err) {
+      setError(err.message || "Failed to create invoice.");
+    } finally {
+      setCreatingSampleId("");
+    }
+  }
+
+  function openDetails(record) {
+    setSelectedRecord(record);
+    setDetailsOpen(true);
+  }
+
+  function closeDetails() {
+    setDetailsOpen(false);
+    setSelectedRecord(null);
+  }
 
   return (
     <div className="page">
-      <div className="header">
+      <header className="header">
         <div>
-          <p className="eyebrow">Accounting Module</p>
-          <h1>{isAdmin ? "Billing Oversight" : "Payment Management"}</h1>
-          <p className="subtitle">
-            {isAdmin
-              ? "Review payment records and perform controlled administrator billing corrections when necessary."
-              : "Manage payment eligibility before laboratory testing and official report release."}
+          <h1>{isAdmin ? "Billing Oversight" : "Billing Queue"}</h1>
+          <p>
+            Review released samples and invoice readiness for{" "}
+            <strong>{branchLabel}</strong>.
           </p>
         </div>
 
-        <button className="refreshBtn" onClick={loadData}>
-          Refresh
-        </button>
-      </div>
+        <div className="headerActions">
+          <Link href="/accounting/invoices" className="textLink">
+            View Invoices
+          </Link>
+
+          <Button variant="secondary" size="sm" onClick={loadData}>
+            Refresh
+          </Button>
+        </div>
+      </header>
 
       {isAdmin && (
-        <div className="adminNotice">
-          <strong>Administrator Billing Correction Mode</strong>
-          <p>
-            Admin can view all billing records and correct payment metadata when
-            necessary. Routine payment updates should still be handled by
-            Accounting Staff. Admin corrections should include clear billing
-            notes for audit traceability.
-          </p>
-        </div>
+        <section className="adminNotice">
+          <strong>Administrator Billing View</strong>
+          <span>
+            You are viewing all branch billing records. Invoice payment changes
+            should still be handled carefully because they update financial
+            release metadata.
+          </span>
+        </section>
       )}
 
-      <div className="stats">
-        <StatCard label="Unpaid" value={stats.unpaid} />
-        <StatCard label="Downpayment Paid" value={stats.downpayment} />
-        <StatCard label="PO Submitted" value={stats.po} />
-        <StatCard label="Fully Paid" value={stats.fullyPaid} />
-      </div>
+      {loading && <Loader label="Loading billing data..." />}
 
-      <div className="notice">
-        Accounting controls financial eligibility only. Downpayment or PO may
-        allow testing to proceed, while Fully Paid is required before QA can
-        release the official report.
-      </div>
-
-      <div className="toolbar">
-        <div className="searchBox">
-          <span>⌕</span>
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search sample ID, client, project, or material..."
-          />
-        </div>
-
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-        >
-          <option value="All">All Payment Statuses</option>
-          <option value={PAYMENT_STATUSES.UNPAID}>Unpaid</option>
-          <option value={PAYMENT_STATUSES.DOWNPAYMENT}>Downpayment Paid</option>
-          <option value={PAYMENT_STATUSES.PO}>PO Submitted</option>
-          <option value={PAYMENT_STATUSES.FULLY_PAID}>Fully Paid</option>
-        </select>
-      </div>
-
-      {loading && <div className="card">Loading billing data...</div>}
-      {!loading && error && <div className="card error">{error}</div>}
+      {!loading && error && (
+        <Card>
+          <div className="errorText">{error}</div>
+        </Card>
+      )}
 
       {!loading && !error && (
-        <div className="list">
-          {visibleItems.length === 0 && (
-            <div className="card">No samples found.</div>
-          )}
+        <>
+          <section className="statsRow">
+            <StatCard
+              label="Ready"
+              value={stats.ready}
+              note="Released samples without active invoice"
+              variant="warning"
+            />
 
-          {visibleItems.map((item) => {
-            const metadata = item.device_metadata || {};
-            const payment = metadata.payment || {};
-            const testData = metadata.test_data || null;
+            <StatCard
+              label="Invoiced"
+              value={stats.invoiced}
+              note="Pending invoice records"
+              variant="info"
+            />
 
-            const paymentStatus =
-              payment.payment_status || PAYMENT_STATUSES.UNPAID;
+            <StatCard
+              label="Paid"
+              value={stats.paid}
+              note="Fully paid invoice records"
+              variant="success"
+            />
 
-            const isFinalized =
-              item.current_state === "Released" ||
-              item.current_state === "Archived" ||
-              item.is_immutable;
+            <StatCard
+              label="Cancelled"
+              value={stats.cancelled}
+              note="Cancelled invoice records"
+              variant="danger"
+            />
+          </section>
 
-            const canStartTesting = [
-              PAYMENT_STATUSES.DOWNPAYMENT,
-              PAYMENT_STATUSES.PO,
-              PAYMENT_STATUSES.FULLY_PAID,
-            ].includes(paymentStatus);
+          <MetricStrip
+            items={[
+              {
+                label: "Released Samples",
+                value: releasedSamples.length,
+              },
+              {
+                label: "Outstanding",
+                value: formatCurrency(outstandingAmount),
+              },
+              {
+                label: "Collected",
+                value: formatCurrency(collectedAmount),
+              },
+              {
+                label: "Branch Scope",
+                value: branchLabel,
+              },
+            ]}
+          />
 
-            const readyForReportRelease =
-              item.current_state === "For Review" &&
-              paymentStatus === PAYMENT_STATUSES.FULLY_PAID &&
-              Boolean(testData);
+          <section className="notice">
+            <strong>Billing rule</strong>
+            <span>
+              Click a row to view billing details. Released samples can be
+              invoiced. Marking an invoice as paid from the invoices page will
+              also update the linked sample payment metadata to Fully Paid.
+            </span>
+          </section>
 
-            const activeForThisCard =
-              activeUpdate?.sampleId === item.sample_id ? activeUpdate : null;
+          <section className="toolbar">
+            <Input
+              name="billingSearch"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search sample, client, project, material, or invoice..."
+            />
 
-            const draft = getDraft(item.sample_id);
+            <Select
+              name="statusFilter"
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+            >
+              <option value={STATUS_FILTERS.ALL}>All Billing Statuses</option>
+              <option value={STATUS_FILTERS.READY}>Ready to Invoice</option>
+              <option value={STATUS_FILTERS.INVOICED}>Invoiced</option>
+              <option value={STATUS_FILTERS.PAID}>Paid</option>
+              <option value={STATUS_FILTERS.CANCELLED}>Cancelled</option>
+            </Select>
+          </section>
 
-            const canEditPayment = !isFinalized || isAdmin;
-
-            return (
-              <div key={item.sample_id} className="card">
-                <div className="row">
-                  <div>
-                    <div className="label">Sample ID</div>
-                    <strong className="sampleId">{item.sample_id}</strong>
-                  </div>
-
-                  <div className="badgeGroup">
-                    <PaymentBadge status={paymentStatus} />
-                    <LifecycleBadge status={item.current_state} />
-                    {isAdmin && <span className="adminBadge">Admin View</span>}
-                  </div>
-                </div>
-
-                <div className="grid">
-                  <Info label="Client" value={item.client_name} />
-                  <Info label="Project" value={item.project_reference} />
-                  <Info label="Material" value={item.material_type} />
-                  <Info
-                    label="Payment Method"
-                    value={payment.payment_requirement || "-"}
-                  />
-                  <Info
-                    label="Test Result"
-                    value={getFinalResult(testData) || "No Result Yet"}
-                  />
-                  <Info
-                    label="Report Eligibility"
-                    value={
-                      readyForReportRelease
-                        ? "Financially Cleared for QA Release"
-                        : "Not Yet Eligible"
-                    }
-                  />
-                  <Info
-                    label="Last Payment Update"
-                    value={formatDate(payment.payment_updated_at)}
-                  />
-                  <Info
-                    label="Updated By"
-                    value={payment.payment_updated_by || "-"}
-                  />
-                  <Info
-                    label="Billing Notes"
-                    value={payment.billing_notes || "-"}
-                  />
-                </div>
-
-                <div className="eligibilityBox">
-                  {isFinalized && !isAdmin ? (
-                    <span className="blocked">
-                      This sample is already released or archived. Payment
-                      metadata is finalized and can only be corrected by an
-                      Administrator.
-                    </span>
-                  ) : isFinalized && isAdmin ? (
-                    <span className="adminText">
-                      This sample is released or archived. Any billing change
-                      will be treated as an Administrator correction and should
-                      include a clear correction note.
-                    </span>
-                  ) : paymentStatus === PAYMENT_STATUSES.FULLY_PAID ? (
-                    <span className="eligible">
-                      Fully paid. This sample is financially cleared for report
-                      release once QA requirements are satisfied.
-                    </span>
-                  ) : canStartTesting ? (
-                    <span className="partial">
-                      Initial payment requirement satisfied. Testing may proceed
-                      if QA pre-testing review is complete, but official report
-                      release still requires full payment.
-                    </span>
-                  ) : (
-                    <span className="blocked">
-                      Payment is still unpaid. Testing and report release may be
-                      restricted by workflow rules.
-                    </span>
-                  )}
-                </div>
-
-                <div className="actions">
-                  {PAYMENT_ACTIONS.map((action) => {
-                    const disabled =
-                      !canEditPayment ||
-                      (paymentStatus === PAYMENT_STATUSES.FULLY_PAID &&
-                        action.status !== PAYMENT_STATUSES.FULLY_PAID &&
-                        !isAdmin);
-
-                    return (
-                      <button
-                        key={action.status}
-                        disabled={disabled}
-                        className={[
-                          paymentStatus === action.status ? "active" : "",
-                          action.status === PAYMENT_STATUSES.FULLY_PAID
-                            ? "full"
-                            : "",
-                          isAdmin ? "adminAction" : "",
-                        ].join(" ")}
-                        onClick={() =>
-                          openPaymentUpdate(
-                            item.sample_id,
-                            action.status,
-                            paymentStatus,
-                          )
-                        }
-                      >
-                        {isAdmin ? action.adminLabel : action.label}
-                      </button>
-                    );
-                  })}
-
-                  <Link
-                    className="viewBtn"
-                    href={`/technical/tracking/${item.sample_id}`}
+          <Card
+            title="Billing Records"
+            subtitle="Released samples with their invoice state. Click a row to view details."
+          >
+            {filteredRows.length === 0 ? (
+              <EmptyState
+                title="No billing records found"
+                description="Released samples will appear here once ready for billing."
+              />
+            ) : (
+              <Table
+                columns={BILLING_COLUMNS}
+                data={filteredRows}
+                emptyText="No billing records found."
+                density="comfortable"
+                variant="minimal"
+                className="billingTable"
+                renderRow={(item) => (
+                  <tr
+                    key={item.sample_id}
+                    className="clickableRow"
+                    onClick={() => openDetails(item)}
+                    tabIndex={0}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        openDetails(item);
+                      }
+                    }}
                   >
-                    View Billing Reference →
-                  </Link>
-                </div>
-
-                {activeForThisCard && (
-                  <div
-                    className={
-                      isAdmin ? "confirmBox adminConfirmBox" : "confirmBox"
-                    }
-                  >
-                    <div className="confirmHeader">
-                      <div>
-                        <p className="confirmEyebrow">
-                          {isAdmin
-                            ? "Administrator Billing Correction"
-                            : "Payment Status Update"}
-                        </p>
-                        <h2>{activeForThisCard.status}</h2>
-                        <p>
-                          {
-                            PAYMENT_ACTIONS.find(
-                              (action) =>
-                                action.status === activeForThisCard.status,
-                            )?.description
-                          }
-                        </p>
-                      </div>
-
-                      <button className="closeBtn" onClick={closePaymentUpdate}>
-                        Cancel
-                      </button>
-                    </div>
-
-                    {isAdmin && (
-                      <div className="warningBox adminWarning">
-                        You are performing an Administrator correction. This
-                        should only be used to correct billing metadata and
-                        should include a clear note for audit traceability.
-                      </div>
-                    )}
-
-                    {activeForThisCard.status ===
-                      PAYMENT_STATUSES.FULLY_PAID && (
-                      <div className="warningBox">
-                        Marking this sample as Fully Paid will financially clear
-                        it for QA official report release once technical review
-                        requirements are satisfied.
-                      </div>
-                    )}
-
-                    <div className="formGrid">
-                      <div>
-                        <label>Amount Paid</label>
-                        <input
-                          type="number"
-                          min="0"
-                          value={draft.amount_paid}
-                          onChange={(e) =>
-                            updateDraft(
-                              item.sample_id,
-                              "amount_paid",
-                              e.target.value,
-                            )
-                          }
-                          placeholder="Example: 2500"
-                        />
-                      </div>
-
-                      <div>
-                        <label>Balance</label>
-                        <input
-                          type="number"
-                          min="0"
-                          value={draft.balance}
-                          onChange={(e) =>
-                            updateDraft(
-                              item.sample_id,
-                              "balance",
-                              e.target.value,
-                            )
-                          }
-                          placeholder="Example: 0"
-                        />
-                      </div>
-
-                      <div className="wide">
-                        <label>
-                          {isAdmin
-                            ? "Administrator Correction Note"
-                            : "Billing Notes"}
-                        </label>
-                        <textarea
-                          value={draft.billing_notes}
-                          onChange={(e) =>
-                            updateDraft(
-                              item.sample_id,
-                              "billing_notes",
-                              e.target.value,
-                            )
-                          }
-                          placeholder={
-                            isAdmin
-                              ? "Example: Corrected payment status after verifying official receipt and previous encoding error."
-                              : "Add receipt, PO reference, or accounting remarks."
-                          }
-                        />
-                      </div>
-
-                      {activeForThisCard.status ===
-                        PAYMENT_STATUSES.FULLY_PAID && (
-                        <div className="wide">
-                          <label>Fully Paid Confirmation Note</label>
-                          <textarea
-                            value={draft.confirmation_note}
-                            onChange={(e) =>
-                              updateDraft(
-                                item.sample_id,
-                                "confirmation_note",
-                                e.target.value,
-                              )
-                            }
-                            placeholder="Example: Official receipt verified and full balance settled."
-                          />
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="confirmActions">
-                      <button
-                        className="cancelAction"
-                        onClick={closePaymentUpdate}
-                      >
-                        Cancel
-                      </button>
-
-                      <button
-                        className={
-                          isAdmin
-                            ? "confirmAction adminConfirmAction"
-                            : "confirmAction"
-                        }
-                        disabled={savingSampleId === item.sample_id}
-                        onClick={() =>
-                          confirmPaymentUpdate(
-                            item.sample_id,
-                            activeForThisCard.status,
-                          )
-                        }
-                      >
-                        {savingSampleId === item.sample_id
-                          ? "Saving..."
-                          : isAdmin
-                            ? "Confirm Admin Correction"
-                            : "Confirm Payment Update"}
-                      </button>
-                    </div>
-                  </div>
+                    <td>{item.sample_id}</td>
+                    <td>{item.client_name || "-"}</td>
+                    <td>
+                      {item.material_type || item.ai_predicted_label || "-"}
+                    </td>
+                    <td>{formatBranch(item.branch_id)}</td>
+                    <td>
+                      <BillingStatusBadge status={item.billing_status} />
+                    </td>
+                    <td className="right">
+                      {item.invoice ? formatCurrency(item.invoice.amount) : "-"}
+                    </td>
+                    <td
+                      className="right actionCell"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <BillingAction
+                        item={item}
+                        creatingSampleId={creatingSampleId}
+                        onCreateInvoice={handleCreateInvoice}
+                      />
+                    </td>
+                  </tr>
                 )}
-              </div>
-            );
-          })}
-        </div>
+              />
+            )}
+          </Card>
+        </>
       )}
+
+      <Modal
+        open={detailsOpen}
+        title="Billing Details"
+        description="Sample, invoice, and payment context for accounting review."
+        onClose={closeDetails}
+        size="lg"
+        footer={
+          selectedRecord?.invoice?.invoice_id ? (
+            <Link href="/accounting/invoices" className="footerButton">
+              Open Invoices
+            </Link>
+          ) : null
+        }
+      >
+        {selectedRecord && <BillingDetails record={selectedRecord} />}
+      </Modal>
 
       <style jsx>{`
         .page {
-          min-height: 100vh;
-          padding: 28px;
-          background: #f6f7fb;
-          color: #111827;
+          display: flex;
+          flex-direction: column;
+          gap: 22px;
+          color: var(--color-text-primary);
         }
 
         .header {
           display: flex;
-          justify-content: space-between;
           align-items: flex-start;
-          gap: 16px;
-          margin-bottom: 20px;
+          justify-content: space-between;
+          gap: 18px;
         }
 
-        .eyebrow,
-        .confirmEyebrow {
-          margin: 0 0 4px;
-          font-size: 12px;
-          font-weight: 900;
-          color: #4f46e5;
-          text-transform: uppercase;
-          letter-spacing: 0.08em;
-        }
-
-        h1 {
+        .header h1 {
           margin: 0;
-          color: #111827;
-          font-size: 26px;
+          color: var(--color-text-primary);
+          font-size: 18px;
+          font-weight: 850;
+          letter-spacing: -0.02em;
         }
 
-        .subtitle {
-          margin: 6px 0 0;
-          color: #4b5563;
-          font-size: 14px;
+        .header p {
+          margin: 4px 0 0;
+          color: var(--color-text-secondary);
+          font-size: 11px;
+          line-height: 1.45;
         }
 
-        .refreshBtn,
-        button,
-        .viewBtn {
-          background: #080026;
-          color: white;
+        .header p strong {
+          color: var(--color-text-primary);
+          font-weight: 850;
+        }
+
+        .headerActions {
+          display: flex;
+          align-items: center;
+          justify-content: flex-end;
+          gap: 10px;
+          flex-wrap: wrap;
+        }
+
+        .textLink,
+        .rowAction {
           border: none;
-          border-radius: 12px;
-          padding: 10px 14px;
+          background: transparent;
+          color: var(--color-brand);
+          font-size: var(--text-xs);
+          font-weight: 900;
+          padding: 0;
           cursor: pointer;
-          font-weight: 800;
           text-decoration: none;
-          font-size: 13px;
+          white-space: nowrap;
+        }
+
+        .textLink:hover,
+        .rowAction:hover {
+          color: var(--color-brand-dark);
+          text-decoration: underline;
+          transform: none;
+          box-shadow: none;
+        }
+
+        .footerButton {
           display: inline-flex;
           align-items: center;
           justify-content: center;
+          min-height: 34px;
+          padding: 0 14px;
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-md);
+          background: var(--color-brand);
+          color: #ffffff;
+          font-size: var(--text-xs);
+          font-weight: 900;
+          text-decoration: none;
+          line-height: 1;
+          transition:
+            background-color var(--transition-base),
+            border-color var(--transition-base),
+            transform var(--transition-base),
+            box-shadow var(--transition-base);
         }
 
-        button:disabled {
-          opacity: 0.45;
-          cursor: not-allowed;
+        .footerButton:hover {
+          background: var(--color-brand-dark);
+          border-color: var(--color-brand-dark);
+          text-decoration: none;
+          transform: translateY(-1px);
+          box-shadow: var(--shadow-sm);
+        }
+
+        .adminNotice,
+        .notice {
+          display: grid;
+          gap: 4px;
+          border-radius: var(--radius-md);
+          padding: 12px 14px;
+          font-size: var(--text-sm);
+          line-height: 1.5;
         }
 
         .adminNotice {
-          margin-bottom: 16px;
-          padding: 14px 16px;
-          border-radius: 16px;
-          background: #fff7ed;
-          color: #9a3412;
-          border: 1px solid #fed7aa;
-        }
-
-        .adminNotice strong {
-          display: block;
-          margin-bottom: 4px;
-          color: #7c2d12;
-          font-size: 13px;
-        }
-
-        .adminNotice p {
-          margin: 0;
-          font-size: 13px;
-          line-height: 1.5;
-        }
-
-        .stats {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-          gap: 14px;
-          margin-bottom: 14px;
+          background: var(--color-info-bg);
+          color: var(--color-info);
+          border: 1px solid var(--color-info-border);
         }
 
         .notice {
-          background: #eff6ff;
-          color: #1e40af;
-          border: 1px solid #bfdbfe;
-          padding: 14px 16px;
-          border-radius: 16px;
-          font-size: 13px;
-          line-height: 1.5;
-          margin-bottom: 16px;
+          background: var(--color-overlay);
+          color: var(--color-text-secondary);
+          border: 1px solid var(--color-border);
+        }
+
+        .adminNotice strong,
+        .notice strong {
+          color: inherit;
+          font-size: var(--text-sm);
+        }
+
+        .errorText {
+          color: var(--color-danger);
+          font-size: var(--text-sm);
+          font-weight: 800;
+        }
+
+        .statsRow {
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 14px;
         }
 
         .toolbar {
           display: grid;
-          grid-template-columns: 1fr 220px;
+          grid-template-columns: minmax(0, 1fr) 220px;
           gap: 12px;
-          margin-bottom: 16px;
+          align-items: end;
         }
 
-        .searchBox {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          background: white;
-          border: 1px solid #e5e7eb;
-          border-radius: 16px;
-          padding: 0 14px;
-        }
-
-        .searchBox input {
-          width: 100%;
-          border: none;
-          outline: none;
-          padding: 13px 0;
-          background: transparent;
-        }
-
-        select {
-          border: 1px solid #d1d5db;
-          border-radius: 16px;
-          padding: 0 12px;
-          background: white;
-          color: #111827;
-          font-weight: 700;
-        }
-
-        .list {
-          display: grid;
-          gap: 14px;
-        }
-
-        .card,
-        .statCard {
-          background: white;
-          padding: 18px;
-          border-radius: 18px;
-          border: 1px solid #e5e7eb;
-          box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
-        }
-
-        .statCard {
-          display: grid;
-          gap: 6px;
-        }
-
-        .statCard span {
-          color: #6b7280;
-          font-size: 12px;
+        .mutedText {
+          color: var(--color-text-muted);
+          font-size: var(--text-xs);
           font-weight: 800;
-          text-transform: uppercase;
-          letter-spacing: 0.04em;
-        }
-
-        .statCard strong {
-          font-size: 28px;
-          color: #111827;
-        }
-
-        .row {
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-start;
-          gap: 16px;
-          margin-bottom: 14px;
-        }
-
-        .sampleId {
-          font-size: 18px;
-          color: #111827;
-        }
-
-        .badgeGroup {
-          display: flex;
-          gap: 8px;
-          flex-wrap: wrap;
-          justify-content: flex-end;
-        }
-
-        .grid {
-          display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 14px;
-        }
-
-        .label {
-          font-size: 11px;
-          color: #6b7280;
-          margin-bottom: 4px;
-          text-transform: uppercase;
-          letter-spacing: 0.04em;
-          font-weight: 800;
-        }
-
-        .eligibilityBox {
-          margin-top: 14px;
-          padding: 12px;
-          border-radius: 14px;
-          font-size: 13px;
-          line-height: 1.5;
-          background: #f8fafc;
-          border: 1px solid #e2e8f0;
-        }
-
-        .eligible {
-          color: #166534;
-        }
-
-        .partial {
-          color: #92400e;
-        }
-
-        .blocked {
-          color: #991b1b;
-        }
-
-        .adminText {
-          color: #9a3412;
-        }
-
-        .actions {
-          margin-top: 14px;
-          display: flex;
-          gap: 8px;
-          flex-wrap: wrap;
-        }
-
-        button {
-          background: #312e81;
-        }
-
-        button.active {
-          outline: 3px solid rgba(79, 70, 229, 0.25);
-        }
-
-        .full {
-          background: #16a34a;
-        }
-
-        .adminAction {
-          background: #7c3aed;
-        }
-
-        .viewBtn {
-          background: #f4f1ff;
-          color: #14003a;
-        }
-
-        .error {
-          color: #b91c1c;
-          border-color: #fecaca;
-          background: #fff7f7;
-        }
-
-        .confirmBox {
-          margin-top: 16px;
-          border: 1px solid #dbe3ef;
-          background: #f8fafc;
-          border-radius: 18px;
-          padding: 16px;
-        }
-
-        .adminConfirmBox {
-          border-color: #fed7aa;
-          background: #fffaf5;
-        }
-
-        .confirmHeader {
-          display: flex;
-          justify-content: space-between;
-          gap: 16px;
-          align-items: flex-start;
-          margin-bottom: 14px;
-        }
-
-        .confirmHeader h2 {
-          margin: 0;
-          font-size: 18px;
-          color: #111827;
-        }
-
-        .confirmHeader p {
-          margin: 5px 0 0;
-          color: #64748b;
-          font-size: 13px;
-          line-height: 1.5;
-        }
-
-        .closeBtn,
-        .cancelAction {
-          background: #f1f5f9;
-          color: #334155;
-        }
-
-        .warningBox {
-          margin-bottom: 14px;
-          padding: 12px;
-          border-radius: 14px;
-          background: #fff7ed;
-          color: #9a3412;
-          border: 1px solid #fed7aa;
-          font-size: 13px;
-          line-height: 1.5;
-        }
-
-        .adminWarning {
-          background: #fef2f2;
-          color: #991b1b;
-          border-color: #fecaca;
-        }
-
-        .formGrid {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 14px;
-        }
-
-        .formGrid .wide {
-          grid-column: 1 / -1;
-        }
-
-        label {
-          display: block;
-          margin-bottom: 6px;
-          font-size: 11px;
-          font-weight: 900;
-          color: #64748b;
-          text-transform: uppercase;
-          letter-spacing: 0.05em;
-        }
-
-        input,
-        textarea {
-          width: 100%;
-          border: 1px solid #cbd5e1;
-          border-radius: 12px;
-          padding: 11px 12px;
-          background: #ffffff;
-          color: #111827;
-          font-size: 13px;
-        }
-
-        textarea {
-          min-height: 88px;
-          resize: vertical;
-        }
-
-        .confirmActions {
-          margin-top: 14px;
-          display: flex;
-          justify-content: flex-end;
-          gap: 10px;
-          flex-wrap: wrap;
-        }
-
-        .confirmAction {
-          background: #16a34a;
-        }
-
-        .adminConfirmAction {
-          background: #dc2626;
-        }
-
-        .badge,
-        .adminBadge {
-          display: inline-flex;
-          width: fit-content;
-          align-items: center;
-          border-radius: 999px;
-          padding: 7px 11px;
-          font-size: 12px;
-          font-weight: 900;
           white-space: nowrap;
         }
 
-        .adminBadge {
-          background: #fff7ed;
-          color: #9a3412;
-          border: 1px solid #fed7aa;
+        :global(.right) {
+          text-align: right;
         }
 
-        .payment-unpaid {
-          background: #fee2e2;
-          color: #991b1b;
+        :global(.billingTable table) {
+          min-width: 980px;
         }
 
-        .payment-partial {
-          background: #fef3c7;
-          color: #92400e;
+        :global(.billingTable .clickableRow) {
+          cursor: pointer;
+          transition:
+            background-color var(--transition-base),
+            box-shadow var(--transition-base);
         }
 
-        .payment-po {
-          background: #e0e7ff;
-          color: #3730a3;
+        :global(.billingTable .clickableRow:hover) {
+          background: var(--color-overlay);
         }
 
-        .payment-paid {
-          background: #dcfce7;
-          color: #166534;
+        :global(.billingTable .clickableRow:focus-visible) {
+          outline: 2px solid var(--color-brand);
+          outline-offset: -2px;
+          background: var(--color-overlay);
         }
 
-        .life-registered {
-          background: #eef2ff;
-          color: #3730a3;
+        :global(.billingTable td.actionCell) {
+          overflow: visible;
+          text-overflow: unset;
+          white-space: nowrap;
         }
 
-        .life-testing {
-          background: #fef9c3;
-          color: #854d0e;
+        :global(.billingTable th:last-child),
+        :global(.billingTable td:last-child) {
+          padding-right: 18px;
         }
 
-        .life-review {
-          background: #fff7ed;
-          color: #c2410c;
+        @media (max-width: 1100px) {
+          .statsRow {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
         }
 
-        .life-released {
-          background: #dcfce7;
-          color: #166534;
-        }
-
-        .life-archived {
-          background: #f1f5f9;
-          color: #475569;
-        }
-
-        .life-default {
-          background: #f1f5f9;
-          color: #475569;
-        }
-
-        @media (max-width: 820px) {
-          .header,
-          .row,
-          .confirmHeader {
+        @media (max-width: 760px) {
+          .header {
             flex-direction: column;
+          }
+
+          .headerActions {
+            justify-content: flex-start;
           }
 
           .toolbar {
             grid-template-columns: 1fr;
           }
+        }
 
-          .grid,
-          .formGrid {
+        @media (max-width: 520px) {
+          .statsRow {
             grid-template-columns: 1fr;
-          }
-
-          .badgeGroup {
-            justify-content: flex-start;
-          }
-
-          .formGrid .wide {
-            grid-column: auto;
           }
         }
       `}</style>
@@ -1071,29 +631,380 @@ export default function BillingPage() {
   );
 }
 
-function defaultBillingNote(status, isAdmin = false) {
-  if (isAdmin) {
-    return `Administrator correction: payment status corrected to ${status}.`;
+function BillingAction({ item, creatingSampleId, onCreateInvoice }) {
+  if (item.billing_status === STATUS_FILTERS.READY) {
+    return (
+      <button
+        type="button"
+        className="rowAction"
+        disabled={creatingSampleId === item.sample_id}
+        onClick={() => onCreateInvoice(item)}
+      >
+        {creatingSampleId === item.sample_id ? "Creating..." : "Create"}
+      </button>
+    );
   }
 
-  if (status === PAYMENT_STATUSES.DOWNPAYMENT) {
-    return "Initial downpayment recorded by Accounting.";
+  if (item.invoice?.invoice_id) {
+    return (
+      <Link
+        href="/accounting/invoices"
+        className="rowAction"
+        title={`Open invoice ${item.invoice.invoice_id}`}
+      >
+        Invoice
+      </Link>
+    );
   }
 
-  if (status === PAYMENT_STATUSES.PO) {
-    return "Purchase order submitted and recorded by Accounting.";
-  }
+  return <span className="mutedText">No Action</span>;
+}
 
-  if (status === PAYMENT_STATUSES.FULLY_PAID) {
-    return "Full payment recorded by Accounting.";
-  }
+function BillingDetails({ record }) {
+  const metadata = record.device_metadata || {};
+  const payment = metadata.payment || {};
+  const invoice = record.invoice || null;
+  const history = Array.isArray(payment.payment_history)
+    ? payment.payment_history
+    : [];
 
-  return "";
+  return (
+    <div className="details">
+      <section className="detailGrid">
+        <Detail label="Sample ID" value={record.sample_id} />
+        <Detail label="Client" value={record.client_name} />
+        <Detail label="Project Reference" value={record.project_reference} />
+        <Detail
+          label="Material"
+          value={record.material_type || record.ai_predicted_label}
+        />
+        <Detail label="Branch" value={formatBranch(record.branch_id)} />
+        <Detail label="Lifecycle Status" value={record.current_state} />
+        <Detail label="Billing Status" value={record.billing_status} />
+        <Detail
+          label="Test Result"
+          value={getFinalResult(metadata.test_data) || "No Result"}
+        />
+      </section>
+
+      <section className="sectionBox">
+        <div className="sectionTitle">
+          <h3>Invoice</h3>
+          {invoice ? (
+            <InvoiceStatusBadge status={invoice.status} />
+          ) : (
+            <Badge variant="warning" size="sm">
+              No Invoice
+            </Badge>
+          )}
+        </div>
+
+        <div className="detailGrid">
+          <Detail label="Invoice ID" value={invoice?.invoice_id} />
+          <Detail
+            label="Invoice Amount"
+            value={invoice ? formatCurrency(invoice.amount) : "-"}
+          />
+          <Detail label="Invoice Status" value={invoice?.status} />
+          <Detail
+            label="Created By"
+            value={invoice?.created_by_name || formatUser(invoice?.created_by)}
+          />
+          <Detail label="Created At" value={formatDate(invoice?.created_at)} />
+          <Detail label="Paid At" value={formatDate(invoice?.paid_at)} />
+          <Detail label="Invoice Notes" value={invoice?.notes} wide />
+        </div>
+      </section>
+
+      <section className="sectionBox">
+        <div className="sectionTitle">
+          <h3>Payment Metadata</h3>
+          <PaymentStatusBadge status={payment.payment_status} />
+        </div>
+
+        <div className="detailGrid">
+          <Detail
+            label="Payment Status"
+            value={payment.payment_status || "Unpaid"}
+          />
+          <Detail label="Amount Paid" value={formatCurrency(payment.amount_paid)} />
+          <Detail label="Balance" value={formatCurrency(payment.balance)} />
+          <Detail
+            label="Updated By"
+            value={
+              payment.payment_updated_by_name ||
+              payment.payment_updated_by_display ||
+              payment.payment_updated_by_full_name ||
+              payment.payment_updated_by_username ||
+              formatUser(payment.payment_updated_by)
+            }
+          />
+          <Detail label="Updated At" value={formatDate(payment.payment_updated_at)} />
+          <Detail
+            label="Release Cleared"
+            value={payment.financially_cleared_for_release ? "Yes" : "No"}
+          />
+          <Detail label="Billing Notes" value={payment.billing_notes} wide />
+          <Detail
+            label="Confirmation Note"
+            value={payment.confirmation_note}
+            wide
+          />
+        </div>
+      </section>
+
+      <section className="sectionBox">
+        <div className="sectionTitle">
+          <h3>Payment History</h3>
+          <span>{history.length} record(s)</span>
+        </div>
+
+        {history.length === 0 ? (
+          <p className="emptyHistory">No payment history recorded yet.</p>
+        ) : (
+          <div className="historyList">
+            {history
+              .slice()
+              .reverse()
+              .map((entry, index) => (
+                <div className="historyItem" key={`${entry.updated_at}-${index}`}>
+                  <div>
+                    <strong>
+                      {entry.from_status || "-"} → {entry.to_status || "-"}
+                    </strong>
+                    <span>
+                      {entry.updated_by_name ||
+                        entry.updated_by_display ||
+                        entry.updated_by_full_name ||
+                        entry.updated_by_username ||
+                        formatUser(entry.updated_by)}
+                      {" · "}
+                      {formatDate(entry.updated_at)}
+                    </span>
+                  </div>
+
+                  <p>
+                    {entry.billing_notes ||
+                      entry.confirmation_note ||
+                      "No notes."}
+                  </p>
+                </div>
+              ))}
+          </div>
+        )}
+      </section>
+
+      <style jsx>{`
+        .details {
+          display: grid;
+          gap: 16px;
+        }
+
+        .detailGrid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 12px;
+        }
+
+        .sectionBox {
+          display: grid;
+          gap: 13px;
+          padding: 14px;
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-md);
+          background: var(--color-surface);
+        }
+
+        .sectionTitle {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+        }
+
+        .sectionTitle h3 {
+          margin: 0;
+          color: var(--color-text-primary);
+          font-size: var(--text-sm);
+          font-weight: 900;
+        }
+
+        .sectionTitle span {
+          color: var(--color-text-muted);
+          font-size: var(--text-xs);
+          font-weight: 800;
+        }
+
+        .emptyHistory {
+          margin: 0;
+          color: var(--color-text-secondary);
+          font-size: var(--text-xs);
+          font-weight: 700;
+        }
+
+        .historyList {
+          display: grid;
+          gap: 10px;
+        }
+
+        .historyItem {
+          display: grid;
+          gap: 5px;
+          padding: 11px 12px;
+          border: 1px solid var(--color-border-soft);
+          border-radius: var(--radius-md);
+          background: var(--color-overlay);
+        }
+
+        .historyItem div {
+          display: flex;
+          justify-content: space-between;
+          gap: 12px;
+          flex-wrap: wrap;
+        }
+
+        .historyItem strong {
+          color: var(--color-text-primary);
+          font-size: var(--text-xs);
+          font-weight: 900;
+        }
+
+        .historyItem span,
+        .historyItem p {
+          margin: 0;
+          color: var(--color-text-secondary);
+          font-size: var(--text-xs);
+          line-height: 1.45;
+        }
+
+        @media (max-width: 640px) {
+          .detailGrid {
+            grid-template-columns: 1fr;
+          }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function Detail({ label, value, wide = false }) {
+  return (
+    <div className={wide ? "detail wide" : "detail"}>
+      <span>{label}</span>
+      <strong>{formatEmpty(value)}</strong>
+
+      <style jsx>{`
+        .detail {
+          display: grid;
+          gap: 4px;
+          min-width: 0;
+        }
+
+        .detail.wide {
+          grid-column: 1 / -1;
+        }
+
+        span {
+          color: var(--color-text-secondary);
+          font-size: 10px;
+          font-weight: 850;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+
+        strong {
+          color: var(--color-text-primary);
+          font-size: var(--text-xs);
+          font-weight: 800;
+          line-height: 1.45;
+          overflow-wrap: anywhere;
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function BillingStatusBadge({ status }) {
+  const variant =
+    status === STATUS_FILTERS.PAID
+      ? "success"
+      : status === STATUS_FILTERS.CANCELLED
+        ? "danger"
+        : status === STATUS_FILTERS.INVOICED
+          ? "info"
+          : "warning";
+
+  return (
+    <Badge variant={variant} size="sm">
+      {status}
+    </Badge>
+  );
+}
+
+function InvoiceStatusBadge({ status }) {
+  const variant =
+    status === "Paid"
+      ? "success"
+      : status === "Cancelled"
+        ? "danger"
+        : "warning";
+
+  return (
+    <Badge variant={variant} size="sm">
+      {status || "Pending"}
+    </Badge>
+  );
+}
+
+function PaymentStatusBadge({ status }) {
+  const variant =
+    status === "Fully Paid"
+      ? "success"
+      : status === "PO Submitted"
+        ? "info"
+        : status === "Downpayment Paid"
+          ? "warning"
+          : "danger";
+
+  return (
+    <Badge variant={variant} size="sm">
+      {status || "Unpaid"}
+    </Badge>
+  );
+}
+
+function getBillingStatus(sample, invoice) {
+  if (invoice?.status === "Paid") return STATUS_FILTERS.PAID;
+  if (invoice?.status === "Pending") return STATUS_FILTERS.INVOICED;
+  if (invoice?.status === "Cancelled") return STATUS_FILTERS.CANCELLED;
+
+  if (sample.current_state === "Released") return STATUS_FILTERS.READY;
+  if (sample.current_state === "Archived") return STATUS_FILTERS.PAID;
+
+  return STATUS_FILTERS.READY;
 }
 
 function getFinalResult(testData) {
   if (!testData) return null;
   return testData.qa_final_result || testData.result || null;
+}
+
+function formatBranch(branchId) {
+  if (Number(branchId) === 1) return "Marikina";
+  if (Number(branchId) === 2) return "Pateros";
+  return branchId ? `Branch ${branchId}` : "-";
+}
+
+function formatUser(userId) {
+  if (!userId) return "-";
+
+  const value = String(userId);
+
+  if (Number.isNaN(Number(value))) {
+    return value;
+  }
+
+  return `User ${value}`;
 }
 
 function formatDate(value) {
@@ -1106,71 +1017,12 @@ function formatDate(value) {
   }
 }
 
-function StatCard({ label, value }) {
-  return (
-    <div className="statCard">
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
-  );
+function formatEmpty(value) {
+  if (value === null || value === undefined || value === "") return "-";
+  return value;
 }
 
-function Info({ label, value }) {
-  return (
-    <div>
-      <div className="label">{label}</div>
-      <p className="value">
-        {value === null || value === undefined || value === "" ? "-" : value}
-      </p>
-
-      <style jsx>{`
-        .label {
-          font-size: 11px;
-          color: #6b7280;
-          margin-bottom: 4px;
-          text-transform: uppercase;
-          letter-spacing: 0.04em;
-          font-weight: 800;
-        }
-
-        .value {
-          margin: 0;
-          font-size: 14px;
-          font-weight: 700;
-          color: #111827;
-          word-break: break-word;
-        }
-      `}</style>
-    </div>
-  );
-}
-
-function PaymentBadge({ status }) {
-  const cls =
-    status === "Fully Paid"
-      ? "payment-paid"
-      : status === "PO Submitted"
-        ? "payment-po"
-        : status === "Downpayment Paid"
-          ? "payment-partial"
-          : "payment-unpaid";
-
-  return <span className={`badge ${cls}`}>{status || "Unpaid"}</span>;
-}
-
-function LifecycleBadge({ status }) {
-  const cls =
-    status === "Registered"
-      ? "life-registered"
-      : status === "In Testing"
-        ? "life-testing"
-        : status === "For Review"
-          ? "life-review"
-          : status === "Released"
-            ? "life-released"
-            : status === "Archived"
-              ? "life-archived"
-              : "life-default";
-
-  return <span className={`badge ${cls}`}>{status || "-"}</span>;
+function formatCurrency(value) {
+  if (value === null || value === undefined || value === "") return "-";
+  return `₱${Number(value || 0).toLocaleString()}`;
 }
