@@ -98,6 +98,7 @@ export const apiClient = {
   getAccountingBilling: () => request("/api/accounting/billing"),
   getAccountingInvoices: () => request("/api/accounting/invoices"),
   getUsers: () => request("/api/users"),
+  getLabTechWorkflow: () => request("/api/lab-tech/workflow"),
 
   classify: (fd) =>
     request("/api/classify", {
@@ -113,6 +114,12 @@ export const apiClient = {
 
   updateSampleStatus: (sampleId, payload) =>
     request(`/api/samples/${sampleId}/status`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+
+  updateSampleTestData: (sampleId, payload) =>
+    request(`/api/samples/${sampleId}/test-data`, {
       method: "PATCH",
       body: JSON.stringify(payload),
     }),
@@ -134,5 +141,11 @@ export const apiClient = {
   qaApproveRelease: (sampleId) =>
     request(`/api/samples/${sampleId}/qa-release`, {
       method: "PATCH",
+    }),
+
+  qaOverrideTestResult: (sampleId, payload) =>
+    request(`/api/samples/${sampleId}/qa-result-override`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
     }),
 };

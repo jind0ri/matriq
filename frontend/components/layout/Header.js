@@ -9,7 +9,7 @@ export default function Header({
 }) {
   return (
     <>
-      <header className="header">
+      <header className="header no-print">
         <div className="left">
           <button
             type="button"
@@ -153,6 +153,12 @@ export default function Header({
 
           .locationBlock strong {
             font-size: 13px;
+          }
+        }
+
+        @media print {
+          .no-print {
+            display: none !important;
           }
         }
       `}</style>

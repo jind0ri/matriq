@@ -1,10 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { apiClient } from "@/services/apiClient";
+
+const PAYMENT_STATUSES = {
+  UNPAID: "Unpaid",
+  DOWNPAYMENT: "Downpayment Paid",
+  PO: "PO Submitted",
+  FULLY_PAID: "Fully Paid",
+};
 
 export default function BillingPage() {
   const [items, setItems] = useState([]);
+  const [statusFilter, setStatusFilter] = useState("All");
+  const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -13,7 +23,7 @@ export default function BillingPage() {
     setError("");
 
     try {
-      const res = await apiClient.getSamples(); // 🔥 CHANGE: use all samples
+      const res = await apiClient.getSamples();
       setItems(Array.isArray(res) ? res : []);
     } catch (err) {
       setError(err.message || "Failed to load billing data.");
@@ -38,82 +48,234 @@ export default function BillingPage() {
     loadData();
   }, []);
 
+  const visibleItems = useMemo(() => {
+    const q = search.trim().toLowerCase();
+
+    return items.filter((item) => {
+      const payment = item.device_metadata?.payment || {};
+      const paymentStatus = payment.payment_status || PAYMENT_STATUSES.UNPAID;
+
+      const matchesSearch =
+        !q ||
+        item.sample_id?.toLowerCase().includes(q) ||
+        item.client_name?.toLowerCase().includes(q) ||
+        item.project_reference?.toLowerCase().includes(q) ||
+        item.material_type?.toLowerCase().includes(q);
+
+      const matchesStatus =
+        statusFilter === "All" || paymentStatus === statusFilter;
+
+      return matchesSearch && matchesStatus;
+    });
+  }, [items, search, statusFilter]);
+
+  const stats = useMemo(() => {
+    return items.reduce(
+      (acc, item) => {
+        const payment = item.device_metadata?.payment || {};
+        const status = payment.payment_status || PAYMENT_STATUSES.UNPAID;
+
+        if (status === PAYMENT_STATUSES.UNPAID) acc.unpaid += 1;
+        if (status === PAYMENT_STATUSES.DOWNPAYMENT) acc.downpayment += 1;
+        if (status === PAYMENT_STATUSES.PO) acc.po += 1;
+        if (status === PAYMENT_STATUSES.FULLY_PAID) acc.fullyPaid += 1;
+
+        return acc;
+      },
+      {
+        unpaid: 0,
+        downpayment: 0,
+        po: 0,
+        fullyPaid: 0,
+      },
+    );
+  }, [items]);
+
   return (
     <div className="page">
       <div className="header">
         <div>
+          <p className="eyebrow">Accounting Module</p>
           <h1>Payment Management</h1>
-          <p>Manage payment status before testing and release.</p>
+          <p className="subtitle">
+            Manage payment eligibility before laboratory testing and official
+            report release.
+          </p>
         </div>
 
-        <button onClick={loadData}>Refresh</button>
+        <button className="refreshBtn" onClick={loadData}>
+          Refresh
+        </button>
       </div>
 
-      {loading && <div className="card">Loading...</div>}
+      <div className="stats">
+        <StatCard label="Unpaid" value={stats.unpaid} />
+        <StatCard label="Downpayment Paid" value={stats.downpayment} />
+        <StatCard label="PO Submitted" value={stats.po} />
+        <StatCard label="Fully Paid" value={stats.fullyPaid} />
+      </div>
+
+      <div className="notice">
+        Accounting controls payment status only. QA/Engineer authorization is
+        still required before an official report is released.
+      </div>
+
+      <div className="toolbar">
+        <div className="searchBox">
+          <span>⌕</span>
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search sample ID, client, project, or material..."
+          />
+        </div>
+
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+        >
+          <option value="All">All Payment Statuses</option>
+          <option value={PAYMENT_STATUSES.UNPAID}>Unpaid</option>
+          <option value={PAYMENT_STATUSES.DOWNPAYMENT}>Downpayment Paid</option>
+          <option value={PAYMENT_STATUSES.PO}>PO Submitted</option>
+          <option value={PAYMENT_STATUSES.FULLY_PAID}>Fully Paid</option>
+        </select>
+      </div>
+
+      {loading && <div className="card">Loading billing data...</div>}
       {!loading && error && <div className="card error">{error}</div>}
 
       {!loading && !error && (
         <div className="list">
-          {items.length === 0 && (
+          {visibleItems.length === 0 && (
             <div className="card">No samples found.</div>
           )}
 
-          {items.map((item) => {
-            const payment =
-              item.device_metadata?.payment || {};
+          {visibleItems.map((item) => {
+            const metadata = item.device_metadata || {};
+            const payment = metadata.payment || {};
+            const testData = metadata.test_data || null;
+
+            const paymentStatus =
+              payment.payment_status || PAYMENT_STATUSES.UNPAID;
+
+            const canStartTesting = [
+              PAYMENT_STATUSES.DOWNPAYMENT,
+              PAYMENT_STATUSES.PO,
+              PAYMENT_STATUSES.FULLY_PAID,
+            ].includes(paymentStatus);
+
+            const readyForReportRelease =
+              item.current_state === "For Review" &&
+              paymentStatus === PAYMENT_STATUSES.FULLY_PAID &&
+              Boolean(testData);
 
             return (
               <div key={item.sample_id} className="card">
                 <div className="row">
-                  <strong>{item.sample_id}</strong>
+                  <div>
+                    <div className="label">Sample ID</div>
+                    <strong className="sampleId">{item.sample_id}</strong>
+                  </div>
 
-                  <span className="pill">
-                    {payment.payment_status || "Unpaid"}
-                  </span>
+                  <div className="badgeGroup">
+                    <PaymentBadge status={paymentStatus} />
+                    <LifecycleBadge status={item.current_state} />
+                  </div>
                 </div>
 
                 <div className="grid">
-                  <div>
-                    <span>Client</span>
-                    <p>{item.client_name || "-"}</p>
-                  </div>
+                  <Info label="Client" value={item.client_name} />
+                  <Info label="Project" value={item.project_reference} />
+                  <Info label="Material" value={item.material_type} />
+                  <Info
+                    label="Payment Method"
+                    value={payment.payment_requirement || "-"}
+                  />
+                  <Info
+                    label="Test Result"
+                    value={testData?.result || "No Result Yet"}
+                  />
+                  <Info
+                    label="Report Eligibility"
+                    value={
+                      readyForReportRelease
+                        ? "Eligible for QA Release"
+                        : "Not Yet Eligible"
+                    }
+                  />
+                </div>
 
-                  <div>
-                    <span>Status</span>
-                    <p>{item.current_state}</p>
-                  </div>
-
-                  <div>
-                    <span>Payment Method</span>
-                    <p>{payment.payment_requirement || "-"}</p>
-                  </div>
+                <div className="eligibilityBox">
+                  {paymentStatus === PAYMENT_STATUSES.FULLY_PAID ? (
+                    <span className="eligible">
+                      Fully paid. This sample is financially cleared for report
+                      release once QA requirements are satisfied.
+                    </span>
+                  ) : canStartTesting ? (
+                    <span className="partial">
+                      Initial payment requirement satisfied. Testing may proceed
+                      if QA pre-testing review is complete, but official report
+                      release still requires full payment.
+                    </span>
+                  ) : (
+                    <span className="blocked">
+                      Payment is still unpaid. Testing and report release may be
+                      restricted by workflow rules.
+                    </span>
+                  )}
                 </div>
 
                 <div className="actions">
                   <button
+                    className={
+                      paymentStatus === PAYMENT_STATUSES.DOWNPAYMENT
+                        ? "active"
+                        : ""
+                    }
                     onClick={() =>
-                      updatePayment(item.sample_id, "Downpayment Paid")
+                      updatePayment(
+                        item.sample_id,
+                        PAYMENT_STATUSES.DOWNPAYMENT,
+                      )
                     }
                   >
                     50% Downpayment
                   </button>
 
                   <button
+                    className={
+                      paymentStatus === PAYMENT_STATUSES.PO ? "active" : ""
+                    }
                     onClick={() =>
-                      updatePayment(item.sample_id, "PO Submitted")
+                      updatePayment(item.sample_id, PAYMENT_STATUSES.PO)
                     }
                   >
                     PO Submitted
                   </button>
 
                   <button
-                    className="full"
+                    className={
+                      paymentStatus === PAYMENT_STATUSES.FULLY_PAID
+                        ? "full active"
+                        : "full"
+                    }
                     onClick={() =>
-                      updatePayment(item.sample_id, "Fully Paid")
+                      updatePayment(
+                        item.sample_id,
+                        PAYMENT_STATUSES.FULLY_PAID,
+                      )
                     }
                   >
                     Fully Paid
                   </button>
+
+                  <Link
+                    className="viewBtn"
+                    href={`/technical/tracking/${item.sample_id}`}
+                  >
+                    View Record →
+                  </Link>
                 </div>
               </div>
             );
@@ -123,17 +285,108 @@ export default function BillingPage() {
 
       <style jsx>{`
         .page {
-          padding: 24px;
+          min-height: 100vh;
+          padding: 28px;
+          background: #f6f7fb;
+          color: #111827;
         }
 
         .header {
           display: flex;
           justify-content: space-between;
+          align-items: flex-start;
+          gap: 16px;
           margin-bottom: 20px;
+        }
+
+        .eyebrow {
+          margin: 0 0 4px;
+          font-size: 12px;
+          font-weight: 800;
+          color: #4f46e5;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
         }
 
         h1 {
           margin: 0;
+          color: #111827;
+          font-size: 26px;
+        }
+
+        .subtitle {
+          margin: 6px 0 0;
+          color: #4b5563;
+          font-size: 14px;
+        }
+
+        .refreshBtn,
+        button,
+        .viewBtn {
+          background: #080026;
+          color: white;
+          border: none;
+          border-radius: 12px;
+          padding: 10px 14px;
+          cursor: pointer;
+          font-weight: 800;
+          text-decoration: none;
+          font-size: 13px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .stats {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+          gap: 14px;
+          margin-bottom: 14px;
+        }
+
+        .notice {
+          background: #eff6ff;
+          color: #1e40af;
+          border: 1px solid #bfdbfe;
+          padding: 14px 16px;
+          border-radius: 16px;
+          font-size: 13px;
+          line-height: 1.5;
+          margin-bottom: 16px;
+        }
+
+        .toolbar {
+          display: grid;
+          grid-template-columns: 1fr 220px;
+          gap: 12px;
+          margin-bottom: 16px;
+        }
+
+        .searchBox {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          background: white;
+          border: 1px solid #e5e7eb;
+          border-radius: 16px;
+          padding: 0 14px;
+        }
+
+        .searchBox input {
+          width: 100%;
+          border: none;
+          outline: none;
+          padding: 13px 0;
+          background: transparent;
+        }
+
+        select {
+          border: 1px solid #d1d5db;
+          border-radius: 16px;
+          padding: 0 12px;
+          background: white;
+          color: #111827;
+          font-weight: 700;
         }
 
         .list {
@@ -141,56 +394,272 @@ export default function BillingPage() {
           gap: 14px;
         }
 
-        .card {
+        .card,
+        .statCard {
           background: white;
-          padding: 16px;
-          border-radius: 14px;
-          border: 1px solid #eee;
+          padding: 18px;
+          border-radius: 18px;
+          border: 1px solid #e5e7eb;
+          box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+        }
+
+        .statCard {
+          display: grid;
+          gap: 6px;
+        }
+
+        .statCard span {
+          color: #6b7280;
+          font-size: 12px;
+          font-weight: 800;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+        }
+
+        .statCard strong {
+          font-size: 28px;
+          color: #111827;
         }
 
         .row {
           display: flex;
           justify-content: space-between;
-          margin-bottom: 10px;
+          align-items: flex-start;
+          gap: 16px;
+          margin-bottom: 14px;
+        }
+
+        .sampleId {
+          font-size: 18px;
+          color: #111827;
+        }
+
+        .badgeGroup {
+          display: flex;
+          gap: 8px;
+          flex-wrap: wrap;
+          justify-content: flex-end;
         }
 
         .grid {
           display: grid;
           grid-template-columns: repeat(3, 1fr);
-          gap: 10px;
+          gap: 14px;
         }
 
-        .pill {
-          background: #eef2ff;
-          padding: 6px 10px;
-          border-radius: 999px;
+        .label {
           font-size: 11px;
-          font-weight: 700;
+          color: #6b7280;
+          margin-bottom: 4px;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+          font-weight: 800;
+        }
+
+        .eligibilityBox {
+          margin-top: 14px;
+          padding: 12px;
+          border-radius: 14px;
+          font-size: 13px;
+          line-height: 1.5;
+          background: #f8fafc;
+          border: 1px solid #e2e8f0;
+        }
+
+        .eligible {
+          color: #166534;
+        }
+
+        .partial {
+          color: #92400e;
+        }
+
+        .blocked {
+          color: #991b1b;
         }
 
         .actions {
-          margin-top: 12px;
+          margin-top: 14px;
           display: flex;
           gap: 8px;
+          flex-wrap: wrap;
         }
 
         button {
-          background: #080026;
-          color: white;
-          border: none;
-          border-radius: 10px;
-          padding: 8px 12px;
-          cursor: pointer;
+          background: #312e81;
+        }
+
+        button.active {
+          outline: 3px solid rgba(79, 70, 229, 0.25);
         }
 
         .full {
           background: #16a34a;
         }
 
+        .viewBtn {
+          background: #f4f1ff;
+          color: #14003a;
+        }
+
         .error {
-          color: red;
+          color: #b91c1c;
+          border-color: #fecaca;
+          background: #fff7f7;
+        }
+
+        .badge {
+          display: inline-flex;
+          width: fit-content;
+          align-items: center;
+          border-radius: 999px;
+          padding: 7px 11px;
+          font-size: 12px;
+          font-weight: 900;
+          white-space: nowrap;
+        }
+
+        .payment-unpaid {
+          background: #fee2e2;
+          color: #991b1b;
+        }
+
+        .payment-partial {
+          background: #fef3c7;
+          color: #92400e;
+        }
+
+        .payment-po {
+          background: #e0e7ff;
+          color: #3730a3;
+        }
+
+        .payment-paid {
+          background: #dcfce7;
+          color: #166534;
+        }
+
+        .life-registered {
+          background: #eef2ff;
+          color: #3730a3;
+        }
+
+        .life-testing {
+          background: #fef9c3;
+          color: #854d0e;
+        }
+
+        .life-review {
+          background: #fff7ed;
+          color: #c2410c;
+        }
+
+        .life-released {
+          background: #dcfce7;
+          color: #166534;
+        }
+
+        .life-archived {
+          background: #f1f5f9;
+          color: #475569;
+        }
+
+        .life-default {
+          background: #f1f5f9;
+          color: #475569;
+        }
+
+        @media (max-width: 820px) {
+          .header {
+            flex-direction: column;
+          }
+
+          .toolbar {
+            grid-template-columns: 1fr;
+          }
+
+          .grid {
+            grid-template-columns: 1fr;
+          }
+
+          .row {
+            flex-direction: column;
+          }
+
+          .badgeGroup {
+            justify-content: flex-start;
+          }
         }
       `}</style>
     </div>
   );
+}
+
+function StatCard({ label, value }) {
+  return (
+    <div className="statCard">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function Info({ label, value }) {
+  return (
+    <div>
+      <div className="label">{label}</div>
+      <p className="value">
+        {value === null || value === undefined || value === "" ? "-" : value}
+      </p>
+
+      <style jsx>{`
+        .label {
+          font-size: 11px;
+          color: #6b7280;
+          margin-bottom: 4px;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+          font-weight: 800;
+        }
+
+        .value {
+          margin: 0;
+          font-size: 14px;
+          font-weight: 700;
+          color: #111827;
+          word-break: break-word;
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function PaymentBadge({ status }) {
+  const cls =
+    status === "Fully Paid"
+      ? "payment-paid"
+      : status === "PO Submitted"
+        ? "payment-po"
+        : status === "Downpayment Paid"
+          ? "payment-partial"
+          : "payment-unpaid";
+
+  return <span className={`badge ${cls}`}>{status || "Unpaid"}</span>;
+}
+
+function LifecycleBadge({ status }) {
+  const cls =
+    status === "Registered"
+      ? "life-registered"
+      : status === "In Testing"
+        ? "life-testing"
+        : status === "For Review"
+          ? "life-review"
+          : status === "Released"
+            ? "life-released"
+            : status === "Archived"
+              ? "life-archived"
+              : "life-default";
+
+  return <span className={`badge ${cls}`}>{status || "-"}</span>;
 }
