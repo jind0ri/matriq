@@ -15,32 +15,51 @@ import {
   ClipboardText,
   SignOut,
   UserCircle,
+  ShieldCheck,
 } from "phosphor-react";
 
 const NAV_CONFIG = {
   "Lab Technician": [
     { label: "Dashboard", href: "/technical", icon: SquaresFour },
     { label: "Sample Intake", href: "/technical/intake", icon: PlusCircle },
+    { label: "Workflow", href: "/technical/workflow", icon: Package },
     { label: "Registry", href: "/technical/registry", icon: Cube },
   ],
+
   "Senior Technician": [
     { label: "Dashboard", href: "/technical", icon: SquaresFour },
     { label: "Workflow", href: "/technical/workflow", icon: Package },
     { label: "Registry", href: "/technical/registry", icon: Cube },
   ],
+
   "QA Engineer": [
     { label: "Dashboard", href: "/technical", icon: SquaresFour },
     { label: "Workflow", href: "/technical/workflow", icon: Package },
     { label: "Registry", href: "/technical/registry", icon: Cube },
     { label: "Reports", href: "/technical/reports", icon: FileText },
   ],
+
   Administrator: [
-    { label: "Dashboard", href: "/admin", icon: SquaresFour },
+    { label: "Admin Dashboard", href: "/admin", icon: SquaresFour },
     { label: "Users", href: "/admin/users", icon: Users },
     { label: "Branches", href: "/admin/branches", icon: Buildings },
     { label: "Audit Logs", href: "/admin/audit-logs", icon: ClipboardText },
-    { label: "Reports", href: "/admin/reports", icon: FileText },
+
+    { label: "Technical Dashboard", href: "/technical", icon: ShieldCheck },
+    { label: "Workflow", href: "/technical/workflow", icon: Package },
+    { label: "Registry", href: "/technical/registry", icon: Cube },
+    { label: "Reports", href: "/technical/reports", icon: FileText },
+
+    { label: "Accounting Dashboard", href: "/accounting", icon: Receipt },
+    { label: "Billing", href: "/accounting/billing", icon: Receipt },
+    { label: "Invoices", href: "/accounting/invoices", icon: FileText },
+    {
+      label: "Accounting Reports",
+      href: "/accounting/reports",
+      icon: ClipboardText,
+    },
   ],
+
   "Accounting Staff": [
     { label: "Dashboard", href: "/accounting", icon: SquaresFour },
     { label: "Billing", href: "/accounting/billing", icon: Receipt },
@@ -179,13 +198,14 @@ export default function Sidebar({ user, isOpen, onClose }) {
 
         .top {
           padding: 24px 18px 0;
+          overflow-y: auto;
         }
 
         .brand {
           display: flex;
           align-items: center;
           gap: 14px;
-          margin-bottom: 34px;
+          margin-bottom: 28px;
         }
 
         .logoBox {
@@ -219,32 +239,28 @@ export default function Sidebar({ user, isOpen, onClose }) {
         .nav {
           display: flex;
           flex-direction: column;
-          gap: 26px;
-          padding: 12px 28px 0;
-        }
-
-        .navItem:hover .navIcon {
-          font-weight: 700;
+          gap: 10px;
+          padding: 8px 12px 24px;
         }
 
         .navItem {
           display: flex;
           align-items: center;
-          gap: 20px;
-          padding: 0;
-          min-height: auto;
+          gap: 16px;
+          min-height: 44px;
           color: #ebebeb;
           text-decoration: none;
-          border-radius: 0;
+          border-radius: 14px;
+          padding: 0 12px;
           transition:
-            opacity 0.85s ease,
-            transform 0.2s ease;
+            opacity 0.2s ease,
+            transform 0.2s ease,
+            background 0.2s ease;
         }
 
         .navItem:hover {
           background: rgba(255, 255, 255, 0.12);
-          border-radius: 14px;
-          opacity: 0.85;
+          opacity: 0.9;
         }
 
         .navItem.active {

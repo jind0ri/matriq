@@ -87,6 +87,8 @@ export default function TrackingDetailPage() {
   const testData = metadata.test_data || null;
   const testValues = testData?.values || {};
   const qa = metadata.qa || {};
+  const finalResult = getFinalResult(testData);
+  const specificationStatus = getSpecificationStatus(finalResult);
 
   const canStartTesting =
     item &&
@@ -116,7 +118,7 @@ export default function TrackingDetailPage() {
     <div className="admin-container">
       <nav className="breadcrumb-nav no-print">
         <Link href="/technical/registry" className="back-button">
-          ‹ Back to Registry
+          Back to Registry
         </Link>
       </nav>
 
@@ -151,8 +153,8 @@ export default function TrackingDetailPage() {
           <div className="primary-column">
             {isReadOnly && (
               <div className="status-banner info no-print">
-                ⓘ This record is currently <strong>Read-Only</strong> because it
-                has been released, archived, or marked immutable.
+                <strong>Read-Only Record:</strong> This record has been
+                released, archived, or marked immutable.
               </div>
             )}
 
@@ -208,7 +210,7 @@ export default function TrackingDetailPage() {
                 <Info label="Branch" value={trf.registry_branch} />
               </Section>
 
-              <Section title="Payment & Billing">
+              <Section title="Payment and Billing">
                 <Info label="Payment Status" value={payment.payment_status} />
                 <Info label="Requirement" value={payment.payment_requirement} />
                 <Info label="Amount Paid" value={payment.amount_paid} />
@@ -232,13 +234,16 @@ export default function TrackingDetailPage() {
               <section className="data-card test-result-card no-print">
                 <div className="test-result-header">
                   <div>
-                    <h2 className="card-heading">Computed and Reviewed Test Result</h2>
+                    <h2 className="card-heading">
+                      Computed and Reviewed Test Result
+                    </h2>
                     <p className="result-subtitle">
-                      System-generated result with QA-reviewed final report result.
+                      System-generated result with QA-reviewed final report
+                      result.
                     </p>
                   </div>
 
-                  <ResultBadge result={getFinalResult(testData)} />
+                  <ResultBadge result={finalResult} />
                 </div>
 
                 <div className="data-grid">
@@ -249,9 +254,10 @@ export default function TrackingDetailPage() {
                   />
                   <Info label="Standard" value={testValues.standard} />
                   <Info label="System Result" value={getSystemResult(testData)} />
+                  <Info label="QA Final Result" value={finalResult} emphasis />
                   <Info
-                    label="QA Final Result"
-                    value={getFinalResult(testData)}
+                    label="Specification Status"
+                    value={specificationStatus}
                     emphasis
                   />
                   <Info
@@ -271,7 +277,7 @@ export default function TrackingDetailPage() {
                         ? "Yes"
                         : testData.computed_by_system === false
                           ? "No"
-                          : "—"
+                          : "-"
                     }
                   />
                 </div>
@@ -288,6 +294,13 @@ export default function TrackingDetailPage() {
                       <Info
                         label="QA Final Result"
                         value={getQaOverride(testData).override_result}
+                        emphasis
+                      />
+                      <Info
+                        label="Specification Status"
+                        value={getSpecificationStatus(
+                          getQaOverride(testData).override_result,
+                        )}
                         emphasis
                       />
                       <Info
@@ -345,7 +358,7 @@ export default function TrackingDetailPage() {
               <div className="sidebar-list">
                 <div className="list-item">
                   <span className="label">Registered By</span>
-                  <span className="value">{item.registered_by || "—"}</span>
+                  <span className="value">{item.registered_by || "-"}</span>
                 </div>
 
                 <div className="list-item">
@@ -359,7 +372,7 @@ export default function TrackingDetailPage() {
 
                 <div className="list-item">
                   <span className="label">Model Version</span>
-                  <span className="value">{item.model_version || "—"}</span>
+                  <span className="value">{item.model_version || "-"}</span>
                 </div>
               </div>
             </div>
@@ -378,12 +391,17 @@ export default function TrackingDetailPage() {
 
                   <div className="list-item">
                     <span className="label">Standard</span>
-                    <span className="value">{testValues.standard || "—"}</span>
+                    <span className="value">{testValues.standard || "-"}</span>
                   </div>
 
                   <div className="list-item">
                     <span className="label">QA Final Result</span>
-                    <ResultBadge result={getFinalResult(testData)} small />
+                    <ResultBadge result={finalResult} small />
+                  </div>
+
+                  <div className="list-item">
+                    <span className="label">Specification Status</span>
+                    <span className="value">{specificationStatus}</span>
                   </div>
 
                   {getQaOverride(testData)?.is_overridden && (
@@ -500,7 +518,7 @@ export default function TrackingDetailPage() {
           justify-content: space-between;
           align-items: flex-end;
           padding-bottom: 32px;
-          border-bottom: 1px solid #e5e7eb;
+          border-bottom: 1px solid #d1d5db;
           margin-bottom: 32px;
           gap: 20px;
         }
@@ -531,8 +549,8 @@ export default function TrackingDetailPage() {
           align-items: center;
           gap: 8px;
           padding: 7px 13px;
-          background: #f3f4f6;
-          border: 1px solid #e5e7eb;
+          background: #f8fafc;
+          border: 1px solid #cbd5e1;
           border-radius: 999px;
           font-size: 13px;
           font-weight: 700;
@@ -563,19 +581,21 @@ export default function TrackingDetailPage() {
 
         .error-notice {
           padding: 20px;
-          background: #fef2f2;
+          background: #fff7f7;
           color: #b91c1c;
-          border-radius: 8px;
-          border: 1px solid #fecaca;
+          border-radius: 14px;
+          border: 1px solid #fca5a5;
         }
 
         .data-card {
           background: #fff;
-          border: 1px solid #e5e7eb;
-          border-radius: 14px;
+          border: 1px solid #d1d5db;
+          border-radius: 18px;
           padding: 24px;
           margin-bottom: 24px;
-          box-shadow: 0 10px 30px rgba(15, 23, 42, 0.04);
+          box-shadow:
+            0 2px 8px rgba(0, 0, 0, 0.05),
+            0 1px 2px rgba(0, 0, 0, 0.03);
         }
 
         .card-heading {
@@ -600,16 +620,16 @@ export default function TrackingDetailPage() {
 
         .status-banner {
           padding: 14px 18px;
-          border-radius: 12px;
+          border-radius: 14px;
           font-size: 13px;
           margin-bottom: 24px;
           background: #eff6ff;
           color: #1e40af;
-          border: 1px solid #bfdbfe;
+          border: 1px solid #93c5fd;
         }
 
         .test-result-card {
-          border-color: #dbeafe;
+          border-color: #93c5fd;
           background: #ffffff;
         }
 
@@ -634,7 +654,7 @@ export default function TrackingDetailPage() {
         .qa-review-box {
           margin-top: 24px;
           padding-top: 20px;
-          border-top: 1px solid #f3f4f6;
+          border-top: 1px solid #d1d5db;
         }
 
         .qa-review-box h3 {
@@ -649,7 +669,7 @@ export default function TrackingDetailPage() {
         .computed-values {
           margin-top: 24px;
           padding-top: 20px;
-          border-top: 1px solid #f3f4f6;
+          border-top: 1px solid #d1d5db;
         }
 
         .computed-values h3 {
@@ -668,7 +688,7 @@ export default function TrackingDetailPage() {
         }
 
         .muted-card {
-          background: #f9fafb;
+          background: #ffffff;
         }
 
         .muted-text {
@@ -678,11 +698,14 @@ export default function TrackingDetailPage() {
         }
 
         .sidebar-card {
-          background: #f9fafb;
-          border: 1px solid #e5e7eb;
-          border-radius: 14px;
+          background: #ffffff;
+          border: 1px solid #d1d5db;
+          border-radius: 18px;
           padding: 20px;
           margin-bottom: 20px;
+          box-shadow:
+            0 2px 8px rgba(0, 0, 0, 0.05),
+            0 1px 2px rgba(0, 0, 0, 0.03);
         }
 
         .sidebar-heading {
@@ -737,12 +760,12 @@ export default function TrackingDetailPage() {
           color: #4b5563;
           cursor: pointer;
           font-weight: 700;
-          background: #f3f4f6;
+          background: #f8fafc;
           list-style: none;
         }
 
         .raw-meta summary:hover {
-          background: #e5e7eb;
+          background: #f1f5f9;
         }
 
         .json-container {
@@ -762,11 +785,14 @@ export default function TrackingDetailPage() {
 
         .action-card {
           background: #fff;
-          border: 2px solid #111827;
-          border-radius: 14px;
+          border: 1px solid #111827;
+          border-radius: 18px;
           padding: 20px;
           position: sticky;
           top: 20px;
+          box-shadow:
+            0 2px 8px rgba(0, 0, 0, 0.05),
+            0 1px 2px rgba(0, 0, 0, 0.03);
         }
 
         .action-stack {
@@ -778,12 +804,20 @@ export default function TrackingDetailPage() {
         .btn {
           width: 100%;
           padding: 12px;
-          border-radius: 10px;
+          border-radius: 8px;
           font-size: 13px;
           font-weight: 800;
           cursor: pointer;
-          transition: 0.15s;
+          transition:
+            background-color 180ms ease,
+            transform 100ms ease,
+            box-shadow 100ms ease;
           border: 1px solid transparent;
+        }
+
+        .btn:hover {
+          transform: scale(1.01);
+          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
         }
 
         .btn-primary {
@@ -915,6 +949,7 @@ function OfficialReport({
 }) {
   const systemResult = getSystemResult(testData) || "RECORDED";
   const finalResult = getFinalResult(testData) || systemResult;
+  const specificationStatus = getSpecificationStatus(finalResult);
   const qaOverride = getQaOverride(testData);
   const result = finalResult;
   const generatedAt = new Date().toLocaleString();
@@ -926,9 +961,7 @@ function OfficialReport({
         <div>
           <p className="actions-eyebrow">Released Official Record</p>
           <h2>Laboratory Test Report Preview</h2>
-          <p>
-            Review the finalized report before printing or saving a PDF copy.
-          </p>
+          <p>Review the finalized report before printing or saving a PDF copy.</p>
         </div>
 
         <button className="print-btn" onClick={onPrint}>
@@ -989,17 +1022,17 @@ function OfficialReport({
 
         <section className="result-block">
           <div>
-            <span className="block-label">Final Reviewed Result</span>
+            <span className="block-label">Specification Status</span>
             <strong className={`result-text ${result.toLowerCase()}`}>
-              {result}
+              {specificationStatus}
             </strong>
             <p>
               {qaOverride?.is_overridden
                 ? `QA reviewed the system-computed result (${systemResult}) and finalized the report result as ${finalResult}.`
                 : result === "FAIL"
-                  ? "The report records a failed laboratory outcome. This does not prevent official report release because the report documents the actual result."
+                  ? "The report records a result below the specified requirement. This does not prevent official report release because the report documents the actual result."
                   : result === "PASS"
-                    ? "The report records a passing laboratory outcome based on the encoded test data and QA review."
+                    ? "The report records a result that meets the specified requirement based on encoded test data and QA review."
                     : "The report records test data without a project-specific pass/fail threshold."}
             </p>
           </div>
@@ -1056,6 +1089,10 @@ function OfficialReport({
             <ReportRow label="Original System Result" value={systemResult} />
             <ReportRow label="QA Final Result" value={finalResult} />
             <ReportRow
+              label="Specification Status"
+              value={specificationStatus}
+            />
+            <ReportRow
               label="QA Override Applied"
               value={qaOverride?.is_overridden ? "Yes" : "No"}
             />
@@ -1096,12 +1133,12 @@ function OfficialReport({
           <div className="remarks-table">
             <div>
               <span>System Remarks</span>
-              <p>{testData.system_remarks || "—"}</p>
+              <p>{testData.system_remarks || "-"}</p>
             </div>
 
             <div>
               <span>Technician Remarks</span>
-              <p>{testData.remarks || "—"}</p>
+              <p>{testData.remarks || "-"}</p>
             </div>
           </div>
         </section>
@@ -1159,11 +1196,13 @@ function OfficialReport({
           align-items: center;
           gap: 18px;
           background: #ffffff;
-          border: 1px solid #e5e7eb;
+          border: 1px solid #d1d5db;
           border-radius: 18px;
           padding: 18px 20px;
           margin-bottom: 20px;
-          box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+          box-shadow:
+            0 2px 8px rgba(0, 0, 0, 0.05),
+            0 1px 2px rgba(0, 0, 0, 0.03);
         }
 
         .actions-eyebrow,
@@ -1191,7 +1230,7 @@ function OfficialReport({
 
         .print-btn {
           border: none;
-          border-radius: 12px;
+          border-radius: 8px;
           background: #111827;
           color: white;
           padding: 12px 16px;
@@ -1199,6 +1238,15 @@ function OfficialReport({
           font-weight: 800;
           cursor: pointer;
           white-space: nowrap;
+          transition:
+            background-color 180ms ease,
+            transform 100ms ease,
+            box-shadow 100ms ease;
+        }
+
+        .print-btn:hover {
+          transform: scale(1.01);
+          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
         }
 
         .report-sheet {
@@ -1206,7 +1254,9 @@ function OfficialReport({
           border: 1px solid #d1d5db;
           border-radius: 18px;
           padding: 34px;
-          box-shadow: 0 18px 45px rgba(15, 23, 42, 0.08);
+          box-shadow:
+            0 4px 16px rgba(0, 0, 0, 0.07),
+            0 2px 4px rgba(0, 0, 0, 0.04);
         }
 
         .report-header {
@@ -1239,10 +1289,10 @@ function OfficialReport({
         .report-meta-box {
           min-width: 220px;
           border: 1px solid #d1d5db;
-          border-radius: 12px;
+          border-radius: 14px;
           padding: 14px;
           text-align: right;
-          background: #f9fafb;
+          background: #ffffff;
         }
 
         .report-meta-box span {
@@ -1274,15 +1324,15 @@ function OfficialReport({
           display: grid;
           grid-template-columns: repeat(4, 1fr);
           border: 1px solid #d1d5db;
-          border-radius: 12px;
+          border-radius: 14px;
           overflow: hidden;
           margin-bottom: 14px;
         }
 
         .report-summary-strip div {
           padding: 12px;
-          border-right: 1px solid #e5e7eb;
-          background: #f9fafb;
+          border-right: 1px solid #d1d5db;
+          background: #ffffff;
         }
 
         .report-summary-strip div:last-child {
@@ -1320,7 +1370,7 @@ function OfficialReport({
         .report-warning {
           padding: 11px 13px;
           border: 1px solid #cbd5e1;
-          border-radius: 12px;
+          border-radius: 14px;
           background: #f8fafc;
           color: #334155;
           font-size: 12px;
@@ -1338,7 +1388,7 @@ function OfficialReport({
           align-items: center;
           gap: 18px;
           border: 1px solid #d1d5db;
-          border-radius: 12px;
+          border-radius: 14px;
           padding: 14px;
           margin-bottom: 20px;
         }
@@ -1355,7 +1405,7 @@ function OfficialReport({
 
         .result-text {
           display: block;
-          font-size: 26px;
+          font-size: 22px;
           font-weight: 900;
           letter-spacing: -0.03em;
         }
@@ -1398,7 +1448,7 @@ function OfficialReport({
 
         .report-table,
         .values-table {
-          border: 1px solid #e5e7eb;
+          border: 1px solid #d1d5db;
           border-radius: 10px;
           overflow: hidden;
         }
@@ -1410,10 +1460,10 @@ function OfficialReport({
         }
 
         .remarks-table div {
-          border: 1px solid #e5e7eb;
+          border: 1px solid #d1d5db;
           border-radius: 10px;
           padding: 12px;
-          background: #f9fafb;
+          background: #ffffff;
         }
 
         .remarks-table span {
@@ -1465,7 +1515,7 @@ function OfficialReport({
         .footer-note {
           margin: 22px 0 0;
           padding-top: 12px;
-          border-top: 1px solid #e5e7eb;
+          border-top: 1px solid #d1d5db;
           color: #64748b;
           font-size: 11px;
           line-height: 1.6;
@@ -1552,7 +1602,7 @@ function OfficialReport({
           }
 
           .result-text {
-            font-size: 18px;
+            font-size: 15px;
           }
 
           .result-block p {
@@ -1696,12 +1746,12 @@ function ReportRow({ label, value }) {
           grid-template-columns: 230px minmax(0, 1fr);
           gap: 16px;
           padding: 9px 12px;
-          border-bottom: 1px solid #e5e7eb;
+          border-bottom: 1px solid #d1d5db;
           background: #ffffff;
         }
 
         .report-row:nth-child(even) {
-          background: #f9fafb;
+          background: #f8fafc;
         }
 
         .report-row:last-child {
@@ -1757,11 +1807,13 @@ function Section({ title, children }) {
       <style jsx>{`
         .data-card-sec {
           background: #fff;
-          border: 1px solid #e5e7eb;
-          border-radius: 14px;
+          border: 1px solid #d1d5db;
+          border-radius: 18px;
           padding: 24px;
           margin-bottom: 24px;
-          box-shadow: 0 10px 30px rgba(15, 23, 42, 0.04);
+          box-shadow:
+            0 2px 8px rgba(0, 0, 0, 0.05),
+            0 1px 2px rgba(0, 0, 0, 0.03);
         }
 
         .card-heading-sec {
@@ -1770,7 +1822,7 @@ function Section({ title, children }) {
           color: #111827;
           margin: 0 0 16px;
           text-transform: uppercase;
-          border-bottom: 1px solid #f3f4f6;
+          border-bottom: 1px solid #d1d5db;
           padding-bottom: 8px;
           letter-spacing: 0.025em;
         }
@@ -1825,31 +1877,31 @@ function ResultBadge({ result, small = false }) {
         .pass {
           background: #dcfce7;
           color: #166534;
-          border: 1px solid #bbf7d0;
+          border: 1px solid #86efac;
         }
 
         .fail {
           background: #fee2e2;
           color: #991b1b;
-          border: 1px solid #fecaca;
+          border: 1px solid #fca5a5;
         }
 
         .recorded {
           background: #e0e7ff;
           color: #3730a3;
-          border: 1px solid #c7d2fe;
+          border: 1px solid #a5b4fc;
         }
 
         .incomplete {
           background: #fef3c7;
           color: #92400e;
-          border: 1px solid #fde68a;
+          border: 1px solid #facc15;
         }
 
         .default {
           background: #f1f5f9;
           color: #475569;
-          border: 1px solid #e2e8f0;
+          border: 1px solid #cbd5e1;
         }
 
         @media print {
@@ -1865,7 +1917,7 @@ function ResultBadge({ result, small = false }) {
 }
 
 function formatFieldLabel(value) {
-  if (!value) return "—";
+  if (!value) return "-";
 
   return String(value)
     .replaceAll("_", " ")
@@ -1874,13 +1926,13 @@ function formatFieldLabel(value) {
 }
 
 function formatValue(value) {
-  if (value === null || value === undefined || value === "") return "—";
+  if (value === null || value === undefined || value === "") return "-";
   if (typeof value === "boolean") return value ? "Yes" : "No";
   return String(value);
 }
 
 function formatDate(value) {
-  if (!value) return "—";
+  if (!value) return "-";
 
   try {
     return new Date(value).toLocaleString();
@@ -1904,4 +1956,11 @@ function getFinalResult(testData) {
 
 function getQaOverride(testData) {
   return testData?.qa_override || null;
+}
+
+function getSpecificationStatus(result) {
+  if (result === "PASS") return "Meets Specified Requirement";
+  if (result === "FAIL") return "Below Specified Requirement";
+  if (result === "RECORDED") return "Recorded Only";
+  return "Pending Test Result";
 }

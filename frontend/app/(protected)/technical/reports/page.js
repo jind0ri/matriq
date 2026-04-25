@@ -99,7 +99,7 @@ export default function ReportsPage() {
       <div className="notice">
         Reports shown here are finalized sample records. A failed result may
         still appear as a released report because the report documents the
-        actual laboratory outcome; it does not independently certify material
+        actual laboratory outcome. It does not independently certify material
         acceptance.
       </div>
 
@@ -158,6 +158,7 @@ export default function ReportsPage() {
             const qa = metadata.qa || {};
             const systemResult = getSystemResult(testData);
             const finalResult = getFinalResult(testData);
+            const specificationStatus = getSpecificationStatus(finalResult);
             const qaOverride = testData.qa_override || null;
 
             return (
@@ -196,6 +197,11 @@ export default function ReportsPage() {
                   />
                   <Info label="System Result" value={systemResult} />
                   <Info label="QA Final Result" value={finalResult} emphasis />
+                  <Info
+                    label="Specification Status"
+                    value={specificationStatus}
+                    emphasis
+                  />
                   <Info
                     label="Payment Status"
                     value={payment.payment_status || "-"}
@@ -313,7 +319,7 @@ export default function ReportsPage() {
           align-items: center;
           gap: 10px;
           background: #ffffff;
-          border: 1px solid #e5e7eb;
+          border: 1px solid #d1d5db;
           border-radius: 16px;
           padding: 0 14px;
         }
@@ -351,9 +357,10 @@ export default function ReportsPage() {
         .reportCard,
         .statCard {
           background: #ffffff;
-          border: 1px solid #e5e7eb;
+          border: 1px solid #d1d5db;
           border-radius: 20px;
-          box-shadow: 0 12px 32px rgba(15, 23, 42, 0.06);
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05),
+            0 1px 2px rgba(0, 0, 0, 0.03);
         }
 
         .card {
@@ -381,6 +388,17 @@ export default function ReportsPage() {
 
         .reportCard {
           overflow: hidden;
+          transition:
+            transform 180ms ease,
+            box-shadow 180ms ease,
+            border-color 180ms ease;
+        }
+
+        .reportCard:hover {
+          transform: translateY(-2px);
+          border-color: #9ca3af;
+          box-shadow: 0 4px 16px rgba(0, 0, 0, 0.07),
+            0 2px 4px rgba(0, 0, 0, 0.04);
         }
 
         .cardTop {
@@ -389,7 +407,7 @@ export default function ReportsPage() {
           align-items: flex-start;
           gap: 18px;
           padding: 22px;
-          border-bottom: 1px solid #e5e7eb;
+          border-bottom: 1px solid #d1d5db;
           background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
         }
 
@@ -428,7 +446,7 @@ export default function ReportsPage() {
           border-radius: 999px;
           padding: 8px 12px;
           background: #f1f5f9;
-          border: 1px solid #e2e8f0;
+          border: 1px solid #cbd5e1;
           color: #475569;
           font-size: 12px;
           font-weight: 900;
@@ -447,7 +465,7 @@ export default function ReportsPage() {
           padding: 14px;
           border-radius: 16px;
           background: #fff7ed;
-          border: 1px solid #fed7aa;
+          border: 1px solid #fdba74;
           color: #9a3412;
           font-size: 13px;
           line-height: 1.5;
@@ -468,7 +486,7 @@ export default function ReportsPage() {
           justify-content: flex-end;
           padding: 18px 22px;
           background: #f8fafc;
-          border-top: 1px solid #e5e7eb;
+          border-top: 1px solid #d1d5db;
         }
 
         .primaryLink,
@@ -477,15 +495,24 @@ export default function ReportsPage() {
           align-items: center;
           justify-content: center;
           text-decoration: none;
-          border-radius: 12px;
+          border-radius: 8px;
           padding: 12px 16px;
           font-size: 13px;
           font-weight: 900;
+          transition:
+            background-color 180ms ease,
+            transform 100ms ease,
+            box-shadow 100ms ease;
         }
 
         .primaryLink {
           background: #111827;
           color: white;
+        }
+
+        .primaryLink:hover {
+          transform: scale(1.01);
+          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
         }
 
         .secondaryLink {
@@ -619,25 +646,25 @@ function ResultBadge({ result }) {
         .pass {
           background: #dcfce7;
           color: #166534;
-          border: 1px solid #bbf7d0;
+          border: 1px solid #86efac;
         }
 
         .fail {
           background: #fee2e2;
           color: #991b1b;
-          border: 1px solid #fecaca;
+          border: 1px solid #fca5a5;
         }
 
         .recorded {
           background: #e0e7ff;
           color: #3730a3;
-          border: 1px solid #c7d2fe;
+          border: 1px solid #a5b4fc;
         }
 
         .default {
           background: #f1f5f9;
           color: #475569;
-          border: 1px solid #e2e8f0;
+          border: 1px solid #cbd5e1;
         }
       `}</style>
     </span>
@@ -655,6 +682,13 @@ function getSystemResult(testData) {
 
 function getFinalResult(testData) {
   return testData?.qa_final_result || testData?.result || null;
+}
+
+function getSpecificationStatus(result) {
+  if (result === "PASS") return "Meets Specified Requirement";
+  if (result === "FAIL") return "Below Specified Requirement";
+  if (result === "RECORDED") return "Recorded Only";
+  return "Pending Test Result";
 }
 
 function formatLabel(value) {

@@ -1,26 +1,368 @@
 @import "tailwindcss";
 
+/* ============================================================
+   MATRIQ DESIGN TOKENS
+   Edit here to restyle the whole product.
+   ============================================================ */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Brand */
+  --color-brand: hsl(248, 78%, 35%);
+  --color-brand-light: hsl(248, 78%, 96%);
+  --color-brand-dark: hsl(248, 78%, 24%);
+
+  /* Semantic colors */
+  --color-success: hsl(142, 72%, 29%);
+  --color-success-bg: hsl(138, 76%, 97%);
+  --color-success-border: hsl(141, 69%, 70%);
+
+  --color-danger: hsl(0, 72%, 38%);
+  --color-danger-bg: hsl(0, 86%, 97%);
+  --color-danger-border: hsl(0, 93%, 78%);
+
+  --color-warning: hsl(32, 95%, 34%);
+  --color-warning-bg: hsl(33, 100%, 96%);
+  --color-warning-border: hsl(31, 97%, 72%);
+
+  --color-info: hsl(217, 91%, 40%);
+  --color-info-bg: hsl(214, 100%, 97%);
+  --color-info-border: hsl(213, 94%, 78%);
+
+  /* Surfaces */
+  --color-canvas: hsl(220, 20%, 97%);
+  --color-surface: hsl(0, 0%, 100%);
+  --color-overlay: hsl(220, 14%, 97%);
+  --color-sidebar: hsl(250, 100%, 7%);
+  --color-sidebar-muted: hsl(250, 100%, 10%);
+
+  /* Text */
+  --color-text-primary: hsl(220, 15%, 12%);
+  --color-text-secondary: hsl(220, 10%, 42%);
+  --color-text-muted: hsl(220, 8%, 62%);
+  --color-text-inverse: hsl(0, 0%, 100%);
+
+  /* Borders */
+  --color-border: hsl(220, 13%, 82%);
+  --color-border-soft: hsl(220, 13%, 88%);
+  --color-border-strong: hsl(220, 13%, 68%);
+
+  /* Shadows */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-sm:
+    0 2px 8px rgba(0, 0, 0, 0.05),
+    0 1px 2px rgba(0, 0, 0, 0.03);
+  --shadow-md:
+    0 4px 16px rgba(0, 0, 0, 0.07),
+    0 2px 4px rgba(0, 0, 0, 0.04);
+  --shadow-lg:
+    0 8px 24px rgba(0, 0, 0, 0.09),
+    0 4px 8px rgba(0, 0, 0, 0.05);
+
+  /* Border radius */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+  --radius-full: 9999px;
+
+  /* Transitions */
+  --transition-fast: 100ms ease;
+  --transition-base: 180ms ease;
+  --transition-slow: 320ms ease;
+
+  /* Type scale */
+  --text-xs: 11px;
+  --text-sm: 13px;
+  --text-base: 15px;
+  --text-md: 17px;
+  --text-lg: 20px;
+  --text-xl: 24px;
+  --text-2xl: 30px;
+  --text-3xl: 40px;
+
+  /* Next/Tailwind compatibility */
+  --background: var(--color-canvas);
+  --foreground: var(--color-text-primary);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-montserrat);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* ============================================================
+   BASE RESET
+   ============================================================ */
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-height: 100%;
+  background: var(--color-canvas);
+  color: var(--color-text-primary);
+  scroll-behavior: smooth;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-montserrat), sans-serif;
+  min-height: 100vh;
+  margin: 0;
+  background: var(--color-canvas);
+  color: var(--color-text-primary);
+  font-family:
+    var(--font-montserrat),
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  font-size: var(--text-base);
+  line-height: 1.5;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--color-brand-light);
+  color: var(--color-brand-dark);
+}
+
+/* ============================================================
+   INTERACTION DEFAULTS
+   ============================================================ */
+
+button,
+a,
+[role="button"],
+input,
+select,
+textarea,
+summary {
+  transition:
+    color var(--transition-base),
+    background-color var(--transition-base),
+    border-color var(--transition-base),
+    box-shadow var(--transition-base),
+    transform var(--transition-base),
+    opacity var(--transition-base);
+}
+
+button,
+[role="button"],
+summary {
+  cursor: pointer;
+}
+
+button:disabled,
+[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+button:hover:not(:disabled),
+a:hover,
+[role="button"]:hover {
+  transform: translateY(-1px);
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+summary:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--color-brand) 28%, transparent);
+  outline-offset: 3px;
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--color-text-muted);
+}
+
+/* ============================================================
+   REUSABLE PROJECT UTILITIES
+   Use these gradually as we clean pages.
+   ============================================================ */
+
+.surface {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.surface-interactive {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.surface-interactive:hover {
+  transform: translateY(-2px);
+  border-color: var(--color-border-strong);
+  box-shadow: var(--shadow-md);
+}
+
+.panel {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-sm);
+}
+
+.muted-panel {
+  background: var(--color-overlay);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.kicker {
+  margin: 0 0 6px;
+  color: var(--color-brand);
+  font-size: var(--text-xs);
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.page-title {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: var(--text-2xl);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.page-subtitle {
+  margin: 6px 0 0;
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+
+.primary-button {
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: var(--color-brand);
+  color: var(--color-text-inverse);
+  padding: 11px 15px;
+  font-size: var(--text-sm);
+  font-weight: 850;
+}
+
+.primary-button:hover {
+  background: var(--color-brand-dark);
+  box-shadow: var(--shadow-xs);
+}
+
+.secondary-button {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  padding: 11px 15px;
+  font-size: var(--text-sm);
+  font-weight: 850;
+}
+
+.secondary-button:hover {
+  border-color: var(--color-border-strong);
+  box-shadow: var(--shadow-xs);
+}
+
+.status-pill {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-full);
+  padding: 7px 11px;
+  font-size: var(--text-xs);
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.status-pill-neutral {
+  background: hsl(220, 14%, 96%);
+  color: hsl(220, 12%, 35%);
+  border: 1px solid hsl(220, 13%, 76%);
+}
+
+.status-pill-info {
+  background: var(--color-info-bg);
+  color: var(--color-info);
+  border: 1px solid var(--color-info-border);
+}
+
+.status-pill-success {
+  background: var(--color-success-bg);
+  color: var(--color-success);
+  border: 1px solid var(--color-success-border);
+}
+
+.status-pill-danger {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+  border: 1px solid var(--color-danger-border);
+}
+
+.status-pill-warning {
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+  border: 1px solid var(--color-warning-border);
+}
+
+/* ============================================================
+   TABLE DEFAULTS
+   ============================================================ */
+
+table {
+  border-collapse: collapse;
+}
+
+th {
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+td {
+  color: var(--color-text-primary);
+  font-size: var(--text-sm);
+}
+
+/* ============================================================
+   PRINT SAFETY
+   ============================================================ */
+
+@media print {
+  html,
+  body {
+    background: white !important;
+    color: black !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  button,
+  a {
+    box-shadow: none !important;
+    transform: none !important;
+  }
 }

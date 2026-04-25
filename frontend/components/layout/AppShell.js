@@ -5,12 +5,23 @@ import { useRouter } from "next/navigation";
 import Sidebar from "./Sidebar";
 import Header from "./Header";
 
+const BRANCH_NAMES = {
+  1: "Matest Marikina",
+  2: "Matest Pateros",
+};
+
+function getBranchName(branchId) {
+  const normalizedBranchId = Number(branchId);
+  return BRANCH_NAMES[normalizedBranchId] || "Unknown Branch";
+}
+
 export default function AppShell({
   children,
   allowedRoles = [],
-  branch = "Main Laboratory - Marikina",
+  branch,
 }) {
   const router = useRouter();
+
   const [user, setUser] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [ready, setReady] = useState(false);
@@ -23,7 +34,17 @@ export default function AppShell({
       return;
     }
 
-    const parsed = JSON.parse(stored);
+    let parsed;
+
+    try {
+      parsed = JSON.parse(stored);
+    } catch {
+      localStorage.removeItem("user");
+      localStorage.removeItem("token");
+      localStorage.removeItem("access_token");
+      router.push("/auth/access-select");
+      return;
+    }
 
     if (allowedRoles.length && !allowedRoles.includes(parsed.role)) {
       router.push("/unauthorized");
@@ -37,10 +58,13 @@ export default function AppShell({
   function handleLogout() {
     localStorage.removeItem("user");
     localStorage.removeItem("token");
+    localStorage.removeItem("access_token");
     router.push("/auth/access-select");
   }
 
   if (!ready || !user) return null;
+
+  const branchName = branch || getBranchName(user?.branch_id);
 
   return (
     <>
@@ -53,11 +77,7 @@ export default function AppShell({
 
         <div className="mainArea">
           <Header
-            branch={
-              user?.branch_id === 2
-                ? "Matest Pateros"
-                : "Matest Marikina"
-            }
+            branch={branchName}
             onMenuClick={() => setSidebarOpen(true)}
             onLogout={handleLogout}
           />

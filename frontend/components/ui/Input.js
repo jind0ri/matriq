@@ -9,11 +9,19 @@ export default function Input({
   placeholder,
   error,
   readOnly = false,
+  disabled = false,
+  required = false,
+  className = "",
 }) {
   return (
     <>
-      <div className="field">
-        {label && <label htmlFor={name}>{label}</label>}
+      <div className={["field", className].join(" ")}>
+        {label && (
+          <label htmlFor={name}>
+            {label}
+            {required && <span>Required</span>}
+          </label>
+        )}
 
         <input
           id={name}
@@ -24,60 +32,97 @@ export default function Input({
           placeholder={placeholder}
           className={error ? "error" : ""}
           readOnly={readOnly}
+          disabled={disabled}
+          required={required}
         />
 
-        {error && <span className="errorText">{error}</span>}
+        {error && <small className="errorText">{error}</small>}
       </div>
 
       <style jsx>{`
         .field {
           display: flex;
           flex-direction: column;
-          gap: 8px;
+          gap: 7px;
         }
 
         label {
-          font-size: 14px;
-          font-weight: 600;
-          color: #5b5b5b;
-          letter-spacing: 0.2px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          font-size: var(--text-xs);
+          font-weight: 900;
+          color: var(--color-text-secondary);
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+
+        label span {
+          color: var(--color-text-muted);
+          font-size: 10px;
+          font-weight: 800;
+          text-transform: none;
+          letter-spacing: 0;
         }
 
         input {
           width: 100%;
-          height: 56px;
-          padding: 0 18px;
-          border: 1px solid #d8d8d8;
-          border-radius: 18px;
-          font-size: 14px;
-          color: #2d2d2d;
-          background: #ffffff;
+          min-height: 40px;
+          padding: 0 12px;
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-sm);
+          font-family: inherit;
+          font-size: var(--text-sm);
+          font-weight: 650;
+          color: var(--color-text-primary);
+          background: var(--color-surface);
           outline: none;
-          transition: all 0.2s ease;
+          transition:
+            color var(--transition-base),
+            background-color var(--transition-base),
+            border-color var(--transition-base),
+            box-shadow var(--transition-base),
+            opacity var(--transition-base);
         }
 
         input::placeholder {
-          color: #b0b0b0;
+          color: var(--color-text-muted);
+          font-weight: 500;
         }
 
         input:focus {
-          border-color: #5d8dee;
-          box-shadow: 0 0 0 3px rgba(93, 141, 238, 0.12);
+          border-color: var(--color-brand);
+          box-shadow: 0 0 0 3px
+            color-mix(in srgb, var(--color-brand) 16%, transparent);
         }
 
         input:read-only {
-          background: #fafafa;
-          color: #5b5b5b;
+          background: var(--color-overlay);
+          color: var(--color-text-secondary);
         }
 
-        .error {
-          border-color: #dc2626;
+        input:disabled {
+          cursor: not-allowed;
+          opacity: 0.55;
+        }
+
+        input.error {
+          border-color: var(--color-danger-border);
+          background: var(--color-danger-bg);
+        }
+
+        input.error:focus {
+          border-color: var(--color-danger);
+          box-shadow: 0 0 0 3px
+            color-mix(in srgb, var(--color-danger) 15%, transparent);
         }
 
         .errorText {
-          color: #dc2626;
-          font-size: 12px;
-          margin-top: -2px;
+          color: var(--color-danger);
+          font-size: var(--text-xs);
+          font-weight: 750;
+          line-height: 1.4;
         }
       `}</style>
     </>

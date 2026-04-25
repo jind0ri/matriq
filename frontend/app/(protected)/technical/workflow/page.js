@@ -18,6 +18,20 @@ export default function WorkflowPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
+  const isSeniorTech = user?.role === "Senior Technician";
+  const isQa = user?.role === "QA Engineer";
+  const isLabTech = user?.role === "Lab Technician";
+  const isAdmin = user?.role === "Administrator";
+
+  const canViewLabTechQueue = isLabTech || isAdmin;
+  const canActAsLabTech = isLabTech;
+
+  const canViewSeniorQueue = isSeniorTech || isAdmin;
+  const canActAsSeniorTech = isSeniorTech;
+
+  const canViewQaQueue = isQa || isAdmin;
+  const canActAsQa = isQa;
+
   function getMetadata(item) {
     return item?.device_metadata || {};
   }
@@ -98,13 +112,13 @@ export default function WorkflowPage() {
     try {
       const promises = [apiClient.getDashboard()];
 
-      if (user?.role === "Senior Technician" || user?.role === "Administrator") {
+      if (canViewSeniorQueue) {
         promises.push(apiClient.getReviews());
       } else {
         promises.push(Promise.resolve([]));
       }
 
-      if (user?.role === "QA Engineer" || user?.role === "Administrator") {
+      if (canViewQaQueue) {
         promises.push(apiClient.getQaPreTestingQueue());
         promises.push(apiClient.getQaReleaseQueue());
       } else {
@@ -112,7 +126,7 @@ export default function WorkflowPage() {
         promises.push(Promise.resolve([]));
       }
 
-      if (user?.role === "Lab Technician" || user?.role === "Administrator") {
+      if (canViewLabTechQueue) {
         promises.push(apiClient.getLabTechWorkflow());
       } else {
         promises.push(
@@ -144,6 +158,13 @@ export default function WorkflowPage() {
   }
 
   async function handleValidation(sample_id, decision) {
+    if (!canActAsSeniorTech) {
+      alert(
+        "Only Senior Technicians can approve or reject AI classification review cases.",
+      );
+      return;
+    }
+
     try {
       await apiClient.validate({
         sample_id,
@@ -159,6 +180,11 @@ export default function WorkflowPage() {
   }
 
   async function handleQaPreTesting(sampleId) {
+    if (!canActAsQa) {
+      alert("Only QA Engineers can approve samples for testing.");
+      return;
+    }
+
     try {
       await apiClient.qaApprovePreTesting(sampleId);
       await loadData();
@@ -168,6 +194,11 @@ export default function WorkflowPage() {
   }
 
   async function handleQaRelease(sampleId) {
+    if (!canActAsQa) {
+      alert("Only QA Engineers can release official reports.");
+      return;
+    }
+
     try {
       await apiClient.qaApproveRelease(sampleId);
       await loadData();
@@ -177,6 +208,11 @@ export default function WorkflowPage() {
   }
 
   async function handleQaResultOverride(sampleId) {
+    if (!canActAsQa) {
+      alert("Only QA Engineers can review or override the final report result.");
+      return;
+    }
+
     const draft = getOverrideDraft(sampleId);
 
     if (!draft.result) {
@@ -185,7 +221,9 @@ export default function WorkflowPage() {
     }
 
     if (!draft.reason || draft.reason.trim().length < 10) {
-      alert("Please provide an override/review reason with at least 10 characters.");
+      alert(
+        "Please provide an override/review reason with at least 10 characters.",
+      );
       return;
     }
 
@@ -210,6 +248,11 @@ export default function WorkflowPage() {
   }
 
   async function handleStartTesting(sampleId) {
+    if (!canActAsLabTech) {
+      alert("Only Lab Technicians can start laboratory testing.");
+      return;
+    }
+
     try {
       await apiClient.updateSampleStatus(sampleId, {
         status: "In Testing",
@@ -225,11 +268,6 @@ export default function WorkflowPage() {
     loadData();
   }, []);
 
-  const isSeniorTech = user?.role === "Senior Technician";
-  const isQa = user?.role === "QA Engineer";
-  const isLabTech = user?.role === "Lab Technician";
-  const isAdmin = user?.role === "Administrator";
-
   return (
     <>
       <div className="page">
@@ -238,7 +276,8 @@ export default function WorkflowPage() {
             <p className="eyebrow">Workflow Module</p>
             <h1>Workflow Monitor</h1>
             <p className="subtitle">
-              Role-based task queues for sample testing, QA review, and official report release.
+              Role-based task queues for sample testing, QA review, and official
+              report release.
             </p>
           </div>
 
@@ -247,6 +286,17 @@ export default function WorkflowPage() {
           </button>
         </div>
 
+        {isAdmin && (
+          <div className="adminNotice">
+            <strong>Administrator Oversight Mode</strong>
+            <p>
+              You can view all workflow queues for monitoring and governance.
+              Routine operational actions remain assigned to Lab Technician,
+              Senior Technician, and QA Engineer roles.
+            </p>
+          </div>
+        )}
+
         {loading && <div className="card">Loading workflow data...</div>}
         {!loading && error && <div className="card error">{error}</div>}
 
@@ -254,7 +304,10 @@ export default function WorkflowPage() {
           <>
             <div className="stats">
               <StatCard label="Registered" value={dashboard.registered ?? 0} />
-              <StatCard label="Manual Review" value={dashboard.manual_review ?? 0} />
+              <StatCard
+                label="Manual Review"
+                value={dashboard.manual_review ?? 0}
+              />
               <StatCard
                 label="Mandatory Override"
                 value={dashboard.mandatory_override ?? 0}
@@ -265,21 +318,24 @@ export default function WorkflowPage() {
               />
             </div>
 
-            {(isLabTech || isAdmin) && (
+            {canViewLabTechQueue && (
               <>
                 <section className="section">
                   <div className="sectionHeader">
                     <div>
                       <h2>Ready for Testing</h2>
                       <p className="sectionText">
-                        Samples cleared by Accounting and QA for laboratory testing.
+                        Samples cleared by Accounting and QA for laboratory
+                        testing.
                       </p>
                     </div>
                   </div>
 
                   <div className="list">
                     {labTechQueue.ready_for_testing.length === 0 && (
-                      <div className="card empty">No samples ready for testing.</div>
+                      <div className="card empty">
+                        No samples ready for testing.
+                      </div>
                     )}
 
                     {labTechQueue.ready_for_testing.map((item) => (
@@ -300,14 +356,18 @@ export default function WorkflowPage() {
                           <Info label="Status" value={item.current_state} />
                         </div>
 
-                        <div className="actions">
-                          <button
-                            className="approveButton"
-                            onClick={() => handleStartTesting(item.sample_id)}
-                          >
-                            Start Testing
-                          </button>
-                        </div>
+                        {canActAsLabTech ? (
+                          <div className="actions">
+                            <button
+                              className="approveButton"
+                              onClick={() => handleStartTesting(item.sample_id)}
+                            >
+                              Start Testing
+                            </button>
+                          </div>
+                        ) : (
+                          <OversightNote text="Lab Technician action required to start laboratory testing." />
+                        )}
                       </div>
                     ))}
                   </div>
@@ -325,7 +385,9 @@ export default function WorkflowPage() {
 
                   <div className="list">
                     {labTechQueue.in_testing.length === 0 && (
-                      <div className="card empty">No samples currently in testing.</div>
+                      <div className="card empty">
+                        No samples currently in testing.
+                      </div>
                     )}
 
                     {labTechQueue.in_testing.map((item) => (
@@ -345,6 +407,10 @@ export default function WorkflowPage() {
                           <Info label="Material" value={item.material_type} />
                           <Info label="Status" value={item.current_state} />
                         </div>
+
+                        {isAdmin && (
+                          <OversightNote text="Testing is in progress. Data entry remains assigned to Lab Technician workflows." />
+                        )}
                       </div>
                     ))}
                   </div>
@@ -352,20 +418,23 @@ export default function WorkflowPage() {
               </>
             )}
 
-            {(isSeniorTech || isAdmin) && (
+            {canViewSeniorQueue && (
               <section className="section">
                 <div className="sectionHeader">
                   <div>
-                    <h2>Senior Technician Queue</h2>
+                    <h2>AI Classification Review Queue</h2>
                     <p className="sectionText">
-                      Low-confidence AI classifications requiring manual review.
+                      Low-confidence AI classifications requiring Senior
+                      Technician manual review.
                     </p>
                   </div>
                 </div>
 
                 <div className="list">
                   {reviews.length === 0 && (
-                    <div className="card empty">No senior technician review cases.</div>
+                    <div className="card empty">
+                      No AI classification review cases.
+                    </div>
                   )}
 
                   {reviews.map((item) => (
@@ -378,7 +447,9 @@ export default function WorkflowPage() {
 
                         <div
                           className={`pill ${
-                            item.status === "Mandatory Override" ? "danger" : "warn"
+                            item.status === "Mandatory Override"
+                              ? "danger"
+                              : "warn"
                           }`}
                         >
                           {item.status}
@@ -399,35 +470,44 @@ export default function WorkflowPage() {
                         />
                       </div>
 
-                      <div className="actions">
-                        <button
-                          className="approveButton"
-                          onClick={() => handleValidation(item.sample_id, "approve")}
-                        >
-                          Approve Classification
-                        </button>
+                      {canActAsSeniorTech ? (
+                        <div className="actions">
+                          <button
+                            className="approveButton"
+                            onClick={() =>
+                              handleValidation(item.sample_id, "approve")
+                            }
+                          >
+                            Approve Classification
+                          </button>
 
-                        <button
-                          className="rejectButton"
-                          onClick={() => handleValidation(item.sample_id, "reject")}
-                        >
-                          Reject Classification
-                        </button>
-                      </div>
+                          <button
+                            className="rejectButton"
+                            onClick={() =>
+                              handleValidation(item.sample_id, "reject")
+                            }
+                          >
+                            Reject Classification
+                          </button>
+                        </div>
+                      ) : (
+                        <OversightNote text="Senior Technician action required for AI classification review." />
+                      )}
                     </div>
                   ))}
                 </div>
               </section>
             )}
 
-            {(isQa || isAdmin) && (
+            {canViewQaQueue && (
               <>
                 <section className="section">
                   <div className="sectionHeader">
                     <div>
                       <h2>QA Pre-Testing Queue</h2>
                       <p className="sectionText">
-                        Registered samples waiting for QA approval before testing.
+                        Registered samples waiting for QA approval before
+                        testing.
                       </p>
                     </div>
                   </div>
@@ -455,7 +535,10 @@ export default function WorkflowPage() {
 
                           <div className="grid">
                             <Info label="Client" value={item.client_name} />
-                            <Info label="Project" value={item.project_reference} />
+                            <Info
+                              label="Project"
+                              value={item.project_reference}
+                            />
                             <Info label="Material" value={item.material_type} />
                             <Info
                               label="Payment"
@@ -463,14 +546,20 @@ export default function WorkflowPage() {
                             />
                           </div>
 
-                          <div className="actions">
-                            <button
-                              className="approveButton"
-                              onClick={() => handleQaPreTesting(item.sample_id)}
-                            >
-                              Approve for Testing
-                            </button>
-                          </div>
+                          {canActAsQa ? (
+                            <div className="actions">
+                              <button
+                                className="approveButton"
+                                onClick={() =>
+                                  handleQaPreTesting(item.sample_id)
+                                }
+                              >
+                                Approve for Testing
+                              </button>
+                            </div>
+                          ) : (
+                            <OversightNote text="QA Engineer action required for pre-testing approval." />
+                          )}
                         </div>
                       );
                     })}
@@ -482,7 +571,9 @@ export default function WorkflowPage() {
                     <div>
                       <h2>QA Release Queue</h2>
                       <p className="sectionText">
-                        Review the official laboratory report details before release. QA release confirms report authorization and record finalization, not material acceptance.
+                        Review the official laboratory report details before
+                        release. QA release confirms report authorization and
+                        record finalization, not material acceptance.
                       </p>
                     </div>
                   </div>
@@ -501,6 +592,8 @@ export default function WorkflowPage() {
 
                       const systemResult = getSystemResult(testData);
                       const finalResult = getFinalResult(testData);
+                      const specificationStatus =
+                        getSpecificationStatus(finalResult);
                       const qaOverride = testData?.qa_override || null;
                       const overrideDraft = getOverrideDraft(item.sample_id);
 
@@ -513,7 +606,9 @@ export default function WorkflowPage() {
                         <article className="reportCard" key={item.sample_id}>
                           <div className="reportTop">
                             <div>
-                              <p className="reportEyebrow">Official Report Review</p>
+                              <p className="reportEyebrow">
+                                Official Report Review
+                              </p>
                               <h3>{item.sample_id}</h3>
                               <p className="reportSubtext">
                                 {item.client_name || "No client"} •{" "}
@@ -523,23 +618,26 @@ export default function WorkflowPage() {
 
                             <div className="reportBadges">
                               <ResultBadge result={finalResult} />
-                              <span className="statusPill">For QA Release</span>
+                              <span className="statusPill">
+                                For QA Release
+                              </span>
                             </div>
                           </div>
 
                           <div className="reportNotice">
                             {finalResult === "FAIL" && (
                               <p className="noticeText failText">
-                                This report contains a failed laboratory result. Releasing
-                                it documents the actual test outcome and does not imply
-                                that the material passed or was accepted for use.
+                                This report contains a failed laboratory result.
+                                Releasing it documents the actual test outcome
+                                and does not imply that the material passed or
+                                was accepted for use.
                               </p>
                             )}
 
                             {finalResult === "PASS" && (
                               <p className="noticeText passText">
-                                This report contains a passing laboratory result and is
-                                ready for QA report authorization.
+                                This report contains a passing laboratory result
+                                and is ready for QA report authorization.
                               </p>
                             )}
 
@@ -552,8 +650,8 @@ export default function WorkflowPage() {
 
                             {!finalResult && (
                               <p className="noticeText defaultText">
-                                No computed result is available. Verify test data before
-                                release.
+                                No computed result is available. Verify test
+                                data before release.
                               </p>
                             )}
                           </div>
@@ -563,7 +661,10 @@ export default function WorkflowPage() {
                               <h4>Client and Sample Information</h4>
 
                               <div className="reportGrid">
-                                <ReportInfo label="Client" value={item.client_name} />
+                                <ReportInfo
+                                  label="Client"
+                                  value={item.client_name}
+                                />
                                 <ReportInfo
                                   label="Project"
                                   value={item.project_reference}
@@ -604,8 +705,12 @@ export default function WorkflowPage() {
                               <div className="resultCompareGrid">
                                 <div className="resultPanel">
                                   <div>
-                                    <span className="miniLabel">System Result</span>
-                                    <strong>{systemResult || "No Result"}</strong>
+                                    <span className="miniLabel">
+                                      System Result
+                                    </span>
+                                    <strong>
+                                      {systemResult || "No Result"}
+                                    </strong>
                                   </div>
 
                                   <ResultBadge result={systemResult} compact />
@@ -613,12 +718,20 @@ export default function WorkflowPage() {
 
                                 <div className="resultPanel finalPanel">
                                   <div>
-                                    <span className="miniLabel">QA Final Result</span>
+                                    <span className="miniLabel">
+                                      QA Final Result
+                                    </span>
                                     <strong>{finalResult || "No Result"}</strong>
+                                    <small>{specificationStatus}</small>
                                   </div>
 
                                   <ResultBadge result={finalResult} compact />
                                 </div>
+                              </div>
+
+                              <div className="specificationBox">
+                                <span>Specification Status</span>
+                                <strong>{specificationStatus}</strong>
                               </div>
 
                               {qaOverride?.is_overridden && (
@@ -630,7 +743,8 @@ export default function WorkflowPage() {
                                     result is <b>{qaOverride.override_result}</b>.
                                   </p>
                                   <p>
-                                    <b>Reason:</b> {qaOverride.override_reason}
+                                    <b>Reason:</b>{" "}
+                                    {qaOverride.override_reason}
                                   </p>
                                 </div>
                               )}
@@ -639,11 +753,12 @@ export default function WorkflowPage() {
                                 <div className="reviewNotice">
                                   <strong>QA Result Reviewed</strong>
                                   <p>
-                                    QA reviewed the system result and kept the final
-                                    report result as <b>{finalResult}</b>.
+                                    QA reviewed the system result and kept the
+                                    final report result as <b>{finalResult}</b>.
                                   </p>
                                   <p>
-                                    <b>Reason:</b> {qaOverride.override_reason}
+                                    <b>Reason:</b>{" "}
+                                    {qaOverride.override_reason}
                                   </p>
                                 </div>
                               )}
@@ -655,7 +770,10 @@ export default function WorkflowPage() {
                                 />
                                 <ReportInfo
                                   label="Test Name"
-                                  value={testValues?.test_name || formatLabel(testType)}
+                                  value={
+                                    testValues?.test_name ||
+                                    formatLabel(testType)
+                                  }
                                 />
                                 <ReportInfo
                                   label="Applicable Standard"
@@ -684,97 +802,124 @@ export default function WorkflowPage() {
                               </div>
                             </div>
 
-                            {testValues && Object.keys(testValues).length > 0 && (
-                              <details className="valuesDetails">
-                                <summary>View recorded and computed values</summary>
+                            {testValues &&
+                              Object.keys(testValues).length > 0 && (
+                                <details className="valuesDetails">
+                                  <summary>
+                                    View recorded and computed values
+                                  </summary>
 
-                                <div className="valuesGrid">
-                                  {Object.entries(testValues).map(([key, value]) => (
-                                    <ReportInfo
-                                      key={key}
-                                      label={formatLabel(key)}
-                                      value={formatValue(value)}
-                                    />
-                                  ))}
-                                </div>
-                              </details>
-                            )}
+                                  <div className="valuesGrid">
+                                    {Object.entries(testValues).map(
+                                      ([key, value]) => (
+                                        <ReportInfo
+                                          key={key}
+                                          label={formatLabel(key)}
+                                          value={formatValue(value)}
+                                        />
+                                      ),
+                                    )}
+                                  </div>
+                                </details>
+                              )}
                           </div>
 
-                          <div className="overrideBox">
-                            <div>
-                              <h4>QA Result Review / Override</h4>
-                              <p>
-                                QA may keep the system-computed result or override the
-                                final report result with a required justification before
-                                release.
-                              </p>
-                            </div>
+                          {canActAsQa ? (
+                            <>
+                              <div className="overrideBox">
+                                <div>
+                                  <h4>QA Result Review / Override</h4>
+                                  <p>
+                                    QA may keep the system-computed result or
+                                    override the final report result with a
+                                    required justification before release.
+                                  </p>
+                                </div>
 
-                            <div className="overrideGrid">
-                              <div>
-                                <label>QA Final Result</label>
-                                <select
-                                  value={overrideDraft.result}
-                                  onChange={(e) =>
-                                    updateOverrideDraft(
-                                      item.sample_id,
-                                      "result",
-                                      e.target.value,
-                                    )
+                                <div className="overrideGrid">
+                                  <div>
+                                    <label>QA Final Result</label>
+                                    <select
+                                      value={overrideDraft.result}
+                                      onChange={(e) =>
+                                        updateOverrideDraft(
+                                          item.sample_id,
+                                          "result",
+                                          e.target.value,
+                                        )
+                                      }
+                                    >
+                                      <option value="">
+                                        Select final result
+                                      </option>
+                                      <option value="PASS">PASS</option>
+                                      <option value="FAIL">FAIL</option>
+                                      <option value="RECORDED">
+                                        RECORDED
+                                      </option>
+                                    </select>
+                                  </div>
+
+                                  <div>
+                                    <label>
+                                      Override / Review Justification
+                                    </label>
+                                    <textarea
+                                      value={overrideDraft.reason}
+                                      onChange={(e) =>
+                                        updateOverrideDraft(
+                                          item.sample_id,
+                                          "reason",
+                                          e.target.value,
+                                        )
+                                      }
+                                      placeholder="Example: Physical test slip confirms no fracture; technician selected the wrong observation."
+                                    />
+                                  </div>
+                                </div>
+
+                                <div className="overrideActions">
+                                  <button
+                                    className="overrideButton"
+                                    onClick={() =>
+                                      handleQaResultOverride(item.sample_id)
+                                    }
+                                  >
+                                    Save QA Final Result
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div className="releaseFooter">
+                                <div>
+                                  <strong>QA Authorization</strong>
+                                  <p>
+                                    Once released, this report becomes a
+                                    finalized official record for the sample.
+                                  </p>
+                                </div>
+
+                                <button
+                                  className="releaseButton"
+                                  onClick={() =>
+                                    handleQaRelease(item.sample_id)
                                   }
                                 >
-                                  <option value="">Select final result</option>
-                                  <option value="PASS">PASS</option>
-                                  <option value="FAIL">FAIL</option>
-                                  <option value="RECORDED">RECORDED</option>
-                                </select>
+                                  Release Official Report
+                                </button>
                               </div>
-
+                            </>
+                          ) : (
+                            <div className="releaseFooter">
                               <div>
-                                <label>Override / Review Justification</label>
-                                <textarea
-                                  value={overrideDraft.reason}
-                                  onChange={(e) =>
-                                    updateOverrideDraft(
-                                      item.sample_id,
-                                      "reason",
-                                      e.target.value,
-                                    )
-                                  }
-                                  placeholder="Example: Physical test slip confirms no fracture; technician selected the wrong observation."
-                                />
+                                <strong>Administrator Oversight</strong>
+                                <p>
+                                  QA Engineer action is required to review,
+                                  override, or release this official report.
+                                </p>
                               </div>
                             </div>
-
-                            <div className="overrideActions">
-                              <button
-                                className="overrideButton"
-                                onClick={() =>
-                                  handleQaResultOverride(item.sample_id)
-                                }
-                              >
-                                Save QA Final Result
-                              </button>
-                            </div>
-                          </div>
-
-                          <div className="releaseFooter">
-                            <div>
-                              <strong>QA Authorization</strong>
-                              <p>
-                                Once released, this report becomes a finalized official
-                                record for the sample.
-                              </p>
-                            </div>
-
-                            <button
-                              className="releaseButton"
-                              onClick={() => handleQaRelease(item.sample_id)}
-                            >
-                              Release Official Report
-                            </button>
-                          </div>
+                          )}
                         </article>
                       );
                     })}
@@ -836,7 +981,7 @@ export default function WorkflowPage() {
           color: #111827;
           text-transform: uppercase;
           letter-spacing: 0.06em;
-          border-bottom: 1px solid #eef2f7;
+          border-bottom: 1px solid #d1d5db;
           padding-bottom: 8px;
         }
 
@@ -852,12 +997,43 @@ export default function WorkflowPage() {
         .refreshButton,
         button {
           border: none;
-          border-radius: 12px;
+          border-radius: 8px;
           padding: 11px 15px;
           font-weight: 800;
           cursor: pointer;
           background: #14003a;
           color: #fff;
+          transition:
+            background-color 180ms ease,
+            transform 100ms ease,
+            box-shadow 100ms ease;
+        }
+
+        .refreshButton:hover,
+        button:hover {
+          transform: scale(1.01);
+          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+        }
+
+        .adminNotice {
+          margin-bottom: 18px;
+          padding: 14px 16px;
+          border-radius: 16px;
+          background: #eff6ff;
+          color: #1e40af;
+          border: 1px solid #93c5fd;
+        }
+
+        .adminNotice strong {
+          display: block;
+          margin-bottom: 4px;
+          font-size: 13px;
+        }
+
+        .adminNotice p {
+          margin: 0;
+          font-size: 13px;
+          line-height: 1.5;
         }
 
         .stats {
@@ -870,10 +1046,25 @@ export default function WorkflowPage() {
         .statCard,
         .card {
           background: #fff;
-          border: 1px solid #e7e7ef;
+          border: 1px solid #d1d5db;
           border-radius: 18px;
           padding: 18px;
-          box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05),
+            0 1px 2px rgba(0, 0, 0, 0.03);
+        }
+
+        .card {
+          transition:
+            transform 180ms ease,
+            border-color 180ms ease,
+            box-shadow 180ms ease;
+        }
+
+        .card:hover {
+          transform: translateY(-2px);
+          border-color: #9ca3af;
+          box-shadow: 0 4px 16px rgba(0, 0, 0, 0.07),
+            0 2px 4px rgba(0, 0, 0, 0.04);
         }
 
         .statCard span {
@@ -893,7 +1084,7 @@ export default function WorkflowPage() {
 
         .error {
           color: #b91c1c;
-          border-color: #fecaca;
+          border-color: #fca5a5;
           background: #fff7f7;
         }
 
@@ -956,27 +1147,31 @@ export default function WorkflowPage() {
         .warn {
           background: #fff7ed;
           color: #c2410c;
+          border: 1px solid #fdba74;
         }
 
         .danger {
           background: #fef2f2;
           color: #b91c1c;
+          border: 1px solid #fca5a5;
         }
 
         .ready {
           background: #eff6ff;
           color: #1d4ed8;
+          border: 1px solid #93c5fd;
         }
 
         .testing {
           background: #fef9c3;
           color: #854d0e;
+          border: 1px solid #fde047;
         }
 
         .statusPill {
           background: #f8fafc;
           color: #475569;
-          border: 1px solid #e2e8f0;
+          border: 1px solid #cbd5e1;
         }
 
         .actions {
@@ -996,15 +1191,37 @@ export default function WorkflowPage() {
 
         .releaseButton {
           background: #2563eb;
-          box-shadow: 0 10px 20px rgba(37, 99, 235, 0.2);
+        }
+
+        .oversightNote {
+          margin-top: 14px;
+          padding: 12px;
+          border-radius: 14px;
+          background: #f8fafc;
+          border: 1px solid #cbd5e1;
+          color: #475569;
+          font-size: 13px;
+          line-height: 1.5;
         }
 
         .reportCard {
           background: #ffffff;
-          border: 1px solid #dbe3ef;
+          border: 1px solid #d1d5db;
           border-radius: 24px;
           overflow: hidden;
-          box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
+          box-shadow: 0 4px 16px rgba(0, 0, 0, 0.07),
+            0 2px 4px rgba(0, 0, 0, 0.04);
+          transition:
+            transform 180ms ease,
+            box-shadow 180ms ease,
+            border-color 180ms ease;
+        }
+
+        .reportCard:hover {
+          transform: translateY(-2px);
+          border-color: #9ca3af;
+          box-shadow: 0 8px 24px rgba(0, 0, 0, 0.09),
+            0 4px 8px rgba(0, 0, 0, 0.05);
         }
 
         .reportTop {
@@ -1014,7 +1231,7 @@ export default function WorkflowPage() {
           gap: 18px;
           padding: 22px;
           background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
-          border-bottom: 1px solid #e5e7eb;
+          border-bottom: 1px solid #d1d5db;
         }
 
         .reportBadges {
@@ -1042,25 +1259,25 @@ export default function WorkflowPage() {
         .failText {
           background: #fff7f7;
           color: #991b1b;
-          border-color: #fecaca;
+          border-color: #fca5a5;
         }
 
         .passText {
           background: #f0fdf4;
           color: #166534;
-          border-color: #bbf7d0;
+          border-color: #86efac;
         }
 
         .recordedText {
           background: #eef2ff;
           color: #3730a3;
-          border-color: #c7d2fe;
+          border-color: #a5b4fc;
         }
 
         .defaultText {
           background: #f8fafc;
           color: #475569;
-          border-color: #e2e8f0;
+          border-color: #cbd5e1;
         }
 
         .reportBody {
@@ -1094,12 +1311,12 @@ export default function WorkflowPage() {
           gap: 12px;
           padding: 16px;
           border-radius: 18px;
-          background: #f8fafc;
-          border: 1px solid #e2e8f0;
+          background: #ffffff;
+          border: 1px solid #d1d5db;
         }
 
         .finalPanel {
-          border-color: #bfdbfe;
+          border-color: #93c5fd;
           background: #eff6ff;
         }
 
@@ -1110,6 +1327,14 @@ export default function WorkflowPage() {
           color: #111827;
         }
 
+        .resultPanel small {
+          display: block;
+          margin-top: 4px;
+          color: #64748b;
+          font-size: 12px;
+          font-weight: 700;
+        }
+
         .miniLabel {
           font-size: 11px;
           font-weight: 900;
@@ -1118,12 +1343,36 @@ export default function WorkflowPage() {
           letter-spacing: 0.06em;
         }
 
+        .specificationBox {
+          margin-bottom: 14px;
+          padding: 13px 14px;
+          border-radius: 14px;
+          background: #ffffff;
+          border: 1px solid #d1d5db;
+          display: grid;
+          gap: 4px;
+        }
+
+        .specificationBox span {
+          font-size: 11px;
+          font-weight: 900;
+          color: #64748b;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+
+        .specificationBox strong {
+          color: #111827;
+          font-size: 14px;
+          font-weight: 900;
+        }
+
         .overrideNotice {
           margin-bottom: 14px;
           padding: 13px 14px;
           border-radius: 14px;
           background: #fff7ed;
-          border: 1px solid #fed7aa;
+          border: 1px solid #fdba74;
           color: #9a3412;
           font-size: 13px;
           line-height: 1.5;
@@ -1144,7 +1393,7 @@ export default function WorkflowPage() {
           padding: 13px 14px;
           border-radius: 14px;
           background: #eff6ff;
-          border: 1px solid #bfdbfe;
+          border: 1px solid #93c5fd;
           color: #1e40af;
           font-size: 13px;
           line-height: 1.5;
@@ -1169,8 +1418,8 @@ export default function WorkflowPage() {
         .remarksBox div {
           padding: 14px;
           border-radius: 16px;
-          background: #f8fafc;
-          border: 1px solid #e2e8f0;
+          background: #ffffff;
+          border: 1px solid #d1d5db;
         }
 
         .remarksBox span {
@@ -1192,8 +1441,8 @@ export default function WorkflowPage() {
         }
 
         .valuesDetails {
-          background: #f8fafc;
-          border: 1px solid #e2e8f0;
+          background: #ffffff;
+          border: 1px solid #d1d5db;
           border-radius: 18px;
           padding: 14px;
         }
@@ -1208,15 +1457,15 @@ export default function WorkflowPage() {
         .valuesGrid {
           margin-top: 14px;
           padding-top: 14px;
-          border-top: 1px solid #e2e8f0;
+          border-top: 1px solid #d1d5db;
         }
 
         .overrideBox {
           margin: 0 22px 20px;
           padding: 16px;
           border-radius: 18px;
-          border: 1px solid #dbe3ef;
-          background: #f8fafc;
+          border: 1px solid #d1d5db;
+          background: #ffffff;
         }
 
         .overrideBox h4 {
@@ -1252,7 +1501,7 @@ export default function WorkflowPage() {
         .overrideGrid textarea {
           width: 100%;
           border: 1px solid #cbd5e1;
-          border-radius: 12px;
+          border-radius: 8px;
           padding: 11px 12px;
           background: #ffffff;
           color: #111827;
@@ -1271,7 +1520,7 @@ export default function WorkflowPage() {
         }
 
         .overrideButton {
-          background: #7c3aed;
+          background: #14003a;
         }
 
         .releaseFooter {
@@ -1281,7 +1530,7 @@ export default function WorkflowPage() {
           gap: 18px;
           padding: 20px 22px;
           background: #f8fafc;
-          border-top: 1px solid #e5e7eb;
+          border-top: 1px solid #d1d5db;
         }
 
         .releaseFooter strong {
@@ -1318,21 +1567,25 @@ export default function WorkflowPage() {
         .resultPass {
           background: #dcfce7;
           color: #166534;
+          border: 1px solid #86efac;
         }
 
         .resultFail {
           background: #fee2e2;
           color: #991b1b;
+          border: 1px solid #fca5a5;
         }
 
         .resultRecorded {
           background: #e0e7ff;
           color: #3730a3;
+          border: 1px solid #a5b4fc;
         }
 
         .resultEmpty {
           background: #f1f5f9;
           color: #475569;
+          border: 1px solid #cbd5e1;
         }
 
         @media (max-width: 760px) {
@@ -1375,6 +1628,10 @@ function StatCard({ label, value }) {
       <strong>{value}</strong>
     </div>
   );
+}
+
+function OversightNote({ text }) {
+  return <div className="oversightNote">{text}</div>;
 }
 
 function ResultBadge({ result, compact = false }) {
@@ -1454,4 +1711,11 @@ function ReportInfo({ label, value }) {
       `}</style>
     </div>
   );
+}
+
+function getSpecificationStatus(result) {
+  if (result === "PASS") return "Meets Specified Requirement";
+  if (result === "FAIL") return "Below Specified Requirement";
+  if (result === "RECORDED") return "Recorded Only";
+  return "Pending Test Result";
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { apiClient } from "@/services/apiClient";
+import { apiClient, getStoredUser } from "@/services/apiClient";
 
 const PAYMENT_STATUSES = {
   UNPAID: "Unpaid",
@@ -11,10 +11,40 @@ const PAYMENT_STATUSES = {
   FULLY_PAID: "Fully Paid",
 };
 
+const PAYMENT_ACTIONS = [
+  {
+    label: "Record 50% Downpayment",
+    adminLabel: "Correct to Downpayment Paid",
+    status: PAYMENT_STATUSES.DOWNPAYMENT,
+    description:
+      "Allows the sample to proceed toward QA pre-testing and laboratory testing, but does not clear report release.",
+  },
+  {
+    label: "Record PO Submitted",
+    adminLabel: "Correct to PO Submitted",
+    status: PAYMENT_STATUSES.PO,
+    description:
+      "Allows the sample to proceed based on purchase order documentation, but does not clear report release.",
+  },
+  {
+    label: "Mark Fully Paid",
+    adminLabel: "Correct to Fully Paid",
+    status: PAYMENT_STATUSES.FULLY_PAID,
+    description:
+      "Financially clears the sample for QA official report release once technical requirements are satisfied.",
+  },
+];
+
 export default function BillingPage() {
+  const user = getStoredUser();
+  const isAdmin = user?.role === "Administrator";
+
   const [items, setItems] = useState([]);
   const [statusFilter, setStatusFilter] = useState("All");
   const [search, setSearch] = useState("");
+  const [paymentDrafts, setPaymentDrafts] = useState({});
+  const [activeUpdate, setActiveUpdate] = useState(null);
+  const [savingSampleId, setSavingSampleId] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -32,15 +62,112 @@ export default function BillingPage() {
     }
   }
 
-  async function updatePayment(sampleId, status) {
+  function getDraft(sampleId) {
+    return (
+      paymentDrafts[sampleId] || {
+        amount_paid: "",
+        balance: "",
+        billing_notes: "",
+        confirmation_note: "",
+      }
+    );
+  }
+
+  function updateDraft(sampleId, field, value) {
+    setPaymentDrafts((current) => ({
+      ...current,
+      [sampleId]: {
+        ...(current[sampleId] || {
+          amount_paid: "",
+          balance: "",
+          billing_notes: "",
+          confirmation_note: "",
+        }),
+        [field]: value,
+      },
+    }));
+  }
+
+  function openPaymentUpdate(sampleId, status, currentStatus) {
+    setActiveUpdate({
+      sampleId,
+      status,
+      currentStatus,
+    });
+
+    setPaymentDrafts((current) => ({
+      ...current,
+      [sampleId]: {
+        ...(current[sampleId] || {
+          amount_paid: "",
+          balance: "",
+          billing_notes: "",
+          confirmation_note: "",
+        }),
+        billing_notes:
+          current[sampleId]?.billing_notes ||
+          defaultBillingNote(status, isAdmin),
+      },
+    }));
+  }
+
+  function closePaymentUpdate() {
+    setActiveUpdate(null);
+  }
+
+  async function confirmPaymentUpdate(sampleId, status) {
+    const draft = getDraft(sampleId);
+
+    if (status === PAYMENT_STATUSES.FULLY_PAID) {
+      if (!draft.confirmation_note || draft.confirmation_note.trim().length < 8) {
+        alert(
+          "Please enter a confirmation note before marking this sample as Fully Paid.",
+        );
+        return;
+      }
+    }
+
+    if (isAdmin) {
+      const requiresAdminReason =
+        activeUpdate?.currentStatus === PAYMENT_STATUSES.FULLY_PAID ||
+        status !== activeUpdate?.currentStatus;
+
+      if (requiresAdminReason && draft.billing_notes.trim().length < 10) {
+        alert(
+          "Please enter an administrator correction note with at least 10 characters.",
+        );
+        return;
+      }
+    }
+
+    setSavingSampleId(sampleId);
+
     try {
       await apiClient.updateSamplePayment(sampleId, {
         payment_status: status,
+        amount_paid: draft.amount_paid === "" ? null : Number(draft.amount_paid),
+        balance: draft.balance === "" ? null : Number(draft.balance),
+        billing_notes: draft.billing_notes,
+        confirmation_note: draft.confirmation_note,
       });
+
+      setActiveUpdate(null);
+
+      setPaymentDrafts((current) => ({
+        ...current,
+        [sampleId]: {
+          amount_paid: "",
+          balance: "",
+          billing_notes: "",
+          confirmation_note: "",
+        },
+      }));
 
       await loadData();
     } catch (err) {
       alert(err.message || "Payment update failed");
+    } finally {
+      setSavingSampleId("");
     }
   }
 
@@ -96,10 +223,11 @@ export default function BillingPage() {
       <div className="header">
         <div>
           <p className="eyebrow">Accounting Module</p>
-          <h1>Payment Management</h1>
+          <h1>{isAdmin ? "Billing Oversight" : "Payment Management"}</h1>
           <p className="subtitle">
-            Manage payment eligibility before laboratory testing and official
-            report release.
+            {isAdmin
+              ? "Review payment records and perform controlled administrator billing corrections when necessary."
+              : "Manage payment eligibility before laboratory testing and official report release."}
           </p>
         </div>
 
@@ -107,6 +235,18 @@ export default function BillingPage() {
           Refresh
         </button>
       </div>
+
+      {isAdmin && (
+        <div className="adminNotice">
+          <strong>Administrator Billing Correction Mode</strong>
+          <p>
+            Admin can view all billing records and correct payment metadata when
+            necessary. Routine payment updates should still be handled by
+            Accounting Staff. Admin corrections should include clear billing
+            notes for audit traceability.
+          </p>
+        </div>
+      )}
 
       <div className="stats">
         <StatCard label="Unpaid" value={stats.unpaid} />
@@ -116,8 +256,9 @@ export default function BillingPage() {
       </div>
 
       <div className="notice">
-        Accounting controls payment status only. QA/Engineer authorization is
-        still required before an official report is released.
+        Accounting controls financial eligibility only. Downpayment or PO may
+        allow testing to proceed, while Fully Paid is required before QA can
+        release the official report.
       </div>
 
       <div className="toolbar">
@@ -159,6 +300,11 @@ export default function BillingPage() {
             const paymentStatus =
               payment.payment_status || PAYMENT_STATUSES.UNPAID;
 
+            const isFinalized =
+              item.current_state === "Released" ||
+              item.current_state === "Archived" ||
+              item.is_immutable;
+
             const canStartTesting = [
               PAYMENT_STATUSES.DOWNPAYMENT,
               PAYMENT_STATUSES.PO,
@@ -169,6 +315,13 @@ export default function BillingPage() {
               item.current_state === "For Review" &&
               paymentStatus === PAYMENT_STATUSES.FULLY_PAID &&
               Boolean(testData);
+
+            const activeForThisCard =
+              activeUpdate?.sampleId === item.sample_id ? activeUpdate : null;
+
+            const draft = getDraft(item.sample_id);
+
+            const canEditPayment = !isFinalized || isAdmin;
 
             return (
               <div key={item.sample_id} className="card">
@@ -181,6 +334,7 @@ export default function BillingPage() {
                   <div className="badgeGroup">
                     <PaymentBadge status={paymentStatus} />
                     <LifecycleBadge status={item.current_state} />
+                    {isAdmin && <span className="adminBadge">Admin View</span>}
                   </div>
                 </div>
 
@@ -194,20 +348,44 @@ export default function BillingPage() {
                   />
                   <Info
                     label="Test Result"
-                    value={testData?.result || "No Result Yet"}
+                    value={getFinalResult(testData) || "No Result Yet"}
                   />
                   <Info
                     label="Report Eligibility"
                     value={
                       readyForReportRelease
-                        ? "Eligible for QA Release"
+                        ? "Financially Cleared for QA Release"
                         : "Not Yet Eligible"
                     }
+                  />
+                  <Info
+                    label="Last Payment Update"
+                    value={formatDate(payment.payment_updated_at)}
+                  />
+                  <Info
+                    label="Updated By"
+                    value={payment.payment_updated_by || "-"}
+                  />
+                  <Info
+                    label="Billing Notes"
+                    value={payment.billing_notes || "-"}
                   />
                 </div>
 
                 <div className="eligibilityBox">
-                  {paymentStatus === PAYMENT_STATUSES.FULLY_PAID ? (
+                  {isFinalized && !isAdmin ? (
+                    <span className="blocked">
+                      This sample is already released or archived. Payment
+                      metadata is finalized and can only be corrected by an
+                      Administrator.
+                    </span>
+                  ) : isFinalized && isAdmin ? (
+                    <span className="adminText">
+                      This sample is released or archived. Any billing change
+                      will be treated as an Administrator correction and should
+                      include a clear correction note.
+                    </span>
+                  ) : paymentStatus === PAYMENT_STATUSES.FULLY_PAID ? (
                     <span className="eligible">
                       Fully paid. This sample is financially cleared for report
                       release once QA requirements are satisfied.
@@ -227,56 +405,199 @@ export default function BillingPage() {
                 </div>
 
                 <div className="actions">
-                  <button
-                    className={
-                      paymentStatus === PAYMENT_STATUSES.DOWNPAYMENT
-                        ? "active"
-                        : ""
-                    }
-                    onClick={() =>
-                      updatePayment(
-                        item.sample_id,
-                        PAYMENT_STATUSES.DOWNPAYMENT,
-                      )
-                    }
-                  >
-                    50% Downpayment
-                  </button>
+                  {PAYMENT_ACTIONS.map((action) => {
+                    const disabled =
+                      !canEditPayment ||
+                      (paymentStatus === PAYMENT_STATUSES.FULLY_PAID &&
+                        action.status !== PAYMENT_STATUSES.FULLY_PAID &&
+                        !isAdmin);
 
-                  <button
-                    className={
-                      paymentStatus === PAYMENT_STATUSES.PO ? "active" : ""
-                    }
-                    onClick={() =>
-                      updatePayment(item.sample_id, PAYMENT_STATUSES.PO)
-                    }
-                  >
-                    PO Submitted
-                  </button>
-
-                  <button
-                    className={
-                      paymentStatus === PAYMENT_STATUSES.FULLY_PAID
-                        ? "full active"
-                        : "full"
-                    }
-                    onClick={() =>
-                      updatePayment(
-                        item.sample_id,
-                        PAYMENT_STATUSES.FULLY_PAID,
-                      )
-                    }
-                  >
-                    Fully Paid
-                  </button>
+                    return (
+                      <button
+                        key={action.status}
+                        disabled={disabled}
+                        className={[
+                          paymentStatus === action.status ? "active" : "",
+                          action.status === PAYMENT_STATUSES.FULLY_PAID
+                            ? "full"
+                            : "",
+                          isAdmin ? "adminAction" : "",
+                        ].join(" ")}
+                        onClick={() =>
+                          openPaymentUpdate(
+                            item.sample_id,
+                            action.status,
+                            paymentStatus,
+                          )
+                        }
+                      >
+                        {isAdmin ? action.adminLabel : action.label}
+                      </button>
+                    );
+                  })}
 
                   <Link
                     className="viewBtn"
                     href={`/technical/tracking/${item.sample_id}`}
                   >
-                    View Record →
+                    View Billing Reference →
                   </Link>
                 </div>
+
+                {activeForThisCard && (
+                  <div
+                    className={
+                      isAdmin ? "confirmBox adminConfirmBox" : "confirmBox"
+                    }
+                  >
+                    <div className="confirmHeader">
+                      <div>
+                        <p className="confirmEyebrow">
+                          {isAdmin
+                            ? "Administrator Billing Correction"
+                            : "Payment Status Update"}
+                        </p>
+                        <h2>{activeForThisCard.status}</h2>
+                        <p>
+                          {
+                            PAYMENT_ACTIONS.find(
+                              (action) =>
+                                action.status === activeForThisCard.status,
+                            )?.description
+                          }
+                        </p>
+                      </div>
+
+                      <button className="closeBtn" onClick={closePaymentUpdate}>
+                        Cancel
+                      </button>
+                    </div>
+
+                    {isAdmin && (
+                      <div className="warningBox adminWarning">
+                        You are performing an Administrator correction. This
+                        should only be used to correct billing metadata and
+                        should include a clear note for audit traceability.
+                      </div>
+                    )}
+
+                    {activeForThisCard.status ===
+                      PAYMENT_STATUSES.FULLY_PAID && (
+                      <div className="warningBox">
+                        Marking this sample as Fully Paid will financially clear
+                        it for QA official report release once technical review
+                        requirements are satisfied.
+                      </div>
+                    )}
+
+                    <div className="formGrid">
+                      <div>
+                        <label>Amount Paid</label>
+                        <input
+                          type="number"
+                          min="0"
+                          value={draft.amount_paid}
+                          onChange={(e) =>
+                            updateDraft(
+                              item.sample_id,
+                              "amount_paid",
+                              e.target.value,
+                            )
+                          }
+                          placeholder="Example: 2500"
+                        />
+                      </div>
+
+                      <div>
+                        <label>Balance</label>
+                        <input
+                          type="number"
+                          min="0"
+                          value={draft.balance}
+                          onChange={(e) =>
+                            updateDraft(
+                              item.sample_id,
+                              "balance",
+                              e.target.value,
+                            )
+                          }
+                          placeholder="Example: 0"
+                        />
+                      </div>
+
+                      <div className="wide">
+                        <label>
+                          {isAdmin
+                            ? "Administrator Correction Note"
+                            : "Billing Notes"}
+                        </label>
+                        <textarea
+                          value={draft.billing_notes}
+                          onChange={(e) =>
+                            updateDraft(
+                              item.sample_id,
+                              "billing_notes",
+                              e.target.value,
+                            )
+                          }
+                          placeholder={
+                            isAdmin
+                              ? "Example: Corrected payment status after verifying official receipt and previous encoding error."
+                              : "Add receipt, PO reference, or accounting remarks."
+                          }
+                        />
+                      </div>
+
+                      {activeForThisCard.status ===
+                        PAYMENT_STATUSES.FULLY_PAID && (
+                        <div className="wide">
+                          <label>Fully Paid Confirmation Note</label>
+                          <textarea
+                            value={draft.confirmation_note}
+                            onChange={(e) =>
+                              updateDraft(
+                                item.sample_id,
+                                "confirmation_note",
+                                e.target.value,
+                              )
+                            }
+                            placeholder="Example: Official receipt verified and full balance settled."
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="confirmActions">
+                      <button
+                        className="cancelAction"
+                        onClick={closePaymentUpdate}
+                      >
+                        Cancel
+                      </button>
+
+                      <button
+                        className={
+                          isAdmin
+                            ? "confirmAction adminConfirmAction"
+                            : "confirmAction"
+                        }
+                        disabled={savingSampleId === item.sample_id}
+                        onClick={() =>
+                          confirmPaymentUpdate(
+                            item.sample_id,
+                            activeForThisCard.status,
+                          )
+                        }
+                      >
+                        {savingSampleId === item.sample_id
+                          ? "Saving..."
+                          : isAdmin
+                            ? "Confirm Admin Correction"
+                            : "Confirm Payment Update"}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}
@@ -299,10 +620,11 @@ export default function BillingPage() {
           margin-bottom: 20px;
         }
 
-        .eyebrow {
+        .eyebrow,
+        .confirmEyebrow {
           margin: 0 0 4px;
           font-size: 12px;
-          font-weight: 800;
+          font-weight: 900;
           color: #4f46e5;
           text-transform: uppercase;
           letter-spacing: 0.08em;
@@ -335,6 +657,33 @@ export default function BillingPage() {
           display: inline-flex;
           align-items: center;
           justify-content: center;
+        }
+
+        button:disabled {
+          opacity: 0.45;
+          cursor: not-allowed;
+        }
+
+        .adminNotice {
+          margin-bottom: 16px;
+          padding: 14px 16px;
+          border-radius: 16px;
+          background: #fff7ed;
+          color: #9a3412;
+          border: 1px solid #fed7aa;
+        }
+
+        .adminNotice strong {
+          display: block;
+          margin-bottom: 4px;
+          color: #7c2d12;
+          font-size: 13px;
+        }
+
+        .adminNotice p {
+          margin: 0;
+          font-size: 13px;
+          line-height: 1.5;
         }
 
         .stats {
@@ -478,6 +827,10 @@ export default function BillingPage() {
           color: #991b1b;
         }
 
+        .adminText {
+          color: #9a3412;
+        }
+
         .actions {
           margin-top: 14px;
           display: flex;
@@ -497,6 +850,10 @@ export default function BillingPage() {
           background: #16a34a;
         }
 
+        .adminAction {
+          background: #7c3aed;
+        }
+
         .viewBtn {
           background: #f4f1ff;
           color: #14003a;
@@ -508,7 +865,117 @@ export default function BillingPage() {
           background: #fff7f7;
         }
 
-        .badge {
+        .confirmBox {
+          margin-top: 16px;
+          border: 1px solid #dbe3ef;
+          background: #f8fafc;
+          border-radius: 18px;
+          padding: 16px;
+        }
+
+        .adminConfirmBox {
+          border-color: #fed7aa;
+          background: #fffaf5;
+        }
+
+        .confirmHeader {
+          display: flex;
+          justify-content: space-between;
+          gap: 16px;
+          align-items: flex-start;
+          margin-bottom: 14px;
+        }
+
+        .confirmHeader h2 {
+          margin: 0;
+          font-size: 18px;
+          color: #111827;
+        }
+
+        .confirmHeader p {
+          margin: 5px 0 0;
+          color: #64748b;
+          font-size: 13px;
+          line-height: 1.5;
+        }
+
+        .closeBtn,
+        .cancelAction {
+          background: #f1f5f9;
+          color: #334155;
+        }
+
+        .warningBox {
+          margin-bottom: 14px;
+          padding: 12px;
+          border-radius: 14px;
+          background: #fff7ed;
+          color: #9a3412;
+          border: 1px solid #fed7aa;
+          font-size: 13px;
+          line-height: 1.5;
+        }
+
+        .adminWarning {
+          background: #fef2f2;
+          color: #991b1b;
+          border-color: #fecaca;
+        }
+
+        .formGrid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 14px;
+        }
+
+        .formGrid .wide {
+          grid-column: 1 / -1;
+        }
+
+        label {
+          display: block;
+          margin-bottom: 6px;
+          font-size: 11px;
+          font-weight: 900;
+          color: #64748b;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+
+        input,
+        textarea {
+          width: 100%;
+          border: 1px solid #cbd5e1;
+          border-radius: 12px;
+          padding: 11px 12px;
+          background: #ffffff;
+          color: #111827;
+          font-size: 13px;
+        }
+
+        textarea {
+          min-height: 88px;
+          resize: vertical;
+        }
+
+        .confirmActions {
+          margin-top: 14px;
+          display: flex;
+          justify-content: flex-end;
+          gap: 10px;
+          flex-wrap: wrap;
+        }
+
+        .confirmAction {
+          background: #16a34a;
+        }
+
+        .adminConfirmAction {
+          background: #dc2626;
+        }
+
+        .badge,
+        .adminBadge {
           display: inline-flex;
           width: fit-content;
           align-items: center;
@@ -517,6 +984,12 @@ export default function BillingPage() {
           font-size: 12px;
           font-weight: 900;
           white-space: nowrap;
+        }
+
+        .adminBadge {
+          background: #fff7ed;
+          color: #9a3412;
+          border: 1px solid #fed7aa;
         }
 
         .payment-unpaid {
@@ -570,7 +1043,9 @@ export default function BillingPage() {
         }
 
         @media (max-width: 820px) {
-          .header {
+          .header,
+          .row,
+          .confirmHeader {
             flex-direction: column;
           }
 
@@ -578,21 +1053,57 @@ export default function BillingPage() {
             grid-template-columns: 1fr;
           }
 
-          .grid {
+          .grid,
+          .formGrid {
             grid-template-columns: 1fr;
-          }
-
-          .row {
-            flex-direction: column;
           }
 
           .badgeGroup {
             justify-content: flex-start;
           }
+
+          .formGrid .wide {
+            grid-column: auto;
+          }
         }
       `}</style>
     </div>
   );
+}
+
+function defaultBillingNote(status, isAdmin = false) {
+  if (isAdmin) {
+    return `Administrator correction: payment status corrected to ${status}.`;
+  }
+
+  if (status === PAYMENT_STATUSES.DOWNPAYMENT) {
+    return "Initial downpayment recorded by Accounting.";
+  }
+
+  if (status === PAYMENT_STATUSES.PO) {
+    return "Purchase order submitted and recorded by Accounting.";
+  }
+
+  if (status === PAYMENT_STATUSES.FULLY_PAID) {
+    return "Full payment recorded by Accounting.";
+  }
+
+  return "";
+}
+
+function getFinalResult(testData) {
+  if (!testData) return null;
+  return testData.qa_final_result || testData.result || null;
+}
+
+function formatDate(value) {
+  if (!value) return "-";
+
+  try {
+    return new Date(value).toLocaleString();
+  } catch {
+    return value;
+  }
 }
 
 function StatCard({ label, value }) {
