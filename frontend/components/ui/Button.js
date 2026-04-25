@@ -41,6 +41,7 @@ export default function Button({
           justify-content: center;
           gap: 8px;
           white-space: nowrap;
+          line-height: 1;
           transition:
             color var(--transition-base),
             background-color var(--transition-base),
@@ -57,6 +58,12 @@ export default function Button({
 
         .btn:active:not(:disabled) {
           transform: translateY(0);
+          box-shadow: none;
+        }
+
+        .btn:focus-visible {
+          outline: 3px solid color-mix(in srgb, var(--color-brand) 22%, transparent);
+          outline-offset: 3px;
         }
 
         .btn:disabled {
@@ -102,8 +109,19 @@ export default function Button({
         }
 
         .secondary:hover:not(:disabled) {
-          border-color: var(--color-border-strong);
           background: var(--color-overlay);
+          border-color: var(--color-border-strong);
+        }
+
+        .outline {
+          background: transparent;
+          color: var(--color-text-primary);
+          border-color: var(--color-border);
+        }
+
+        .outline:hover:not(:disabled) {
+          background: var(--color-overlay);
+          border-color: var(--color-border-strong);
         }
 
         .ghost {
@@ -118,33 +136,36 @@ export default function Button({
         }
 
         .success {
-          background: var(--color-success);
-          color: var(--color-text-inverse);
-          border-color: var(--color-success);
+          background: var(--color-success-bg);
+          color: var(--color-success);
+          border-color: var(--color-success-border);
         }
 
         .success:hover:not(:disabled) {
-          filter: brightness(0.92);
+          background: color-mix(in srgb, var(--color-success-bg) 88%, var(--color-success));
+          border-color: var(--color-success);
         }
 
         .danger {
-          background: var(--color-danger);
-          color: var(--color-text-inverse);
-          border-color: var(--color-danger);
+          background: var(--color-danger-bg);
+          color: var(--color-danger);
+          border-color: var(--color-danger-border);
         }
 
         .danger:hover:not(:disabled) {
-          filter: brightness(0.92);
+          background: color-mix(in srgb, var(--color-danger-bg) 88%, var(--color-danger));
+          border-color: var(--color-danger);
         }
 
         .warning {
-          background: var(--color-warning);
-          color: var(--color-text-inverse);
-          border-color: var(--color-warning);
+          background: var(--color-warning-bg);
+          color: var(--color-warning);
+          border-color: var(--color-warning-border);
         }
 
         .warning:hover:not(:disabled) {
-          filter: brightness(0.92);
+          background: color-mix(in srgb, var(--color-warning-bg) 88%, var(--color-warning));
+          border-color: var(--color-warning);
         }
 
         .fullWidth {

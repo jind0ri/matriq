@@ -20,7 +20,7 @@ export default function Badge({
           justify-content: center;
           border-radius: var(--radius-full);
           border: 1px solid transparent;
-          font-weight: 900;
+          font-weight: 850;
           line-height: 1;
           white-space: nowrap;
         }
@@ -41,15 +41,15 @@ export default function Badge({
         }
 
         .neutral {
-          background: hsl(220, 14%, 96%);
+          background: hsl(220, 14%, 94%);
           color: hsl(220, 12%, 35%);
-          border-color: hsl(220, 13%, 76%);
+          border-color: hsl(220, 12%, 74%);
         }
 
         .brand {
           background: var(--color-brand-light);
           color: var(--color-brand-dark);
-          border-color: color-mix(in srgb, var(--color-brand) 35%, white);
+          border-color: color-mix(in srgb, var(--color-brand) 28%, white);
         }
 
         .success {
@@ -80,6 +80,12 @@ export default function Badge({
           background: var(--color-surface);
           color: var(--color-text-secondary);
           border-color: var(--color-border);
+        }
+
+        .subtle {
+          background: var(--color-overlay);
+          color: var(--color-text-secondary);
+          border-color: var(--color-border-soft);
         }
       `}</style>
     </>

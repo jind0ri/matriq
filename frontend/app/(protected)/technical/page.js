@@ -4,6 +4,14 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { apiClient, getStoredUser } from "@/services/apiClient";
 
+import Badge from "@/components/ui/Badge";
+import Button from "@/components/ui/Button";
+import Card from "@/components/ui/Card";
+import EmptyState from "@/components/ui/EmptyState";
+import Loader from "@/components/ui/Loader";
+import StatCard from "@/components/ui/StatCard";
+import Table from "@/components/ui/Table";
+
 const LIFECYCLE_STATES = [
   "Registered",
   "Ready for Testing",
@@ -11,6 +19,15 @@ const LIFECYCLE_STATES = [
   "For Review",
   "Released",
   "Archived",
+];
+
+const RECENT_SAMPLE_COLUMNS = [
+  { key: "sample_id", label: "Sample ID" },
+  { key: "material_type", label: "Material" },
+  { key: "client_name", label: "Client" },
+  { key: "branch_id", label: "Branch" },
+  { key: "current_state", label: "Status" },
+  { key: "result", label: "Result" },
 ];
 
 export default function TechnicalDashboardPage() {
@@ -171,22 +188,22 @@ export default function TechnicalDashboardPage() {
     <div className="page">
       <div className="header">
         <div>
-          <p className="eyebrow">Technical Module</p>
-          <h1>{getDashboardTitle(role)}</h1>
-          <p>
+          <p className="kicker">Technical Module</p>
+          <h1 className="page-title">{getDashboardTitle(role)}</h1>
+          <p className="page-subtitle">
             {isAdmin
               ? "Administrator oversight for sample lifecycle, testing activity, QA review, and released reports."
               : "Operational overview for sample testing, QA review, and laboratory workflow monitoring."}
           </p>
         </div>
 
-        <button className="refreshButton" onClick={loadDashboard}>
+        <Button onClick={loadDashboard} variant="primary">
           Refresh
-        </button>
+        </Button>
       </div>
 
       {isAdmin && (
-        <div className="notice adminNotice">
+        <div className="adminNotice">
           <strong>Administrator Oversight Mode</strong>
           <span>
             This dashboard is for monitoring technical operations. Routine
@@ -196,8 +213,13 @@ export default function TechnicalDashboardPage() {
         </div>
       )}
 
-      {loading && <div className="card">Loading technical dashboard...</div>}
-      {!loading && error && <div className="card error">{error}</div>}
+      {loading && <Loader label="Loading technical dashboard..." />}
+
+      {!loading && error && (
+        <Card>
+          <div className="errorText">{error}</div>
+        </Card>
+      )}
 
       {!loading && !error && (
         <>
@@ -208,21 +230,22 @@ export default function TechnicalDashboardPage() {
                 label={item.label}
                 value={item.value}
                 note={item.note}
+                variant={item.variant}
               />
             ))}
           </div>
 
           <div className="dashboardGrid">
-            <section className="panel largePanel">
-              <div className="panelHeader">
-                <div>
-                  <h2>Sample Lifecycle Distribution</h2>
-                  <p>Current movement of samples through the laboratory workflow.</p>
-                </div>
-
-                <Link href="/technical/registry">View Registry</Link>
-              </div>
-
+            <Card
+              title="Sample Lifecycle Distribution"
+              subtitle="Current movement of samples through the laboratory workflow."
+              className="largePanel"
+              actions={
+                <Link href="/technical/registry" className="panelLink">
+                  View Registry
+                </Link>
+              }
+            >
               <div className="barList">
                 {LIFECYCLE_STATES.map((state) => {
                   const value = lifecycleCounts[state] || 0;
@@ -245,47 +268,53 @@ export default function TechnicalDashboardPage() {
                   );
                 })}
               </div>
-            </section>
+            </Card>
 
-            <section className="panel">
-              <div className="panelHeader">
-                <div>
-                  <h2>System Result Summary</h2>
-                  <p>QA final result is counted when available.</p>
-                </div>
-              </div>
-
+            <Card
+              title="System Result Summary"
+              subtitle="QA final result is counted when available."
+            >
               <div className="resultGrid">
-                <ResultTile label="PASS" value={testResultCounts.pass} tone="pass" />
-                <ResultTile label="FAIL" value={testResultCounts.fail} tone="fail" />
+                <ResultTile
+                  label="PASS"
+                  value={testResultCounts.pass}
+                  variant="success"
+                />
+                <ResultTile
+                  label="FAIL"
+                  value={testResultCounts.fail}
+                  variant="danger"
+                />
                 <ResultTile
                   label="RECORDED"
                   value={testResultCounts.recorded}
-                  tone="recorded"
+                  variant="info"
                 />
                 <ResultTile
                   label="NO RESULT"
                   value={testResultCounts.noResult}
-                  tone="empty"
+                  variant="neutral"
                 />
               </div>
-            </section>
+            </Card>
 
-            <section className="panel">
-              <div className="panelHeader">
-                <div>
-                  <h2>Material Distribution</h2>
-                  <p>Most common registered sample materials.</p>
-                </div>
-              </div>
-
+            <Card
+              title="Material Distribution"
+              subtitle="Most common registered sample materials."
+            >
               <div className="miniBarList">
                 {materialCounts.length === 0 && (
-                  <div className="emptyText">No material data yet.</div>
+                  <EmptyState
+                    title="No material data yet"
+                    description="Material distribution will appear after samples are registered."
+                  />
                 )}
 
                 {materialCounts.map((item) => {
-                  const width = Math.max(6, (item.value / maxMaterialValue) * 100);
+                  const width = Math.max(
+                    6,
+                    (item.value / maxMaterialValue) * 100,
+                  );
 
                   return (
                     <div className="miniBarRow" key={item.label}>
@@ -304,16 +333,12 @@ export default function TechnicalDashboardPage() {
                   );
                 })}
               </div>
-            </section>
+            </Card>
 
-            <section className="panel">
-              <div className="panelHeader">
-                <div>
-                  <h2>Payment Readiness</h2>
-                  <p>Financial status affecting testing and report release.</p>
-                </div>
-              </div>
-
+            <Card
+              title="Payment Readiness"
+              subtitle="Financial status affecting testing and report release."
+            >
               <div className="paymentGrid">
                 <PaymentTile label="Unpaid" value={paymentCounts.unpaid} />
                 <PaymentTile
@@ -321,117 +346,115 @@ export default function TechnicalDashboardPage() {
                   value={paymentCounts.downpayment}
                 />
                 <PaymentTile label="PO Submitted" value={paymentCounts.po} />
-                <PaymentTile label="Fully Paid" value={paymentCounts.fullyPaid} />
+                <PaymentTile
+                  label="Fully Paid"
+                  value={paymentCounts.fullyPaid}
+                />
               </div>
-            </section>
+            </Card>
 
-            <section className="panel actionsPanel">
-              <div className="panelHeader">
-                <div>
-                  <h2>{getActionTitle(role)}</h2>
-                  <p>{getActionSubtitle(role)}</p>
-                </div>
-              </div>
-
+            <Card
+              title={getActionTitle(role)}
+              subtitle={getActionSubtitle(role)}
+            >
               <div className="actionLinks">
                 {isLabTech && (
                   <>
-                    <Link href="/technical/intake">Register Sample</Link>
-                    <Link href="/technical/workflow">Start Testing Queue</Link>
-                    <Link href="/technical/registry">Open Registry</Link>
+                    <ActionLink href="/technical/intake">
+                      Register Sample
+                    </ActionLink>
+                    <ActionLink href="/technical/workflow">
+                      Start Testing Queue
+                    </ActionLink>
+                    <ActionLink href="/technical/registry">
+                      Open Registry
+                    </ActionLink>
                   </>
                 )}
 
                 {isSeniorTech && (
                   <>
-                    <Link href="/technical/workflow">
+                    <ActionLink href="/technical/workflow">
                       Review AI Classifications
-                    </Link>
-                    <Link href="/technical/registry">Open Registry</Link>
+                    </ActionLink>
+                    <ActionLink href="/technical/registry">
+                      Open Registry
+                    </ActionLink>
                   </>
                 )}
 
                 {isQa && (
                   <>
-                    <Link href="/technical/workflow">QA Review Queue</Link>
-                    <Link href="/technical/reports">Released Reports</Link>
-                    <Link href="/technical/registry">Open Registry</Link>
+                    <ActionLink href="/technical/workflow">
+                      QA Review Queue
+                    </ActionLink>
+                    <ActionLink href="/technical/reports">
+                      Released Reports
+                    </ActionLink>
+                    <ActionLink href="/technical/registry">
+                      Open Registry
+                    </ActionLink>
                   </>
                 )}
 
                 {isAdmin && (
                   <>
-                    <Link href="/technical/workflow">Workflow Oversight</Link>
-                    <Link href="/technical/reports">Technical Reports</Link>
-                    <Link href="/admin/audit-logs">Audit Logs</Link>
+                    <ActionLink href="/technical/workflow">
+                      Workflow Oversight
+                    </ActionLink>
+                    <ActionLink href="/technical/reports">
+                      Technical Reports
+                    </ActionLink>
+                    <ActionLink href="/admin/audit-logs">
+                      Audit Logs
+                    </ActionLink>
                   </>
                 )}
               </div>
-            </section>
+            </Card>
           </div>
 
-          <section className="tableSection">
-            <div className="tableHeader">
-              <div>
-                <h2>Recent Samples</h2>
-                <p>Latest sample records visible to the technical module.</p>
-              </div>
+          <Card
+            title="Recent Samples"
+            subtitle="Latest sample records visible to the technical module."
+            actions={
+              <Link href="/technical/registry" className="panelLink">
+                View All
+              </Link>
+            }
+          >
+            <Table
+              columns={RECENT_SAMPLE_COLUMNS}
+              data={recentSamples}
+              emptyText="No samples registered yet."
+              renderRow={(sample) => {
+                const testData = sample.device_metadata?.test_data || {};
+                const finalResult = getFinalResult(testData);
 
-              <Link href="/technical/registry">View All</Link>
-            </div>
-
-            <div className="tableWrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Sample ID</th>
-                    <th>Material</th>
-                    <th>Client</th>
-                    <th>Branch</th>
-                    <th>Status</th>
-                    <th>Result</th>
+                return (
+                  <tr key={sample.sample_id}>
+                    <td>
+                      <Link
+                        href={`/technical/tracking/${sample.sample_id}`}
+                        className="sampleLink"
+                      >
+                        {sample.sample_id}
+                      </Link>
+                    </td>
+                    <td>{sample.material_type || "-"}</td>
+                    <td>{sample.client_name || "-"}</td>
+                    <td>{formatBranch(sample.branch_id)}</td>
+                    <td>
+                      <LifecycleBadge status={sample.current_state} />
+                    </td>
+                    <td>
+                      <ResultBadge result={finalResult} />
+                    </td>
                   </tr>
-                </thead>
-
-                <tbody>
-                  {recentSamples.map((sample) => {
-                    const testData = sample.device_metadata?.test_data || {};
-                    const finalResult = getFinalResult(testData);
-
-                    return (
-                      <tr key={sample.sample_id}>
-                        <td>
-                          <Link
-                            href={`/technical/tracking/${sample.sample_id}`}
-                            className="sampleLink"
-                          >
-                            {sample.sample_id}
-                          </Link>
-                        </td>
-                        <td>{sample.material_type || "-"}</td>
-                        <td>{sample.client_name || "-"}</td>
-                        <td>{formatBranch(sample.branch_id)}</td>
-                        <td>
-                          <LifecycleBadge status={sample.current_state} />
-                        </td>
-                        <td>
-                          <ResultBadge result={finalResult} />
-                        </td>
-                      </tr>
-                    );
-                  })}
-
-                  {recentSamples.length === 0 && (
-                    <tr>
-                      <td colSpan="6" className="emptyCell">
-                        No samples registered yet.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </section>
+                );
+              }}
+            />
+          </Card>
         </>
       )}
 
@@ -440,7 +463,7 @@ export default function TechnicalDashboardPage() {
           display: flex;
           flex-direction: column;
           gap: 22px;
-          color: #111827;
+          color: var(--color-text-primary);
         }
 
         .header {
@@ -450,76 +473,27 @@ export default function TechnicalDashboardPage() {
           gap: 16px;
         }
 
-        .eyebrow {
-          margin: 0 0 6px;
-          font-size: 12px;
-          font-weight: 900;
-          color: #4f46e5;
-          text-transform: uppercase;
-          letter-spacing: 0.08em;
-        }
-
-        h1 {
-          margin: 0;
-          color: #111827;
-          font-size: 28px;
-          letter-spacing: -0.02em;
-        }
-
-        .header p {
-          margin: 6px 0 0;
-          color: #4b5563;
-          font-size: 14px;
-          line-height: 1.5;
-        }
-
-        .refreshButton {
-          border: none;
-          border-radius: 12px;
-          padding: 11px 15px;
-          font-weight: 900;
-          cursor: pointer;
-          background: #111827;
-          color: #ffffff;
-        }
-
-        .notice {
+        .adminNotice {
           display: grid;
           gap: 4px;
-          border-radius: 16px;
+          border-radius: var(--radius-lg);
           padding: 14px 16px;
-          font-size: 13px;
+          background: var(--color-info-bg);
+          color: var(--color-info);
+          border: 1px solid var(--color-info-border);
+          font-size: var(--text-sm);
           line-height: 1.5;
         }
 
-        .adminNotice {
-          background: #eff6ff;
-          color: #1e40af;
-          border: 1px solid #bfdbfe;
+        .adminNotice strong {
+          color: var(--color-info);
+          font-size: var(--text-sm);
         }
 
-        .notice strong {
-          color: #1d4ed8;
-        }
-
-        .card,
-        .panel,
-        .tableSection,
-        .statCard {
-          background: #ffffff;
-          border: 1px solid #e5e7eb;
-          border-radius: 20px;
-          box-shadow: 0 12px 32px rgba(15, 23, 42, 0.06);
-        }
-
-        .card {
-          padding: 20px;
-        }
-
-        .error {
-          color: #b91c1c;
-          border-color: #fecaca;
-          background: #fff7f7;
+        .errorText {
+          color: var(--color-danger);
+          font-size: var(--text-sm);
+          font-weight: 800;
         }
 
         .statsRow {
@@ -535,44 +509,20 @@ export default function TechnicalDashboardPage() {
           align-items: stretch;
         }
 
-        .panel {
-          padding: 20px;
-        }
-
-        .largePanel {
+        :global(.largePanel) {
           grid-row: span 2;
         }
 
-        .panelHeader {
-          display: flex;
-          justify-content: space-between;
-          gap: 16px;
-          align-items: flex-start;
-          margin-bottom: 18px;
-        }
-
-        .panelHeader h2,
-        .tableHeader h2 {
-          margin: 0;
-          color: #111827;
-          font-size: 17px;
-        }
-
-        .panelHeader p,
-        .tableHeader p {
-          margin: 5px 0 0;
-          color: #64748b;
-          font-size: 13px;
-          line-height: 1.5;
-        }
-
-        .panelHeader :global(a),
-        .tableHeader :global(a) {
-          color: #4f46e5;
-          font-size: 13px;
+        .panelLink {
+          color: var(--color-brand);
+          font-size: var(--text-sm);
           font-weight: 900;
           text-decoration: none;
           white-space: nowrap;
+        }
+
+        .panelLink:hover {
+          color: var(--color-brand-dark);
         }
 
         .barList {
@@ -595,15 +545,15 @@ export default function TechnicalDashboardPage() {
 
         .barMeta span,
         .miniBarText span {
-          color: #334155;
-          font-size: 13px;
-          font-weight: 800;
+          color: var(--color-text-secondary);
+          font-size: var(--text-sm);
+          font-weight: 850;
         }
 
         .barMeta strong,
         .miniBarText strong {
-          color: #111827;
-          font-size: 13px;
+          color: var(--color-text-primary);
+          font-size: var(--text-sm);
           font-weight: 900;
         }
 
@@ -611,44 +561,36 @@ export default function TechnicalDashboardPage() {
         .miniTrack {
           width: 100%;
           height: 12px;
-          border-radius: 999px;
-          background: #f1f5f9;
+          border-radius: var(--radius-full);
+          background: var(--color-overlay);
+          border: 1px solid var(--color-border-soft);
           overflow: hidden;
         }
 
         .barFill,
         .miniFill {
           height: 100%;
-          border-radius: 999px;
+          border-radius: var(--radius-full);
         }
 
-        .lifeRegistered {
-          background: #6366f1;
-        }
-
-        .lifeReady {
-          background: #2563eb;
+        .lifeRegistered,
+        .lifeReady,
+        .lifeReview,
+        .lifeDefault,
+        .miniFill {
+          background: var(--color-brand);
         }
 
         .lifeTesting {
-          background: #ca8a04;
-        }
-
-        .lifeReview {
-          background: #f97316;
+          background: var(--color-warning);
         }
 
         .lifeReleased {
-          background: #16a34a;
+          background: var(--color-success);
         }
 
         .lifeArchived {
-          background: #64748b;
-        }
-
-        .lifeDefault,
-        .miniFill {
-          background: #4f46e5;
+          background: var(--color-text-muted);
         }
 
         .resultGrid,
@@ -660,47 +602,48 @@ export default function TechnicalDashboardPage() {
 
         .resultTile,
         .paymentTile {
-          border: 1px solid #e5e7eb;
-          border-radius: 16px;
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-lg);
           padding: 14px;
           display: grid;
           gap: 8px;
-          background: #f8fafc;
+          background: var(--color-surface);
         }
 
         .resultTile span,
         .paymentTile span {
-          font-size: 11px;
+          font-size: var(--text-xs);
           font-weight: 900;
-          color: #64748b;
+          color: var(--color-text-secondary);
           text-transform: uppercase;
           letter-spacing: 0.05em;
         }
 
         .resultTile strong,
         .paymentTile strong {
-          font-size: 24px;
-          color: #111827;
+          font-size: var(--text-xl);
+          color: var(--color-text-primary);
+          line-height: 1;
         }
 
-        .tonePass {
-          background: #f0fdf4;
-          border-color: #bbf7d0;
+        .resultTile.success {
+          border-color: var(--color-success-border);
+          background: var(--color-success-bg);
         }
 
-        .toneFail {
-          background: #fff7f7;
-          border-color: #fecaca;
+        .resultTile.danger {
+          border-color: var(--color-danger-border);
+          background: var(--color-danger-bg);
         }
 
-        .toneRecorded {
-          background: #eef2ff;
-          border-color: #c7d2fe;
+        .resultTile.info {
+          border-color: var(--color-info-border);
+          background: var(--color-info-bg);
         }
 
-        .toneEmpty {
-          background: #f8fafc;
-          border-color: #e2e8f0;
+        .resultTile.neutral {
+          border-color: var(--color-border);
+          background: var(--color-overlay);
         }
 
         .miniBarList {
@@ -713,155 +656,46 @@ export default function TechnicalDashboardPage() {
           gap: 7px;
         }
 
-        .emptyText {
-          color: #64748b;
-          font-size: 13px;
-          padding: 12px;
-          background: #f8fafc;
-          border-radius: 14px;
-        }
-
-        .actionsPanel {
-          background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
-        }
-
         .actionLinks {
           display: grid;
           gap: 10px;
         }
 
-        .actionLinks :global(a) {
+        .actionLink {
           display: flex;
           justify-content: space-between;
           align-items: center;
           text-decoration: none;
-          color: #111827;
-          background: #ffffff;
-          border: 1px solid #e5e7eb;
-          border-radius: 14px;
+          color: var(--color-text-primary);
+          background: var(--color-surface);
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-md);
           padding: 12px 14px;
-          font-size: 13px;
+          font-size: var(--text-sm);
           font-weight: 900;
+          box-shadow: none;
         }
 
-        .actionLinks :global(a)::after {
-          content: "→";
-          color: #4f46e5;
+        .actionLink:hover {
+          background: var(--color-overlay);
+          border-color: var(--color-border-strong);
+          transform: translateY(-1px);
+          box-shadow: var(--shadow-xs);
         }
 
-        .tableSection {
-          padding: 20px;
-        }
-
-        .tableHeader {
-          display: flex;
-          justify-content: space-between;
-          gap: 16px;
-          align-items: flex-start;
-          margin-bottom: 16px;
-        }
-
-        .tableWrap {
-          overflow-x: auto;
-        }
-
-        table {
-          width: 100%;
-          border-collapse: collapse;
-        }
-
-        th {
-          text-align: left;
-          padding: 12px 10px;
-          color: #64748b;
-          font-size: 11px;
-          font-weight: 900;
-          text-transform: uppercase;
-          letter-spacing: 0.05em;
-          border-bottom: 2px solid #e5e7eb;
-          white-space: nowrap;
-        }
-
-        td {
-          padding: 14px 10px;
-          border-bottom: 1px solid #eef2f7;
-          color: #111827;
-          font-size: 13px;
-          font-weight: 700;
-          vertical-align: middle;
+        .actionLink span {
+          color: var(--color-brand);
+          font-size: var(--text-sm);
         }
 
         .sampleLink {
-          color: #4f46e5;
+          color: var(--color-brand);
           font-weight: 900;
           text-decoration: none;
         }
 
-        .emptyCell {
-          text-align: center;
-          color: #64748b;
-          padding: 24px;
-        }
-
-        .badge {
-          display: inline-flex;
-          width: fit-content;
-          border-radius: 999px;
-          padding: 7px 10px;
-          font-size: 11px;
-          font-weight: 900;
-          white-space: nowrap;
-        }
-
-        .statusRegistered {
-          background: #eef2ff;
-          color: #3730a3;
-        }
-
-        .statusReady {
-          background: #eff6ff;
-          color: #1d4ed8;
-        }
-
-        .statusTesting {
-          background: #fef9c3;
-          color: #854d0e;
-        }
-
-        .statusReview {
-          background: #fff7ed;
-          color: #c2410c;
-        }
-
-        .statusReleased {
-          background: #dcfce7;
-          color: #166534;
-        }
-
-        .statusArchived,
-        .statusDefault {
-          background: #f1f5f9;
-          color: #475569;
-        }
-
-        .resultPass {
-          background: #dcfce7;
-          color: #166534;
-        }
-
-        .resultFail {
-          background: #fee2e2;
-          color: #991b1b;
-        }
-
-        .resultRecorded {
-          background: #e0e7ff;
-          color: #3730a3;
-        }
-
-        .resultEmpty {
-          background: #f1f5f9;
-          color: #475569;
+        .sampleLink:hover {
+          color: var(--color-brand-dark);
         }
 
         @media (max-width: 1100px) {
@@ -870,16 +704,14 @@ export default function TechnicalDashboardPage() {
             grid-template-columns: 1fr 1fr;
           }
 
-          .largePanel {
+          :global(.largePanel) {
             grid-row: auto;
             grid-column: 1 / -1;
           }
         }
 
         @media (max-width: 720px) {
-          .header,
-          .panelHeader,
-          .tableHeader {
+          .header {
             flex-direction: column;
           }
 
@@ -895,47 +727,9 @@ export default function TechnicalDashboardPage() {
   );
 }
 
-function StatCard({ label, value, note }) {
+function ResultTile({ label, value, variant }) {
   return (
-    <div className="statCard">
-      <span>{label}</span>
-      <strong>{value ?? 0}</strong>
-      {note && <small>{note}</small>}
-
-      <style jsx>{`
-        .statCard {
-          padding: 18px;
-          display: grid;
-          gap: 6px;
-        }
-
-        .statCard span {
-          color: #64748b;
-          font-size: 11px;
-          font-weight: 900;
-          text-transform: uppercase;
-          letter-spacing: 0.06em;
-        }
-
-        .statCard strong {
-          color: #111827;
-          font-size: 30px;
-          line-height: 1;
-        }
-
-        .statCard small {
-          color: #64748b;
-          font-size: 12px;
-          line-height: 1.4;
-        }
-      `}</style>
-    </div>
-  );
-}
-
-function ResultTile({ label, value, tone }) {
-  return (
-    <div className={`resultTile tone${capitalize(tone)}`}>
+    <div className={`resultTile ${variant}`}>
       <span>{label}</span>
       <strong>{value}</strong>
     </div>
@@ -951,36 +745,41 @@ function PaymentTile({ label, value }) {
   );
 }
 
-function LifecycleBadge({ status }) {
-  const cls =
-    status === "Registered"
-      ? "statusRegistered"
-      : status === "Ready for Testing"
-        ? "statusReady"
-        : status === "In Testing"
-          ? "statusTesting"
-          : status === "For Review"
-            ? "statusReview"
-            : status === "Released"
-              ? "statusReleased"
-              : status === "Archived"
-                ? "statusArchived"
-                : "statusDefault";
+function ActionLink({ href, children }) {
+  return (
+    <Link href={href} className="actionLink">
+      {children}
+      <span>Open</span>
+    </Link>
+  );
+}
 
-  return <span className={`badge ${cls}`}>{status || "-"}</span>;
+function LifecycleBadge({ status }) {
+  const variant =
+    status === "Released"
+      ? "success"
+      : status === "In Testing"
+        ? "warning"
+        : status === "For Review" || status === "Ready for Testing"
+          ? "info"
+          : status === "Archived"
+            ? "neutral"
+            : "brand";
+
+  return <Badge variant={variant}>{status || "-"}</Badge>;
 }
 
 function ResultBadge({ result }) {
-  const cls =
+  const variant =
     result === "PASS"
-      ? "resultPass"
+      ? "success"
       : result === "FAIL"
-        ? "resultFail"
+        ? "danger"
         : result === "RECORDED"
-          ? "resultRecorded"
-          : "resultEmpty";
+          ? "info"
+          : "neutral";
 
-  return <span className={`badge ${cls}`}>{result || "No Result"}</span>;
+  return <Badge variant={variant}>{result || "No Result"}</Badge>;
 }
 
 function getDashboardTitle(role) {
@@ -1004,21 +803,25 @@ function getRoleCards({
         label: "Ready for Testing",
         value: lifecycleCounts["Ready for Testing"] || 0,
         note: "Samples cleared for lab work",
+        variant: "info",
       },
       {
         label: "In Testing",
         value: lifecycleCounts["In Testing"] || 0,
         note: "Active testing workload",
+        variant: "warning",
       },
       {
         label: "Registered",
         value: dashboard.registered ?? lifecycleCounts.Registered ?? 0,
         note: "Samples awaiting routing",
+        variant: "brand",
       },
       {
         label: "No Result Yet",
         value: testResultCounts.noResult,
         note: "Samples without entered results",
+        variant: "neutral",
       },
     ];
   }
@@ -1029,21 +832,25 @@ function getRoleCards({
         label: "Manual Review",
         value: dashboard.manual_review ?? 0,
         note: "AI classifications needing review",
+        variant: "warning",
       },
       {
         label: "Mandatory Override",
         value: dashboard.mandatory_override ?? 0,
         note: "Low-confidence classifications",
+        variant: "danger",
       },
       {
         label: "Completed Reviews",
         value: dashboard.completed_reviews ?? 0,
         note: "Reviewed classification cases",
+        variant: "success",
       },
       {
         label: "Registered",
         value: dashboard.registered ?? 0,
         note: "Current registered samples",
+        variant: "brand",
       },
     ];
   }
@@ -1054,21 +861,25 @@ function getRoleCards({
         label: "For Review",
         value: lifecycleCounts["For Review"] || 0,
         note: "Reports requiring QA review",
+        variant: "info",
       },
       {
         label: "Released",
         value: lifecycleCounts.Released || 0,
         note: "Finalized official reports",
+        variant: "success",
       },
       {
         label: "Failed Results",
         value: testResultCounts.fail,
         note: "Requires careful QA review",
+        variant: "danger",
       },
       {
         label: "Fully Paid",
         value: paymentCounts.fullyPaid,
         note: "Financially cleared samples",
+        variant: "brand",
       },
     ];
   }
@@ -1081,21 +892,25 @@ function getRoleCards({
         0,
       ),
       note: "All visible technical records",
+      variant: "brand",
     },
     {
       label: "For Review",
       value: lifecycleCounts["For Review"] || 0,
       note: "Awaiting QA authorization",
+      variant: "info",
     },
     {
       label: "Released",
       value: lifecycleCounts.Released || 0,
       note: "Finalized official reports",
+      variant: "success",
     },
     {
       label: "Manual Review",
       value: dashboard.manual_review ?? 0,
       note: "AI classification review cases",
+      variant: "warning",
     },
   ];
 }
@@ -1147,9 +962,4 @@ function formatBranch(branchId) {
   if (Number(branchId) === 1) return "Marikina";
   if (Number(branchId) === 2) return "Pateros";
   return branchId || "-";
-}
-
-function capitalize(value) {
-  if (!value) return "";
-  return String(value).charAt(0).toUpperCase() + String(value).slice(1);
 }

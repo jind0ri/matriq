@@ -69,7 +69,7 @@ export default function Modal({
           position: fixed;
           inset: 0;
           z-index: 10000;
-          background: rgba(15, 23, 42, 0.42);
+          background: rgba(15, 23, 42, 0.36);
           backdrop-filter: blur(3px);
           display: flex;
           align-items: center;
@@ -83,7 +83,7 @@ export default function Modal({
           overflow: hidden;
           background: var(--color-surface);
           border: 1px solid var(--color-border);
-          border-radius: var(--radius-xl);
+          border-radius: var(--radius-lg);
           box-shadow: var(--shadow-lg);
           display: flex;
           flex-direction: column;
@@ -107,8 +107,9 @@ export default function Modal({
           justify-content: space-between;
           align-items: flex-start;
           gap: 16px;
-          padding: 20px 20px 16px;
+          padding: 20px;
           border-bottom: 1px solid var(--color-border);
+          background: var(--color-surface);
         }
 
         h2 {
@@ -138,6 +139,7 @@ export default function Modal({
           display: inline-flex;
           align-items: center;
           justify-content: center;
+          flex-shrink: 0;
         }
 
         .closeButton:hover {
@@ -156,7 +158,7 @@ export default function Modal({
           display: flex;
           justify-content: flex-end;
           gap: 10px;
-          padding: 16px 20px 20px;
+          padding: 16px 20px;
           border-top: 1px solid var(--color-border);
           background: var(--color-overlay);
         }
@@ -176,7 +178,7 @@ export default function Modal({
         @keyframes modalIn {
           from {
             opacity: 0;
-            transform: translateY(8px) scale(0.98);
+            transform: translateY(6px) scale(0.985);
           }
 
           to {

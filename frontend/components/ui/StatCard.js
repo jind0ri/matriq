@@ -27,7 +27,7 @@ export default function StatCard({
           border: 1px solid var(--color-border);
           border-radius: var(--radius-lg);
           padding: 18px;
-          box-shadow: var(--shadow-sm);
+          box-shadow: var(--shadow-xs);
           display: grid;
           gap: 8px;
           min-width: 0;
@@ -38,9 +38,9 @@ export default function StatCard({
         }
 
         .statCard:hover {
-          transform: translateY(-2px);
+          transform: translateY(-1px);
           border-color: var(--color-border-strong);
-          box-shadow: var(--shadow-md);
+          box-shadow: var(--shadow-sm);
         }
 
         .topLine {
@@ -86,11 +86,12 @@ export default function StatCard({
 
         .brand {
           border-color: color-mix(in srgb, var(--color-brand) 35%, white);
-          background: linear-gradient(
-            135deg,
-            var(--color-surface) 0%,
-            var(--color-brand-light) 100%
-          );
+        }
+
+        .brand small {
+          background: var(--color-brand-light);
+          border-color: color-mix(in srgb, var(--color-brand) 35%, white);
+          color: var(--color-brand-dark);
         }
 
         .success {
@@ -131,6 +132,10 @@ export default function StatCard({
           background: var(--color-info-bg);
           border-color: var(--color-info-border);
           color: var(--color-info);
+        }
+
+        .neutral {
+          border-color: var(--color-border);
         }
       `}</style>
     </>

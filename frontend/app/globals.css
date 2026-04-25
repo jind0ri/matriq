@@ -6,57 +6,57 @@
    ============================================================ */
 
 :root {
-  /* Brand */
-  --color-brand: hsl(248, 78%, 35%);
-  --color-brand-light: hsl(248, 78%, 96%);
-  --color-brand-dark: hsl(248, 78%, 24%);
+  /* Brand, muted and professional */
+  --color-brand: hsl(249, 44%, 36%);
+  --color-brand-light: hsl(248, 30%, 95%);
+  --color-brand-dark: hsl(249, 48%, 25%);
 
-  /* Semantic colors */
-  --color-success: hsl(142, 72%, 29%);
-  --color-success-bg: hsl(138, 76%, 97%);
-  --color-success-border: hsl(141, 69%, 70%);
+  /* Semantic colors, softened to reduce eye strain */
+  --color-success: hsl(145, 45%, 30%);
+  --color-success-bg: hsl(140, 28%, 94%);
+  --color-success-border: hsl(142, 24%, 72%);
 
-  --color-danger: hsl(0, 72%, 38%);
-  --color-danger-bg: hsl(0, 86%, 97%);
-  --color-danger-border: hsl(0, 93%, 78%);
+  --color-danger: hsl(0, 48%, 36%);
+  --color-danger-bg: hsl(0, 34%, 95%);
+  --color-danger-border: hsl(0, 28%, 76%);
 
-  --color-warning: hsl(32, 95%, 34%);
-  --color-warning-bg: hsl(33, 100%, 96%);
-  --color-warning-border: hsl(31, 97%, 72%);
+  --color-warning: hsl(34, 58%, 34%);
+  --color-warning-bg: hsl(38, 38%, 94%);
+  --color-warning-border: hsl(36, 30%, 74%);
 
-  --color-info: hsl(217, 91%, 40%);
-  --color-info-bg: hsl(214, 100%, 97%);
-  --color-info-border: hsl(213, 94%, 78%);
+  --color-info: hsl(215, 48%, 36%);
+  --color-info-bg: hsl(214, 34%, 95%);
+  --color-info-border: hsl(214, 28%, 76%);
 
   /* Surfaces */
-  --color-canvas: hsl(220, 20%, 97%);
+  --color-canvas: hsl(220, 18%, 96%);
   --color-surface: hsl(0, 0%, 100%);
-  --color-overlay: hsl(220, 14%, 97%);
-  --color-sidebar: hsl(250, 100%, 7%);
-  --color-sidebar-muted: hsl(250, 100%, 10%);
+  --color-overlay: hsl(220, 16%, 95%);
+  --color-sidebar: hsl(250, 72%, 8%);
+  --color-sidebar-muted: hsl(250, 60%, 12%);
 
   /* Text */
-  --color-text-primary: hsl(220, 15%, 12%);
-  --color-text-secondary: hsl(220, 10%, 42%);
-  --color-text-muted: hsl(220, 8%, 62%);
+  --color-text-primary: hsl(220, 16%, 14%);
+  --color-text-secondary: hsl(220, 10%, 38%);
+  --color-text-muted: hsl(220, 8%, 56%);
   --color-text-inverse: hsl(0, 0%, 100%);
 
   /* Borders */
-  --color-border: hsl(220, 13%, 82%);
-  --color-border-soft: hsl(220, 13%, 88%);
-  --color-border-strong: hsl(220, 13%, 68%);
+  --color-border: hsl(220, 12%, 78%);
+  --color-border-soft: hsl(220, 13%, 86%);
+  --color-border-strong: hsl(220, 10%, 62%);
 
-  /* Shadows */
-  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
+  /* Shadows, intentionally subtle */
+  --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.04);
   --shadow-sm:
-    0 2px 8px rgba(0, 0, 0, 0.05),
-    0 1px 2px rgba(0, 0, 0, 0.03);
+    0 2px 6px rgba(15, 23, 42, 0.045),
+    0 1px 2px rgba(15, 23, 42, 0.025);
   --shadow-md:
-    0 4px 16px rgba(0, 0, 0, 0.07),
-    0 2px 4px rgba(0, 0, 0, 0.04);
+    0 4px 12px rgba(15, 23, 42, 0.06),
+    0 2px 4px rgba(15, 23, 42, 0.035);
   --shadow-lg:
-    0 8px 24px rgba(0, 0, 0, 0.09),
-    0 4px 8px rgba(0, 0, 0, 0.05);
+    0 8px 22px rgba(15, 23, 42, 0.075),
+    0 4px 8px rgba(15, 23, 42, 0.04);
 
   /* Border radius */
   --radius-xs: 4px;
@@ -69,7 +69,7 @@
   /* Transitions */
   --transition-fast: 100ms ease;
   --transition-base: 180ms ease;
-  --transition-slow: 320ms ease;
+  --transition-slow: 280ms ease;
 
   /* Type scale */
   --text-xs: 11px;
@@ -168,7 +168,7 @@ input:focus-visible,
 select:focus-visible,
 textarea:focus-visible,
 summary:focus-visible {
-  outline: 3px solid color-mix(in srgb, var(--color-brand) 28%, transparent);
+  outline: 3px solid color-mix(in srgb, var(--color-brand) 22%, transparent);
   outline-offset: 3px;
 }
 
@@ -192,27 +192,27 @@ textarea::placeholder {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-xs);
 }
 
 .surface-interactive {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-xs);
 }
 
 .surface-interactive:hover {
-  transform: translateY(-2px);
+  transform: translateY(-1px);
   border-color: var(--color-border-strong);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-sm);
 }
 
 .panel {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-sm);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xs);
 }
 
 .muted-panel {
@@ -246,7 +246,7 @@ textarea::placeholder {
 }
 
 .primary-button {
-  border: 1px solid transparent;
+  border: 1px solid var(--color-brand);
   border-radius: var(--radius-sm);
   background: var(--color-brand);
   color: var(--color-text-inverse);
@@ -257,6 +257,7 @@ textarea::placeholder {
 
 .primary-button:hover {
   background: var(--color-brand-dark);
+  border-color: var(--color-brand-dark);
   box-shadow: var(--shadow-xs);
 }
 
@@ -271,6 +272,7 @@ textarea::placeholder {
 }
 
 .secondary-button:hover {
+  background: var(--color-overlay);
   border-color: var(--color-border-strong);
   box-shadow: var(--shadow-xs);
 }
@@ -288,9 +290,15 @@ textarea::placeholder {
 }
 
 .status-pill-neutral {
-  background: hsl(220, 14%, 96%);
+  background: hsl(220, 14%, 94%);
   color: hsl(220, 12%, 35%);
-  border: 1px solid hsl(220, 13%, 76%);
+  border: 1px solid hsl(220, 12%, 74%);
+}
+
+.status-pill-brand {
+  background: var(--color-brand-light);
+  color: var(--color-brand-dark);
+  border: 1px solid color-mix(in srgb, var(--color-brand) 28%, white);
 }
 
 .status-pill-info {

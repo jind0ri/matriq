@@ -7,6 +7,7 @@ export default function Card({
   className = "",
   interactive = false,
   compact = false,
+  plain = false,
   actions = null,
 }) {
   return (
@@ -16,12 +17,13 @@ export default function Card({
           "card",
           interactive ? "interactive" : "",
           compact ? "compact" : "",
+          plain ? "plain" : "",
           className,
         ].join(" ")}
       >
         {(title || subtitle || actions) && (
           <div className="header">
-            <div>
+            <div className="titleBlock">
               {title && <h2>{title}</h2>}
               {subtitle && <p>{subtitle}</p>}
             </div>
@@ -37,27 +39,33 @@ export default function Card({
         .card {
           background: var(--color-surface);
           border: 1px solid var(--color-border);
-          border-radius: var(--radius-xl);
+          border-radius: var(--radius-lg);
           padding: 20px;
-          box-shadow: var(--shadow-sm);
+          box-shadow: var(--shadow-xs);
+          min-width: 0;
         }
 
         .card.compact {
           padding: 16px;
-          border-radius: var(--radius-lg);
+          border-radius: var(--radius-md);
+        }
+
+        .card.plain {
+          box-shadow: none;
         }
 
         .card.interactive {
           transition:
             transform var(--transition-base),
             border-color var(--transition-base),
-            box-shadow var(--transition-base);
+            box-shadow var(--transition-base),
+            background-color var(--transition-base);
         }
 
         .card.interactive:hover {
-          transform: translateY(-2px);
+          transform: translateY(-1px);
           border-color: var(--color-border-strong);
-          box-shadow: var(--shadow-md);
+          box-shadow: var(--shadow-sm);
         }
 
         .header {
@@ -68,10 +76,14 @@ export default function Card({
           margin-bottom: 16px;
         }
 
+        .titleBlock {
+          min-width: 0;
+        }
+
         h2 {
           margin: 0;
           color: var(--color-text-primary);
-          font-size: var(--text-lg);
+          font-size: var(--text-md);
           font-weight: 850;
           letter-spacing: -0.02em;
         }
@@ -89,6 +101,7 @@ export default function Card({
           justify-content: flex-end;
           gap: 8px;
           flex-wrap: wrap;
+          flex-shrink: 0;
         }
 
         .body {

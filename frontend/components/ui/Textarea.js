@@ -7,6 +7,7 @@ export default function Textarea({
   onChange,
   placeholder,
   error,
+  helperText,
   readOnly = false,
   disabled = false,
   required = false,
@@ -36,7 +37,11 @@ export default function Textarea({
           rows={rows}
         />
 
-        {error && <small className="errorText">{error}</small>}
+        {error ? (
+          <small className="errorText">{error}</small>
+        ) : helperText ? (
+          <small className="helperText">{helperText}</small>
+        ) : null}
       </div>
 
       <style jsx>{`
@@ -44,6 +49,7 @@ export default function Textarea({
           display: flex;
           flex-direction: column;
           gap: 7px;
+          min-width: 0;
         }
 
         label {
@@ -52,7 +58,7 @@ export default function Textarea({
           justify-content: space-between;
           gap: 10px;
           font-size: var(--text-xs);
-          font-weight: 900;
+          font-weight: 850;
           color: var(--color-text-secondary);
           text-transform: uppercase;
           letter-spacing: 0.05em;
@@ -61,7 +67,7 @@ export default function Textarea({
         label span {
           color: var(--color-text-muted);
           font-size: 10px;
-          font-weight: 800;
+          font-weight: 750;
           text-transform: none;
           letter-spacing: 0;
         }
@@ -74,7 +80,7 @@ export default function Textarea({
           border-radius: var(--radius-sm);
           font-family: inherit;
           font-size: var(--text-sm);
-          font-weight: 650;
+          font-weight: 600;
           color: var(--color-text-primary);
           background: var(--color-surface);
           outline: none;
@@ -96,7 +102,7 @@ export default function Textarea({
         textarea:focus {
           border-color: var(--color-brand);
           box-shadow: 0 0 0 3px
-            color-mix(in srgb, var(--color-brand) 16%, transparent);
+            color-mix(in srgb, var(--color-brand) 14%, transparent);
         }
 
         textarea:read-only {
@@ -107,6 +113,7 @@ export default function Textarea({
         textarea:disabled {
           cursor: not-allowed;
           opacity: 0.55;
+          background: var(--color-overlay);
         }
 
         textarea.error {
@@ -114,11 +121,25 @@ export default function Textarea({
           background: var(--color-danger-bg);
         }
 
+        textarea.error:focus {
+          border-color: var(--color-danger);
+          box-shadow: 0 0 0 3px
+            color-mix(in srgb, var(--color-danger) 12%, transparent);
+        }
+
+        .errorText,
+        .helperText {
+          font-size: var(--text-xs);
+          font-weight: 700;
+          line-height: 1.4;
+        }
+
         .errorText {
           color: var(--color-danger);
-          font-size: var(--text-xs);
-          font-weight: 750;
-          line-height: 1.4;
+        }
+
+        .helperText {
+          color: var(--color-text-muted);
         }
       `}</style>
     </>
