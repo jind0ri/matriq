@@ -86,13 +86,6 @@
   --foreground: var(--color-text-primary);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-montserrat);
-  --font-mono: var(--font-geist-mono);
-}
-
 /* ============================================================
    BASE RESET
    ============================================================ */
