@@ -193,6 +193,67 @@ def hydrate_samples_user_names(items):
     user_names = get_user_name_map()
     return [hydrate_sample_user_names(item, user_names) for item in items]
 
+def is_admin_user(current_user):
+    return current_user.get("role") == ROLE_ADMIN
+
+
+def get_assigned_branch_id(current_user):
+    branch_id = current_user.get("branch_id")
+
+    if branch_id is None or branch_id == "":
+        raise HTTPException(
+            status_code=403,
+            detail="Your account has no assigned branch.",
+        )
+
+    return int(branch_id)
+
+
+def require_sample_branch_access(current_user, sample):
+    """
+    Write-lock rule:
+    - Admin can act across all branches.
+    - Non-admin users can only act on records in their assigned branch.
+    """
+    if is_admin_user(current_user):
+        return
+
+    sample_branch_id = sample.get("branch_id")
+
+    if sample_branch_id is None or sample_branch_id == "":
+        raise HTTPException(
+            status_code=403,
+            detail="This record has no branch assigned.",
+        )
+
+    if int(sample_branch_id) != get_assigned_branch_id(current_user):
+        raise HTTPException(
+            status_code=403,
+            detail="You can only perform actions for your assigned branch.",
+        )
+
+
+def resolve_write_branch_id(requested_branch_id, current_user):
+    """
+    Used during sample creation.
+    Non-admin users cannot choose another branch by manually changing the payload.
+    """
+    if is_admin_user(current_user):
+        if requested_branch_id is None or requested_branch_id == "":
+            raise HTTPException(status_code=400, detail="branch_id is required.")
+        return int(requested_branch_id)
+
+    assigned_branch_id = get_assigned_branch_id(current_user)
+
+    if requested_branch_id is not None and requested_branch_id != "":
+        if int(requested_branch_id) != assigned_branch_id:
+            raise HTTPException(
+                status_code=403,
+                detail="You can only create records for your assigned branch.",
+            )
+
+    return assigned_branch_id
+
 
 # ============================================================
 # STANDARD-ALIGNED TEST EVALUATORS
@@ -846,7 +907,7 @@ def evaluate_standardized_test(test_type, payload):
 def create_sample(
     payload: SampleRegistrationRequest,
     request: Request,
-    current_user=Depends(require_roles(ROLE_LAB_TECH, ROLE_SENIOR_TECH)),
+    current_user=Depends(require_roles(ROLE_LAB_TECH, ROLE_SENIOR_TECH, ROLE_ADMIN)),
 ):
     material_map = {
         "concrete": "Concrete",
@@ -872,13 +933,15 @@ def create_sample(
         if payload.ai_predicted_label
         else material_type
     )
+    
+    write_branch_id = resolve_write_branch_id(payload.branch_id, current_user)
 
     sample = create_sample_only(
         client_name=payload.client_name.strip(),
         project_reference=payload.project_id.strip(),
         material_type=material_type,
         current_state=state,
-        branch_id=payload.branch_id,
+        branch_id=write_branch_id,
         registered_by=current_user["user_id"],
         registered_by_role=current_user["role"],
         image_path=payload.image_path,
@@ -1083,6 +1146,8 @@ def qa_pretesting_review(
     item = get_sample(sample_id)
     if not item:
         raise HTTPException(status_code=404, detail="Sample not found")
+    
+        require_sample_branch_access(current_user, item)
 
     if item.get("current_state") != "Registered":
         raise HTTPException(

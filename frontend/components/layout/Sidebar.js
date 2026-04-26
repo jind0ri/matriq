@@ -9,15 +9,14 @@ import {
   Package,
   Cube,
   Users,
-  Buildings,
   FileText,
   Receipt,
   ClipboardText,
   SignOut,
   UserCircle,
-  ShieldCheck,
   Moon,
   Sun,
+  GearSix,
 } from "phosphor-react";
 
 const NAV_CONFIG = {
@@ -44,22 +43,8 @@ const NAV_CONFIG = {
   Administrator: [
     { label: "Admin Dashboard", href: "/admin", icon: SquaresFour },
     { label: "Users", href: "/admin/users", icon: Users },
-    { label: "Branches", href: "/admin/branches", icon: Buildings },
     { label: "Audit Logs", href: "/admin/audit-logs", icon: ClipboardText },
-
-    { label: "Technical Dashboard", href: "/technical", icon: ShieldCheck },
-    { label: "Workflow", href: "/technical/workflow", icon: Package },
-    { label: "Registry", href: "/technical/registry", icon: Cube },
-    { label: "Reports", href: "/technical/reports", icon: FileText },
-
-    { label: "Accounting Dashboard", href: "/accounting", icon: Receipt },
-    { label: "Billing", href: "/accounting/billing", icon: Receipt },
-    { label: "Invoices", href: "/accounting/invoices", icon: FileText },
-    {
-      label: "Accounting Reports",
-      href: "/accounting/reports",
-      icon: ClipboardText,
-    },
+    { label: "Settings", href: "/admin/settings", icon: GearSix },
   ],
 
   "Accounting Staff": [
@@ -95,6 +80,12 @@ function applyTheme(theme) {
   document.documentElement.style.colorScheme = theme;
 }
 
+function clearAuthSession() {
+  localStorage.removeItem("user");
+  localStorage.removeItem("token");
+  localStorage.removeItem("access_token");
+}
+
 export default function Sidebar({ user, isOpen, onClose }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -126,9 +117,7 @@ export default function Sidebar({ user, isOpen, onClose }) {
   }
 
   function handleLogout() {
-    localStorage.removeItem("user");
-    localStorage.removeItem("token");
-    localStorage.removeItem("access_token");
+    clearAuthSession();
     router.push("/auth/access-select");
   }
 
@@ -372,6 +361,10 @@ export default function Sidebar({ user, isOpen, onClose }) {
           align-items: center;
           padding: 8px 10px;
           text-align: left;
+          cursor: pointer;
+          transition:
+            background-color 0.2s ease,
+            border-color 0.2s ease;
         }
 
         .themeToggle:hover {

@@ -8,13 +8,58 @@ import httpx
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from PIL import Image, UnidentifiedImageError
 
-from ..config import CLASSIFY_ROLES, SUPABASE_URL, SUPABASE_SERVICE_KEY, SUPABASE_BUCKET
+from ..config import (
+    CLASSIFY_ROLES,
+    ROLE_ADMIN,
+    SUPABASE_URL,
+    SUPABASE_SERVICE_KEY,
+    SUPABASE_BUCKET,
+)
 from ..services.audit_service import log_event
 from ..services.auth_service import require_roles
 from ..services.model_service import active_model, predict, thresholds, validate_image_bytes
 from ..services.sample_service import create_sample_with_inference, get_review_by_sample_id
 
 router = APIRouter(prefix="/api", tags=["Classification"])
+
+
+def is_admin_user(current_user):
+    return current_user.get("role") == ROLE_ADMIN
+
+
+def get_assigned_branch_id(current_user):
+    branch_id = current_user.get("branch_id")
+
+    if branch_id is None or branch_id == "":
+        raise HTTPException(
+            status_code=403,
+            detail="Your account has no assigned branch.",
+        )
+
+    return int(branch_id)
+
+
+def resolve_write_branch_id(requested_branch_id, current_user):
+    """
+    Write-lock rule:
+    - Admin can create records for any branch.
+    - Non-admin users can only create records for their assigned branch.
+    """
+    if is_admin_user(current_user):
+        if requested_branch_id is None or requested_branch_id == "":
+            raise HTTPException(status_code=400, detail="branch_id is required.")
+        return int(requested_branch_id)
+
+    assigned_branch_id = get_assigned_branch_id(current_user)
+
+    if requested_branch_id is not None and requested_branch_id != "":
+        if int(requested_branch_id) != assigned_branch_id:
+            raise HTTPException(
+                status_code=403,
+                detail="You can only create records for your assigned branch.",
+            )
+
+    return assigned_branch_id
 
 
 def upload_to_supabase(raw: bytes, filename: str, content_type: str) -> str:
@@ -100,6 +145,8 @@ async def classify(
             detail="device_metadata must be valid JSON.",
         )
 
+    write_branch_id = resolve_write_branch_id(branch_id, current_user)
+
     try:
         result = predict(pil)
     except Exception as exc:
@@ -153,7 +200,7 @@ async def classify(
             project_reference=project_id.strip(),
             predicted_label_db=result["predicted_label_db"],
             current_state=state,
-            branch_id=branch_id,
+            branch_id=write_branch_id,
             registered_by=current_user["user_id"],
             registered_by_role=current_user["role"],
             image_path=image_path,
@@ -178,7 +225,7 @@ async def classify(
                 "client_name": client_name.strip(),
                 "project_id": project_id.strip(),
                 "predicted_label": result["predicted_label_db"],
-                "branch_id": branch_id,
+                "branch_id": write_branch_id,
             },
             ip_address=request.client.host if request.client else None,
         )
@@ -203,6 +250,7 @@ async def classify(
             "confidence_score": confidence,
             "decision": decision_db,
             "out_of_scope": result["out_of_scope"],
+            "branch_id": write_branch_id,
         },
         ip_address=request.client.host if request.client else None,
     )
