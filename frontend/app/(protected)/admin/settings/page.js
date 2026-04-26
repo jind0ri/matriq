@@ -1,70 +1,24 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { getStoredUser } from "@/services/apiClient";
+import { useEffect, useMemo, useState } from "react";
+import { apiClient, getStoredUser } from "@/services/apiClient";
 
 import Badge from "@/components/ui/Badge";
+import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
+import EmptyState from "@/components/ui/EmptyState";
+import Loader from "@/components/ui/Loader";
 import MetricStrip from "@/components/ui/MetricStrip";
 import Select from "@/components/ui/Select";
 import StatCard from "@/components/ui/StatCard";
 import Table from "@/components/ui/Table";
 
-const BRANCH_ROWS = [
-  {
-    branch_id: 1,
-    branch_name: "Marikina",
-    status: "Active",
-    scope: "Operational branch",
-    sync: "Cloud-synced",
-  },
-  {
-    branch_id: 2,
-    branch_name: "Pateros",
-    status: "Active",
-    scope: "Operational branch",
-    sync: "Cloud-synced",
-  },
-];
-
-const ROLE_ROWS = [
-  {
-    role: "Administrator",
-    access: "Full system access",
-    branch_rule: "Can manage all branches",
-    notes: "User management, audit review, settings oversight",
-  },
-  {
-    role: "Lab Technician",
-    access: "Technical workflow",
-    branch_rule: "Actions locked to assigned branch",
-    notes: "Sample monitoring and test data entry",
-  },
-  {
-    role: "Senior Technician",
-    access: "Technical workflow with review visibility",
-    branch_rule: "Actions locked to assigned branch",
-    notes: "Can monitor assigned branch and view synced records",
-  },
-  {
-    role: "QA Engineer",
-    access: "Quality review workflow",
-    branch_rule: "Actions locked to assigned branch",
-    notes: "QA validation, review, and release workflow",
-  },
-  {
-    role: "Accounting Staff",
-    access: "Billing and payment workflow",
-    branch_rule: "Actions locked to assigned branch",
-    notes: "Payment updates, billing queue, and invoice records",
-  },
-];
-
 const BRANCH_COLUMNS = [
-  { key: "branch_name", label: "Branch", width: "160px" },
-  { key: "status", label: "Status", width: "120px" },
-  { key: "scope", label: "Scope", width: "180px" },
-  { key: "sync", label: "Sync Mode", width: "160px" },
+  { key: "branch_name", label: "Branch", width: "170px" },
+  { key: "location", label: "Location", width: "140px" },
+  { key: "status", label: "Status", width: "130px" },
+  { key: "sync_mode", label: "Sync Mode", width: "160px" },
+  { key: "action", label: "Action", align: "right", width: "130px" },
 ];
 
 const ROLE_COLUMNS = [
@@ -79,6 +33,15 @@ export default function AdminSettingsPage() {
   const userBranchId = Number(user?.branch_id);
 
   const [branchFilter, setBranchFilter] = useState(userBranchId ? "My" : "All");
+  const [branches, setBranches] = useState([]);
+  const [settings, setSettings] = useState([]);
+  const [roles, setRoles] = useState([]);
+  const [branchDrafts, setBranchDrafts] = useState({});
+
+  const [loading, setLoading] = useState(true);
+  const [savingKey, setSavingKey] = useState("");
+  const [savingBranchId, setSavingBranchId] = useState("");
+  const [error, setError] = useState("");
 
   const branchOptions = useMemo(() => {
     if (!userBranchId) {
@@ -101,11 +64,135 @@ export default function AdminSettingsPage() {
     ];
   }, [userBranchId]);
 
-  const visibleBranches = useMemo(() => {
-    return filterBranchesByView(BRANCH_ROWS, branchFilter, userBranchId);
-  }, [branchFilter, userBranchId]);
+  async function loadSettings() {
+    setLoading(true);
+    setError("");
 
+    try {
+      const res = await apiClient.getAdminSettings();
+
+      const nextBranches = Array.isArray(res?.branches) ? res.branches : [];
+      const nextSettings = Array.isArray(res?.settings) ? res.settings : [];
+      const nextRoles = Array.isArray(res?.roles) ? res.roles : [];
+
+      setBranches(nextBranches);
+      setSettings(nextSettings);
+      setRoles(nextRoles);
+
+      setBranchDrafts(
+        Object.fromEntries(
+          nextBranches.map((branch) => [
+            String(branch.branch_id),
+            {
+              branch_name: branch.branch_name || "",
+              location: branch.location || "",
+              status: branch.status || "Active",
+              sync_mode: branch.sync_mode || "Cloud-synced",
+            },
+          ]),
+        ),
+      );
+    } catch (err) {
+      setError(err.message || "Failed to load admin settings.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadSettings();
+  }, []);
+
+  const visibleBranches = useMemo(() => {
+    return filterBranchesByView(branches, branchFilter, userBranchId);
+  }, [branches, branchFilter, userBranchId]);
+
+  const groupedSettings = useMemo(() => {
+    const map = new Map();
+
+    settings.forEach((setting) => {
+      const category = setting.category || "System Rules";
+
+      if (!map.has(category)) {
+        map.set(category, []);
+      }
+
+      map.get(category).push(setting);
+    });
+
+    return Array.from(map.entries()).map(([category, items]) => ({
+      category,
+      items,
+    }));
+  }, [settings]);
+
+  const enabledCount = settings.filter((item) => item.enabled).length;
   const branchLabel = getBranchViewLabel(branchFilter, userBranchId);
+
+  function updateBranchDraft(branchId, field, value) {
+    setBranchDrafts((current) => ({
+      ...current,
+      [String(branchId)]: {
+        ...(current[String(branchId)] || {}),
+        [field]: value,
+      },
+    }));
+  }
+
+  async function saveBranch(branchId) {
+    const draft = branchDrafts[String(branchId)];
+
+    if (!draft) return;
+
+    setSavingBranchId(String(branchId));
+    setError("");
+
+    try {
+      const updated = await apiClient.updateAdminBranch(branchId, draft);
+
+      setBranches((current) =>
+        current.map((branch) =>
+          Number(branch.branch_id) === Number(branchId) ? updated : branch,
+        ),
+      );
+
+      setBranchDrafts((current) => ({
+        ...current,
+        [String(branchId)]: {
+          branch_name: updated.branch_name || "",
+          location: updated.location || "",
+          status: updated.status || "Active",
+          sync_mode: updated.sync_mode || "Cloud-synced",
+        },
+      }));
+    } catch (err) {
+      setError(err.message || "Failed to update branch settings.");
+    } finally {
+      setSavingBranchId("");
+    }
+  }
+
+  async function toggleSetting(setting) {
+    setSavingKey(setting.setting_key);
+    setError("");
+
+    try {
+      const updated = await apiClient.updateAdminSetting({
+        setting_key: setting.setting_key,
+        value: !setting.enabled,
+      });
+
+      setSettings((current) =>
+        current.map((item) =>
+          item.setting_key === updated.setting_key ? updated : item,
+        ),
+      );
+    } catch (err) {
+      setError(err.message || "Failed to update setting.");
+    } finally {
+      setSavingKey("");
+    }
+  }
 
   return (
     <div className="page">
@@ -113,7 +200,7 @@ export default function AdminSettingsPage() {
         <div>
           <h1>System Settings</h1>
           <p>
-            Read-only system configuration overview for{" "}
+            Manage branch configuration and system rules for{" "}
             <strong>{branchLabel}</strong>.
           </p>
         </div>
@@ -131,6 +218,10 @@ export default function AdminSettingsPage() {
               </option>
             ))}
           </Select>
+
+          <Button variant="secondary" size="sm" onClick={loadSettings}>
+            Refresh
+          </Button>
         </div>
       </header>
 
@@ -145,167 +236,232 @@ export default function AdminSettingsPage() {
       )}
 
       <section className="notice">
-        <strong>Read-only configuration page</strong>
+        <strong>Dynamic configuration page</strong>
         <span>
-          This page documents the current system rules for branch scope, account
-          status, audit traceability, and role-based access. It does not save
-          changes because editable system settings have not been connected to a
-          backend settings API yet.
+          Settings are loaded from the backend and changes are audit logged.
+          These controls are limited to safe configuration records such as branch
+          status, sync mode, and workflow rule flags.
         </span>
       </section>
 
-      <section className="statsRow">
-        <StatCard
-          label="Branches"
-          value={visibleBranches.length}
-          note="Configured operational branches"
-          variant="brand"
-        />
+      {loading && <Loader label="Loading system settings..." />}
 
-        <StatCard
-          label="Roles"
-          value={ROLE_ROWS.length}
-          note="Supported system roles"
-          variant="info"
-        />
-
-        <StatCard
-          label="Audit Mode"
-          value="On"
-          note="Actions remain attributable"
-          variant="success"
-        />
-
-        <StatCard
-          label="Account Rule"
-          value="Deactivate"
-          note="No permanent delete in normal UI"
-          variant="warning"
-        />
-      </section>
-
-      <MetricStrip
-        items={[
-          {
-            label: "Branch Scope",
-            value: branchLabel,
-          },
-          {
-            label: "Cloud Sync",
-            value: "Active",
-          },
-          {
-            label: "Admin Access",
-            value: "All Branches",
-          },
-          {
-            label: "Settings Mode",
-            value: "Read-only",
-          },
-        ]}
-      />
-
-      <section className="contentGrid">
-        <Card
-          title="Branch Configuration"
-          subtitle="Configured branch locations used for branch-aware records and cloud-synced monitoring."
-        >
-          <Table
-            columns={BRANCH_COLUMNS}
-            data={visibleBranches}
-            emptyText="No branches found."
-            density="comfortable"
-            variant="minimal"
-            className="settingsTable"
-            renderRow={(item) => (
-              <tr key={item.branch_id}>
-                <td>{item.branch_name}</td>
-                <td>
-                  <Badge variant="success" size="sm">
-                    {item.status}
-                  </Badge>
-                </td>
-                <td>{item.scope}</td>
-                <td>
-                  <Badge variant="info" size="sm">
-                    {item.sync}
-                  </Badge>
-                </td>
-              </tr>
-            )}
-          />
+      {!loading && error && (
+        <Card>
+          <div className="errorText">{error}</div>
         </Card>
+      )}
 
-        <Card
-          title="Role Access Overview"
-          subtitle="Role-based access rules used by protected pages and branch-aware workflows."
-        >
-          <Table
-            columns={ROLE_COLUMNS}
-            data={ROLE_ROWS}
-            emptyText="No roles found."
-            density="comfortable"
-            variant="minimal"
-            className="settingsTable roleTable"
-            renderRow={(item) => (
-              <tr key={item.role}>
-                <td>
-                  <RoleBadge role={item.role} />
-                </td>
-                <td>{item.access}</td>
-                <td>{item.branch_rule}</td>
-                <td>{item.notes}</td>
-              </tr>
-            )}
+      {!loading && !error && (
+        <>
+          <section className="statsRow">
+            <StatCard
+              label="Branches"
+              value={visibleBranches.length}
+              note="Configured operational branches"
+              variant="brand"
+            />
+
+            <StatCard
+              label="Roles"
+              value={roles.length}
+              note="Supported system roles"
+              variant="info"
+            />
+
+            <StatCard
+              label="Enabled Rules"
+              value={enabledCount}
+              note="Active configurable rules"
+              variant="success"
+            />
+
+            <StatCard
+              label="Settings Mode"
+              value="Dynamic"
+              note="Backend-managed records"
+              variant="warning"
+            />
+          </section>
+
+          <MetricStrip
+            items={[
+              {
+                label: "Branch Scope",
+                value: branchLabel,
+              },
+              {
+                label: "Cloud Sync",
+                value: "Configurable",
+              },
+              {
+                label: "Admin Access",
+                value: "All Branches",
+              },
+              {
+                label: "Audit Logging",
+                value: "Enabled",
+              },
+            ]}
           />
-        </Card>
-      </section>
 
-      <section className="rulesGrid">
-        <RuleCard
-          title="Account Status Rule"
-          variant="warning"
-          items={[
-            "Administrators activate or deactivate accounts.",
-            "Inactive users should not access protected system functions.",
-            "Accounts are not permanently deleted from the normal interface.",
-            "Historical sample, validation, payment, and audit records remain linked to the account that performed them.",
-          ]}
-        />
+          <section className="contentGrid">
+            <Card
+              className="settingsPanel branchPanel"
+              title="Branch Configuration"
+              subtitle="Update branch labels, location, operational status, and displayed sync mode."
+            >
+              {visibleBranches.length === 0 ? (
+                <EmptyState
+                  title="No branches found"
+                  description="No branch settings are available for this scope."
+                />
+              ) : (
+                <Table
+                  columns={BRANCH_COLUMNS}
+                  data={visibleBranches}
+                  emptyText="No branches found."
+                  density="comfortable"
+                  variant="minimal"
+                  className="settingsTable"
+                  renderRow={(item) => {
+                    const draft = branchDrafts[String(item.branch_id)] || {};
 
-        <RuleCard
-          title="Audit Trail Rule"
-          variant="success"
-          items={[
-            "User actions are recorded for traceability.",
-            "Audit records are read-only in the admin interface.",
-            "Audit logs should show the user, branch, action, target, page or module, and timestamp.",
-            "Deactivated accounts remain visible in historical audit records.",
-          ]}
-        />
+                    return (
+                      <tr key={item.branch_id}>
+                        <td>
+                          <input
+                            className="tableInput"
+                            value={draft.branch_name || ""}
+                            onChange={(event) =>
+                              updateBranchDraft(
+                                item.branch_id,
+                                "branch_name",
+                                event.target.value,
+                              )
+                            }
+                          />
+                        </td>
 
-        <RuleCard
-          title="Branch Workflow Rule"
-          variant="info"
-          items={[
-            "Default branch view is the user’s assigned branch.",
-            "All Branches is used for cloud-synced monitoring.",
-            "Non-admin actions are locked to the user’s assigned branch.",
-            "Administrators may manage records across all branches.",
-          ]}
-        />
+                        <td>
+                          <input
+                            className="tableInput"
+                            value={draft.location || ""}
+                            onChange={(event) =>
+                              updateBranchDraft(
+                                item.branch_id,
+                                "location",
+                                event.target.value,
+                              )
+                            }
+                          />
+                        </td>
 
-        <RuleCard
-          title="Laboratory Workflow Rule"
-          variant="brand"
-          items={[
-            "Samples move from registration to testing, QA review, release, and archive.",
-            "Payment and invoice updates stay in Accounting pages.",
-            "QA review and release actions stay in QA or technical review pages.",
-            "Reports summarize activity without directly modifying source records.",
-          ]}
-        />
-      </section>
+                        <td>
+                          <select
+                            className="tableSelect"
+                            value={draft.status || "Active"}
+                            onChange={(event) =>
+                              updateBranchDraft(
+                                item.branch_id,
+                                "status",
+                                event.target.value,
+                              )
+                            }
+                          >
+                            <option value="Active">Active</option>
+                            <option value="Inactive">Inactive</option>
+                          </select>
+                        </td>
+
+                        <td>
+                          <select
+                            className="tableSelect"
+                            value={draft.sync_mode || "Cloud-synced"}
+                            onChange={(event) =>
+                              updateBranchDraft(
+                                item.branch_id,
+                                "sync_mode",
+                                event.target.value,
+                              )
+                            }
+                          >
+                            <option value="Cloud-synced">Cloud-synced</option>
+                            <option value="Local monitoring">
+                              Local monitoring
+                            </option>
+                            <option value="Sync paused">Sync paused</option>
+                          </select>
+                        </td>
+
+                        <td className="right">
+                          <button
+                            type="button"
+                            className="rowAction"
+                            disabled={savingBranchId === String(item.branch_id)}
+                            onClick={() => saveBranch(item.branch_id)}
+                          >
+                            {savingBranchId === String(item.branch_id)
+                              ? "Saving..."
+                              : "Save"}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  }}
+                />
+              )}
+            </Card>
+
+            <Card
+              className="settingsPanel rolePanel"
+              title="Role Access Overview"
+              subtitle="Role-based access rules used by protected pages and branch-aware workflows."
+            >
+              <Table
+                columns={ROLE_COLUMNS}
+                data={roles}
+                emptyText="No roles found."
+                density="comfortable"
+                variant="minimal"
+                className="settingsTable roleTable"
+                renderRow={(item) => (
+                  <tr key={item.role}>
+                    <td>
+                      <RoleBadge role={item.role} />
+                    </td>
+                    <td>{item.access}</td>
+                    <td>{item.branch_rule}</td>
+                    <td>{item.notes}</td>
+                  </tr>
+                )}
+              />
+            </Card>
+          </section>
+
+          <section className="rulesGrid">
+            {groupedSettings.map((group) => (
+              <Card
+                key={group.category}
+                className="settingsPanel rulePanel"
+                title={group.category}
+                subtitle="Toggle backend-managed system rule flags."
+              >
+                <div className="settingsList">
+                  {group.items.map((setting) => (
+                    <SettingRow
+                      key={setting.setting_key}
+                      setting={setting}
+                      saving={savingKey === setting.setting_key}
+                      onToggle={() => toggleSetting(setting)}
+                    />
+                  ))}
+                </div>
+              </Card>
+            ))}
+          </section>
+        </>
+      )}
 
       <style jsx>{`
         .page {
@@ -356,6 +512,13 @@ export default function AdminSettingsPage() {
           flex: 0 0 150px;
         }
 
+        .headerActions > :global(button) {
+          width: auto;
+          min-width: 0;
+          min-height: 34px;
+          border-radius: var(--radius-md) !important;
+        }
+
         .notice,
         .warningNotice {
           display: grid;
@@ -385,6 +548,12 @@ export default function AdminSettingsPage() {
           font-weight: 600;
         }
 
+        .errorText {
+          color: var(--color-danger);
+          font-size: var(--text-sm);
+          font-weight: 500;
+        }
+
         .statsRow {
           display: grid;
           grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -393,19 +562,99 @@ export default function AdminSettingsPage() {
 
         .contentGrid {
           display: grid;
-          grid-template-columns: 0.9fr 1.1fr;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
           gap: 18px;
-          align-items: start;
+          align-items: stretch;
         }
 
         .rulesGrid {
           display: grid;
           grid-template-columns: repeat(2, minmax(0, 1fr));
           gap: 18px;
+          align-items: stretch;
+        }
+
+        .contentGrid > :global(.settingsPanel),
+        .rulesGrid > :global(.settingsPanel) {
+          height: 100%;
+          display: flex;
+          flex-direction: column;
+        }
+
+        .contentGrid > :global(.settingsPanel .body),
+        .rulesGrid > :global(.settingsPanel .body) {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          min-height: 0;
+        }
+
+        .contentGrid > :global(.settingsPanel .body > div),
+        .rulesGrid > :global(.settingsPanel .body > div) {
+          flex: 1;
+        }
+
+        .settingsList {
+          display: grid;
+          gap: 12px;
+          align-content: start;
+        }
+
+        .tableInput,
+        .tableSelect {
+          width: 100%;
+          min-height: 32px;
+          border: 1px solid var(--color-border-soft);
+          border-radius: var(--radius-md);
+          background: var(--color-surface);
+          color: var(--color-text-primary);
+          padding: 0 10px;
+          font-size: var(--text-xs);
+          outline: none;
+        }
+
+        .tableInput:focus,
+        .tableSelect:focus {
+          border-color: var(--color-brand-border);
+          box-shadow: 0 0 0 3px var(--color-brand-bg);
+        }
+
+        .rowAction {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-height: 30px;
+          padding: 0 10px;
+          border: 1px solid var(--color-border-soft);
+          border-radius: var(--radius-md);
+          background: var(--color-surface);
+          color: var(--color-text-primary);
+          font-size: var(--text-xs);
+          font-weight: 500;
+          cursor: pointer;
+          white-space: nowrap;
+        }
+
+        .rowAction:hover {
+          background: var(--color-overlay);
+          color: var(--color-brand);
+        }
+
+        .rowAction:disabled {
+          opacity: 0.55;
+          cursor: not-allowed;
+        }
+
+        :global(.right) {
+          text-align: right;
+        }
+
+        :global(.settingsTable) {
+          width: 100%;
         }
 
         :global(.settingsTable table) {
-          min-width: 640px;
+          min-width: 820px;
         }
 
         :global(.roleTable table) {
@@ -417,6 +666,11 @@ export default function AdminSettingsPage() {
           .contentGrid,
           .rulesGrid {
             grid-template-columns: 1fr;
+          }
+
+          .contentGrid > :global(.settingsPanel),
+          .rulesGrid > :global(.settingsPanel) {
+            height: auto;
           }
         }
 
@@ -430,7 +684,8 @@ export default function AdminSettingsPage() {
             justify-content: flex-start;
           }
 
-          .headerActions :global(.branchSelect) {
+          .headerActions :global(.branchSelect),
+          .headerActions > :global(button) {
             width: 100%;
             min-width: 0;
             flex: 1 1 100%;
@@ -441,79 +696,112 @@ export default function AdminSettingsPage() {
   );
 }
 
-function RuleCard({ title, items, variant = "brand" }) {
+function SettingRow({ setting, saving, onToggle }) {
   return (
-    <section className={`ruleCard ${variant}`}>
-      <div className="ruleHeader">
-        <h2>{title}</h2>
-        <Badge variant={variant} size="sm">
-          Rule
-        </Badge>
+    <div className="settingRow">
+      <div className="settingText">
+        <div className="settingTitle">
+          <strong>{setting.label}</strong>
+          <Badge variant={setting.enabled ? "success" : "danger"} size="sm">
+            {setting.enabled ? "Enabled" : "Disabled"}
+          </Badge>
+        </div>
+
+        <p>{setting.description}</p>
       </div>
 
-      <ul>
-        {items.map((item) => (
-          <li key={item}>{item}</li>
-        ))}
-      </ul>
+      <button
+        type="button"
+        className={setting.enabled ? "toggle active" : "toggle"}
+        disabled={saving}
+        onClick={onToggle}
+        aria-label={`Toggle ${setting.label}`}
+      >
+        <span />
+      </button>
 
       <style jsx>{`
-        .ruleCard {
+        .settingRow {
           display: grid;
-          gap: 12px;
-          padding: 16px;
-          border-radius: var(--radius-lg);
-          background: var(--color-surface);
+          grid-template-columns: minmax(0, 1fr) 48px;
+          gap: 14px;
+          align-items: center;
+          padding: 13px;
           border: 1px solid var(--color-border-soft);
-          box-shadow: var(--shadow-xs);
+          border-radius: var(--radius-md);
+          background: var(--color-overlay);
         }
 
-        .ruleCard.brand {
-          border-color: var(--color-brand-border);
+        .settingText {
+          display: grid;
+          gap: 6px;
+          min-width: 0;
         }
 
-        .ruleCard.info {
-          border-color: var(--color-info-border);
-        }
-
-        .ruleCard.success {
-          border-color: var(--color-success-border);
-        }
-
-        .ruleCard.warning {
-          border-color: var(--color-warning-border);
-        }
-
-        .ruleHeader {
+        .settingTitle {
           display: flex;
           align-items: center;
-          justify-content: space-between;
-          gap: 12px;
-        }
-
-        h2 {
-          margin: 0;
-          color: var(--color-text-primary);
-          font-size: var(--text-sm);
-          font-weight: 600;
-          letter-spacing: -0.01em;
-        }
-
-        ul {
-          display: grid;
           gap: 8px;
-          margin: 0;
-          padding-left: 18px;
-          color: var(--color-text-secondary);
+          flex-wrap: wrap;
+        }
+
+        strong {
+          color: var(--color-text-primary);
           font-size: var(--text-xs);
+          font-weight: 600;
+          line-height: 1.4;
+        }
+
+        p {
+          margin: 0;
+          color: var(--color-text-secondary);
+          font-size: 11px;
           line-height: 1.5;
         }
 
-        li::marker {
-          color: var(--color-text-muted);
+        .toggle {
+          width: 46px;
+          height: 26px;
+          border: 1px solid var(--color-border-soft);
+          border-radius: var(--radius-full);
+          background: var(--color-surface);
+          padding: 2px;
+          display: flex;
+          align-items: center;
+          justify-content: flex-start;
+          cursor: pointer;
+          transition:
+            background-color var(--transition-base),
+            border-color var(--transition-base),
+            opacity var(--transition-base);
+        }
+
+        .toggle span {
+          width: 20px;
+          height: 20px;
+          border-radius: var(--radius-full);
+          background: var(--color-text-muted);
+          transition:
+            transform var(--transition-base),
+            background-color var(--transition-base);
+        }
+
+        .toggle.active {
+          background: var(--color-success-bg);
+          border-color: var(--color-success-border);
+        }
+
+        .toggle.active span {
+          transform: translateX(20px);
+          background: var(--color-success);
+        }
+
+        .toggle:disabled {
+          opacity: 0.55;
+          cursor: not-allowed;
         }
       `}</style>
-    </section>
+    </div>
   );
 }
 

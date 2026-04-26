@@ -175,6 +175,20 @@ export const apiClient = {
       body: JSON.stringify(payload),
     }),
 
+  getAdminSettings: () => request("/api/admin/settings"),
+
+  updateAdminSetting: (payload) =>
+    request("/api/admin/settings", {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+
+  updateAdminBranch: (branchId, payload) =>
+    request(`/api/admin/branches/${branchId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+
   getLabTechWorkflow: () => request("/api/lab-tech/workflow"),
 
   classify: (fd) =>
