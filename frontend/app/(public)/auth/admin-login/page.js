@@ -3,7 +3,12 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft } from "phosphor-react";
-import { apiClient, saveAuthSession } from "@/services/apiClient";
+import {
+  apiClient,
+  clearAuthSession,
+  isInactivePayload,
+  saveAuthSession,
+} from "@/services/apiClient";
 
 export default function AdminLoginPage() {
   const router = useRouter();
@@ -14,6 +19,7 @@ export default function AdminLoginPage() {
   });
 
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   function handleChange(e) {
     const { name, value } = e.target;
@@ -29,11 +35,21 @@ export default function AdminLoginPage() {
   async function handleSubmit(e) {
     e.preventDefault();
     setError("");
+    setSubmitting(true);
 
     try {
       const payload = await apiClient.login(form.email, form.password);
 
+      if (isInactivePayload(payload)) {
+        clearAuthSession();
+        setError(
+          "This administrator account has been deactivated. Please contact the system administrator.",
+        );
+        return;
+      }
+
       if (payload.role !== "Administrator") {
+        clearAuthSession();
         setError("This login is for administrators only.");
         return;
       }
@@ -41,7 +57,10 @@ export default function AdminLoginPage() {
       saveAuthSession(payload);
       router.push("/admin");
     } catch (err) {
+      clearAuthSession();
       setError(err.message || "Invalid admin credentials.");
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -74,6 +93,7 @@ export default function AdminLoginPage() {
                 value={form.email}
                 onChange={handleChange}
                 placeholder="admin@matriq.com"
+                required
               />
             </div>
 
@@ -86,13 +106,18 @@ export default function AdminLoginPage() {
                 value={form.password}
                 onChange={handleChange}
                 placeholder="Enter password"
+                required
               />
             </div>
 
             {error && <p className="error">{error}</p>}
 
-            <button type="submit" className="submitButton">
-              Login
+            <button
+              type="submit"
+              className="submitButton"
+              disabled={submitting}
+            >
+              {submitting ? "Logging in..." : "Login"}
             </button>
           </form>
         </div>
@@ -187,12 +212,12 @@ export default function AdminLoginPage() {
           padding: 0 14px;
           font-size: 14px;
           outline: none;
-          color: #222222; /* darker text */
+          color: #222222;
           background: #ffffff;
         }
 
         input::placeholder {
-          color: #9ca3af; /* softer gray for placeholder */
+          color: #9ca3af;
         }
 
         input:hover {
@@ -207,6 +232,7 @@ export default function AdminLoginPage() {
         .error {
           color: #dc2626;
           font-size: 12px;
+          line-height: 1.45;
         }
 
         .submitButton {
@@ -221,13 +247,19 @@ export default function AdminLoginPage() {
           margin-top: 4px;
         }
 
-        .submitButton:hover {
-          background: #14004a; /* slightly lighter */
+        .submitButton:hover:not(:disabled) {
+          background: #14004a;
           transform: translateY(-1px);
         }
 
         .submitButton:active {
           transform: translateY(0);
+        }
+
+        .submitButton:disabled {
+          opacity: 0.65;
+          cursor: not-allowed;
+          transform: none;
         }
       `}</style>
     </>

@@ -1,10 +1,32 @@
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000";
 
+export function isInactivePayload(payload) {
+  if (!payload) return true;
+
+  if (typeof payload.is_active === "boolean") {
+    return payload.is_active === false;
+  }
+
+  if (typeof payload.active === "boolean") {
+    return payload.active === false;
+  }
+
+  const status = String(payload.status || payload.account_status || "")
+    .trim()
+    .toLowerCase();
+
+  if (!status) return false;
+
+  return ["inactive", "disabled", "deactivated", "suspended"].includes(status);
+}
+
 export function saveAuthSession(payload) {
   if (typeof window === "undefined") return;
+
   localStorage.setItem("token", payload.access_token);
   localStorage.setItem("access_token", payload.access_token);
+
   localStorage.setItem(
     "user",
     JSON.stringify({
@@ -13,18 +35,34 @@ export function saveAuthSession(payload) {
       name: payload.name,
       user_id: payload.user_id,
       branch_id: payload.branch_id,
+
+      // Account status fields used by AppShell route protection.
+      is_active: payload.is_active,
+      active: payload.active,
+      status: payload.status,
+      account_status: payload.account_status,
     }),
   );
 }
 
 export function getStoredUser() {
   if (typeof window === "undefined") return null;
+
   const raw = localStorage.getItem("user");
-  return raw ? JSON.parse(raw) : null;
+
+  if (!raw) return null;
+
+  try {
+    return JSON.parse(raw);
+  } catch {
+    clearAuthSession();
+    return null;
+  }
 }
 
 export function clearAuthSession() {
   if (typeof window === "undefined") return;
+
   localStorage.removeItem("access_token");
   localStorage.removeItem("token");
   localStorage.removeItem("user");
@@ -32,6 +70,7 @@ export function clearAuthSession() {
 
 function getAuthToken() {
   if (typeof window === "undefined") return null;
+
   return (
     localStorage.getItem("access_token") ||
     localStorage.getItem("token") ||
@@ -41,6 +80,7 @@ function getAuthToken() {
 
 function extractError(payload) {
   if (typeof payload === "string") return payload;
+
   return (
     payload?.error?.message ||
     payload?.detail ||
@@ -73,9 +113,14 @@ async function request(path, options = {}) {
 
   if (!res.ok) {
     const message = extractError(payload);
-    if (res.status === 401 && typeof window !== "undefined") {
+
+    if (
+      (res.status === 401 || res.status === 403) &&
+      typeof window !== "undefined"
+    ) {
       clearAuthSession();
     }
+
     throw new Error(message);
   }
 
@@ -97,6 +142,7 @@ export const apiClient = {
   getAccountingDashboard: () => request("/api/accounting/dashboard"),
   getAccountingBilling: () => request("/api/accounting/billing"),
   getAccountingInvoices: () => request("/api/accounting/invoices"),
+
   createInvoice: (payload) =>
     request("/api/accounting/invoices", {
       method: "POST",
@@ -110,6 +156,25 @@ export const apiClient = {
     }),
 
   getUsers: () => request("/api/users"),
+
+  createUser: (payload) =>
+    request("/api/users", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  updateUser: (userId, payload) =>
+    request(`/api/users/${userId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+
+  updateUserStatus: (userId, payload) =>
+    request(`/api/users/${userId}/status`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+
   getLabTechWorkflow: () => request("/api/lab-tech/workflow"),
 
   classify: (fd) =>

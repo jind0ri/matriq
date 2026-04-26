@@ -3,7 +3,12 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft } from "phosphor-react";
-import { apiClient, saveAuthSession } from "@/services/apiClient";
+import {
+  apiClient,
+  clearAuthSession,
+  isInactivePayload,
+  saveAuthSession,
+} from "@/services/apiClient";
 
 export default function Page() {
   const router = useRouter();
@@ -14,17 +19,26 @@ export default function Page() {
   });
 
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   async function submit(e) {
     e.preventDefault();
     setError("");
+    setSubmitting(true);
 
     try {
       const payload = await apiClient.login(form.email, form.password);
 
+      if (isInactivePayload(payload)) {
+        clearAuthSession();
+        setError(
+          "This account has been deactivated. Please contact the administrator.",
+        );
+        return;
+      }
+
       saveAuthSession(payload);
 
-      // 🔑 Explicit RBAC redirect
       if (payload.role === "Accounting Staff") {
         router.push("/accounting");
         return;
@@ -44,10 +58,12 @@ export default function Page() {
         return;
       }
 
-      // fallback
       router.push("/auth/access-select");
     } catch (err) {
+      clearAuthSession();
       setError(err.message || "Invalid credentials.");
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -76,10 +92,9 @@ export default function Page() {
               <input
                 type="email"
                 value={form.email}
-                onChange={(e) =>
-                  setForm({ ...form, email: e.target.value })
-                }
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
                 placeholder="employee@matriq.com"
+                required
               />
             </div>
 
@@ -92,13 +107,18 @@ export default function Page() {
                   setForm({ ...form, password: e.target.value })
                 }
                 placeholder="Enter password"
+                required
               />
             </div>
 
             {error && <p className="error">{error}</p>}
 
-            <button type="submit" className="submitButton">
-              Login
+            <button
+              type="submit"
+              className="submitButton"
+              disabled={submitting}
+            >
+              {submitting ? "Logging in..." : "Login"}
             </button>
           </form>
 
@@ -201,6 +221,7 @@ export default function Page() {
         .error {
           color: #dc2626;
           font-size: 12px;
+          line-height: 1.45;
         }
 
         .submitButton {
@@ -212,6 +233,11 @@ export default function Page() {
           font-size: 14px;
           font-weight: 700;
           cursor: pointer;
+        }
+
+        .submitButton:disabled {
+          opacity: 0.65;
+          cursor: not-allowed;
         }
 
         .demoBox {

@@ -15,11 +15,33 @@ function getBranchName(branchId) {
   return BRANCH_NAMES[normalizedBranchId] || "Unknown Branch";
 }
 
-export default function AppShell({
-  children,
-  allowedRoles = [],
-  branch,
-}) {
+function clearStoredSession() {
+  localStorage.removeItem("user");
+  localStorage.removeItem("token");
+  localStorage.removeItem("access_token");
+}
+
+function isInactiveUser(user) {
+  if (!user) return true;
+
+  if (typeof user.is_active === "boolean") {
+    return user.is_active === false;
+  }
+
+  if (typeof user.active === "boolean") {
+    return user.active === false;
+  }
+
+  const status = String(user.status || user.account_status || "")
+    .trim()
+    .toLowerCase();
+
+  if (!status) return false;
+
+  return ["inactive", "disabled", "deactivated", "suspended"].includes(status);
+}
+
+export default function AppShell({ children, allowedRoles = [], branch }) {
   const router = useRouter();
 
   const [user, setUser] = useState(null);
@@ -30,6 +52,7 @@ export default function AppShell({
     const stored = localStorage.getItem("user");
 
     if (!stored) {
+      clearStoredSession();
       router.push("/auth/access-select");
       return;
     }
@@ -39,10 +62,14 @@ export default function AppShell({
     try {
       parsed = JSON.parse(stored);
     } catch {
-      localStorage.removeItem("user");
-      localStorage.removeItem("token");
-      localStorage.removeItem("access_token");
+      clearStoredSession();
       router.push("/auth/access-select");
+      return;
+    }
+
+    if (isInactiveUser(parsed)) {
+      clearStoredSession();
+      router.push("/auth/access-select?reason=deactivated");
       return;
     }
 
@@ -56,9 +83,7 @@ export default function AppShell({
   }, [allowedRoles, router]);
 
   function handleLogout() {
-    localStorage.removeItem("user");
-    localStorage.removeItem("token");
-    localStorage.removeItem("access_token");
+    clearStoredSession();
     router.push("/auth/access-select");
   }
 
@@ -89,7 +114,7 @@ export default function AppShell({
       <style jsx>{`
         .shell {
           min-height: 100vh;
-          background: #f2f3f5;
+          background: var(--color-background);
         }
 
         .mainArea {
