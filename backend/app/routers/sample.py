@@ -16,6 +16,7 @@ from ..config import (
     ROLE_LAB_TECH,
 )
 from ..config import SUPABASE_URL, SUPABASE_SERVICE_KEY, SUPABASE_BUCKET
+from ..database import fetchall
 from ..schemas import SampleRegistrationRequest
 from ..services.audit_service import log_event
 from ..services.auth_service import require_roles
@@ -76,7 +77,7 @@ def require_one_of(value, field_name, allowed_values):
 def get_threshold(payload, *field_names):
     """
     Returns the first available numeric threshold from multiple possible field names.
-    This lets the backend support both your old frontend field names and newer ones.
+    This lets the backend support both older frontend field names and newer ones.
     """
     for field in field_names:
         if not is_blank(payload.get(field)):
@@ -88,6 +89,109 @@ def normalize_observation(value):
     if value is None:
         return ""
     return str(value).strip().lower().replace(" ", "_").replace("-", "_")
+
+
+def get_user_name_map():
+    rows = fetchall(
+        """
+        SELECT
+            user_id,
+            full_name,
+            username
+        FROM users
+        """
+    )
+
+    names = {}
+
+    for row in rows:
+        user_id = row.get("user_id")
+        if user_id is None:
+            continue
+
+        display_name = row.get("full_name") or row.get("username") or f"User {user_id}"
+        names[str(user_id)] = display_name
+
+    return names
+
+
+def resolve_user_name(user_id, user_names):
+    if user_id is None or user_id == "":
+        return None
+
+    return user_names.get(str(user_id), f"User {user_id}")
+
+
+def attach_user_name(target, source_key, user_names):
+    if not isinstance(target, dict):
+        return
+
+    user_id = target.get(source_key)
+    display_name = resolve_user_name(user_id, user_names)
+
+    if not display_name:
+        return
+
+    target[f"{source_key}_name"] = display_name
+    target[f"{source_key}_display"] = display_name
+    target[f"{source_key}_full_name"] = display_name
+
+
+def hydrate_sample_user_names(item, user_names=None):
+    if not item:
+        return item
+
+    if user_names is None:
+        user_names = get_user_name_map()
+
+    hydrated = dict(item)
+
+    attach_user_name(hydrated, "registered_by", user_names)
+
+    metadata = hydrated.get("device_metadata") or {}
+
+    if isinstance(metadata, str):
+        try:
+            metadata = json.loads(metadata)
+        except Exception:
+            metadata = {}
+
+    payment = metadata.get("payment") or {}
+    qa = metadata.get("qa") or {}
+    test_data = metadata.get("test_data") or {}
+
+    attach_user_name(payment, "payment_updated_by", user_names)
+
+    payment_history = payment.get("payment_history") or []
+    if isinstance(payment_history, list):
+        for entry in payment_history:
+            if isinstance(entry, dict):
+                attach_user_name(entry, "updated_by", user_names)
+
+    attach_user_name(qa, "pre_testing_reviewed_by", user_names)
+    attach_user_name(qa, "result_reviewed_by", user_names)
+    attach_user_name(qa, "release_reviewed_by", user_names)
+
+    attach_user_name(test_data, "entered_by", user_names)
+
+    qa_override = test_data.get("qa_override") or {}
+    attach_user_name(qa_override, "overridden_by", user_names)
+
+    if qa_override:
+        test_data["qa_override"] = qa_override
+
+    metadata["test_data"] = test_data
+    metadata["payment"] = payment
+    metadata["qa"] = qa
+
+    hydrated["device_metadata"] = metadata
+
+    return hydrated
+
+
+def hydrate_samples_user_names(items):
+    user_names = get_user_name_map()
+    return [hydrate_sample_user_names(item, user_names) for item in items]
 
 
 # ============================================================
@@ -791,7 +895,7 @@ def create_sample(
         notes=None,
     )
 
-    sample = get_sample(sample["sample_id"])
+    sample = hydrate_sample_user_names(get_sample(sample["sample_id"]))
 
     log_event(
         action="CREATE_SAMPLE",
@@ -818,7 +922,7 @@ def samples(
         )
     ),
 ):
-    data = list_samples()
+    data = hydrate_samples_user_names(list_samples())
 
     log_event(
         action="LIST_SAMPLES",
@@ -928,7 +1032,7 @@ def sample_image(
 def qa_pre_testing_queue(
     current_user=Depends(require_roles(ROLE_QA, ROLE_ADMIN)),
 ):
-    data = list_samples()
+    data = hydrate_samples_user_names(list_samples())
     output = []
 
     allowed_payment = {"Downpayment Paid", "PO Submitted", "Fully Paid"}
@@ -952,7 +1056,7 @@ def qa_pre_testing_queue(
 def qa_release_queue(
     current_user=Depends(require_roles(ROLE_QA, ROLE_ADMIN)),
 ):
-    data = list_samples()
+    data = hydrate_samples_user_names(list_samples())
     output = []
 
     for item in data:
@@ -1011,7 +1115,7 @@ def qa_pretesting_review(
         ip_address=request.client.host if request.client else None,
     )
 
-    return get_sample(sample_id)
+    return hydrate_sample_user_names(get_sample(sample_id))
 
 
 @router.patch("/samples/{sample_id}/qa-result-override")
@@ -1128,7 +1232,8 @@ def qa_result_override(
         ip_address=request.client.host if request.client else None,
     )
 
-    return get_sample(sample_id)
+    return hydrate_sample_user_names(get_sample(sample_id))
+
 
 @router.patch("/samples/{sample_id}/qa-release")
 def qa_release_review(
@@ -1194,7 +1299,7 @@ def qa_release_review(
         ip_address=request.client.host if request.client else None,
     )
 
-    return get_sample(sample_id)
+    return hydrate_sample_user_names(get_sample(sample_id))
 
 
 # ============================================================
@@ -1205,7 +1310,7 @@ def qa_release_review(
 def lab_tech_workflow_queue(
     current_user=Depends(require_roles(ROLE_LAB_TECH, ROLE_ADMIN)),
 ):
-    data = list_samples()
+    data = hydrate_samples_user_names(list_samples())
     ready_for_testing = []
     in_testing = []
 
@@ -1254,6 +1359,8 @@ def sample_detail(
     if not item:
         raise HTTPException(status_code=404, detail="Sample not found")
 
+    hydrated_item = hydrate_sample_user_names(item)
+
     log_event(
         action="VIEW_SAMPLE",
         endpoint_accessed=f"/api/samples/{sample_id}",
@@ -1263,7 +1370,7 @@ def sample_detail(
         ip_address=request.client.host if request.client else None,
     )
 
-    return item
+    return hydrated_item
 
 
 @router.get("/reviews")
@@ -1273,7 +1380,7 @@ def reviews(
         require_roles(ROLE_LAB_TECH, ROLE_SENIOR_TECH, ROLE_QA, ROLE_ADMIN)
     ),
 ):
-    data = list_reviews()
+    data = hydrate_samples_user_names(list_reviews())
 
     log_event(
         action="LIST_REVIEWS",
@@ -1300,6 +1407,9 @@ def technical_dashboard(
     ),
 ):
     data = dashboard()
+
+    if isinstance(data.get("recent_samples"), list):
+        data["recent_samples"] = hydrate_samples_user_names(data["recent_samples"])
 
     log_event(
         action="VIEW_DASHBOARD",
@@ -1398,7 +1508,7 @@ def update_test_data(
         ip_address=request.client.host if request.client else None,
     )
 
-    return get_sample(sample_id)
+    return hydrate_sample_user_names(get_sample(sample_id))
 
 
 # ============================================================
@@ -1487,6 +1597,11 @@ def update_sample_status(
         if not test_data and role != ROLE_ADMIN:
             raise HTTPException(status_code=400, detail="Test data is required before release")
 
+        metadata["qa"] = metadata.get("qa") or {}
+        metadata["qa"]["release_reviewed"] = True
+        metadata["qa"]["release_reviewed_by"] = current_user["user_id"]
+        metadata["qa"]["release_reviewed_at"] = datetime.now().isoformat()
+
     elif new_state == "Archived":
         if role not in {ROLE_QA, ROLE_ADMIN}:
             raise HTTPException(status_code=403, detail="Only QA or Admin can archive samples")
@@ -1510,6 +1625,7 @@ def update_sample_status(
             current_state = %s,
             is_immutable = %s,
             decision = %s,
+            device_metadata = %s,
             updated_at = CURRENT_TIMESTAMP
         WHERE sample_id = %s
         """,
@@ -1518,11 +1634,12 @@ def update_sample_status(
             new_state,
             is_immutable,
             new_state,
+            json.dumps(metadata),
             sample_id,
         ),
     )
 
-    updated = get_sample(sample_id)
+    updated = hydrate_sample_user_names(get_sample(sample_id))
 
     log_event(
         action="UPDATE_SAMPLE_STATUS",

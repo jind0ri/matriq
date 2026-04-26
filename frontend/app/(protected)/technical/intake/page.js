@@ -1,23 +1,36 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { ArrowLeft, Camera, Sparkle } from "phosphor-react";
+import { useEffect, useMemo, useState } from "react";
+import { Camera, Sparkle } from "phosphor-react";
 import { useRouter } from "next/navigation";
+
+import Badge from "@/components/ui/Badge";
+import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 import Input from "@/components/ui/Input";
-import Button from "@/components/ui/Button";
+import Select from "@/components/ui/Select";
+import Textarea from "@/components/ui/Textarea";
 import { apiClient, getStoredUser } from "@/services/apiClient";
+
+const BRANCH_LABELS = {
+  1: "Main Laboratory - Marikina",
+  2: "Pateros Branch",
+};
+
+const INITIAL_PAYMENT_REQUIREMENT = "50% Downpayment or Full Payment";
 
 export default function Page() {
   const router = useRouter();
   const user = getStoredUser();
 
   const userBranchId = Number(user?.branch_id || 1);
-
-  const branchLabelMap = {
-    1: "Main Laboratory - Marikina",
-    2: "Pateros Branch",
-  };
+  const branchLabel = BRANCH_LABELS[userBranchId] || `Branch ${userBranchId}`;
+  const staffName =
+    user?.full_name ||
+    user?.name ||
+    user?.username ||
+    user?.email ||
+    "Current User";
 
   const [form, setForm] = useState({
     clientName: "",
@@ -25,12 +38,12 @@ export default function Page() {
     projectId: "",
     structureDetails: "",
     requestedTestType: "",
-    branchLabel: branchLabelMap[userBranchId] || `Branch ${userBranchId}`,
+    branchLabel,
     branchId: userBranchId,
-    staff: user?.name || "Current User",
+    staff: staffName,
 
     clientType: "Walk-in",
-    paymentRequirement: "50% Downpayment or Full Payment",
+    paymentRequirement: INITIAL_PAYMENT_REQUIREMENT,
     paymentStatus: "Unpaid",
     amountPaid: "",
     balance: "",
@@ -52,6 +65,15 @@ export default function Page() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   useEffect(() => {
+    setForm((prev) => ({
+      ...prev,
+      branchLabel,
+      branchId: userBranchId,
+      staff: staffName,
+    }));
+  }, [branchLabel, userBranchId, staffName]);
+
+  useEffect(() => {
     if (!form.file) {
       setPreviewUrl("");
       return;
@@ -63,6 +85,45 @@ export default function Page() {
     return () => URL.revokeObjectURL(url);
   }, [form.file]);
 
+  const createdSampleId = result?.sample_registration?.sample_id;
+
+  const confidencePercent =
+    result?.confidence_score !== undefined
+      ? Math.round(Number(result.confidence_score) * 100)
+      : null;
+
+  const missingRequiredFields = useMemo(() => {
+    const missing = [];
+
+    if (!form.clientName.trim()) missing.push("Client / Contractor");
+    if (!form.projectId.trim()) missing.push("Project Identifier");
+    if (!form.requestedTestType.trim()) missing.push("Requested Test Type");
+    if (!form.clientType) missing.push("Client Type");
+    if (!form.paymentRequirement) missing.push("Payment Requirement");
+    if (!form.paymentStatus) missing.push("Payment Status");
+    if (!form.actualSampleChecked) missing.push("Actual Sample Checked");
+    if (!form.file) missing.push("Sample Image");
+    if (!form.amountPaid.trim()) missing.push("Amount Paid");
+
+    return missing;
+  }, [
+    form.clientName,
+    form.projectId,
+    form.requestedTestType,
+    form.clientType,
+    form.paymentRequirement,
+    form.paymentStatus,
+    form.amountPaid,
+    form.actualSampleChecked,
+    form.file,
+  ]);
+
+  const canAnalyze = useMemo(() => {
+    return (
+      !isAnalyzing && missingRequiredFields.length === 0 && !createdSampleId
+    );
+  }, [isAnalyzing, missingRequiredFields.length, createdSampleId]);
+
   function updateForm(nextValues) {
     setForm((prev) => ({ ...prev, ...nextValues }));
     setResult(null);
@@ -70,7 +131,7 @@ export default function Page() {
   }
 
   async function analyze() {
-    if (isAnalyzing || result?.sample_registration?.sample_id) return;
+    if (!canAnalyze) return;
 
     setError("");
     setIsAnalyzing(true);
@@ -122,220 +183,258 @@ export default function Page() {
     try {
       const response = await apiClient.classify(fd);
       setResult(response.classification);
-    } catch (e) {
-      setError(e.message || "Classification failed.");
+    } catch (err) {
+      setError(err.message || "Classification failed.");
     } finally {
       setIsAnalyzing(false);
     }
   }
 
-  const createdSampleId = result?.sample_registration?.sample_id;
-  const confidencePercent =
-    result?.confidence_score !== undefined
-      ? Math.round(Number(result.confidence_score) * 100)
-      : null;
+  function goToCreatedSample() {
+    if (!createdSampleId) return;
+    router.push(`/technical/tracking/${createdSampleId}`);
+  }
 
   return (
-    <>
-      <div className="page">
-        <div className="titleRow">
-          <button
-            className="backButton"
-            onClick={() => router.push("/technical")}
-          >
-            <ArrowLeft size={28} />
-          </button>
+    <div className="page">
+      <header className="header">
+        <div>
+          <h1>Sample Intake</h1>
+          <p>
+            Register TRF, payment, inspection, and AI classification details for{" "}
+            <strong>{form.branchLabel}</strong>.
+          </p>
+        </div>
+      </header>
 
-          <div className="pageHeader">
-            <h1>SAMPLE INTAKE TERMINAL</h1>
-            <p>
-              Register TRF, payment, sample slip, and AI classification data.
-            </p>
-          </div>
+      <section className="statusStrip">
+        <div>
+          <span>Branch</span>
+          <strong>{form.branchLabel}</strong>
         </div>
 
-        <div className="grid">
+        <div>
+          <span>Terminal Staff</span>
+          <strong>{form.staff}</strong>
+        </div>
+
+        <div>
+          <span>Status</span>
+          <strong>{createdSampleId ? "Sample Created" : "Draft Intake"}</strong>
+        </div>
+      </section>
+
+      <div className="grid">
+        <section className="mainColumn">
           <Card
             title="Client & TRF Metadata"
-            subtitle="Capture test request form details for sample registration."
+            subtitle="Capture the request form details used for registration."
           >
-            <div className="form">
+            <div className="formGrid">
               <Input
                 label="Client / Contractor"
                 value={form.clientName}
-                onChange={(e) => updateForm({ clientName: e.target.value })}
+                required
+                onChange={(event) =>
+                  updateForm({ clientName: event.target.value })
+                }
               />
 
               <Input
                 label="Client Address"
                 value={form.clientAddress}
-                onChange={(e) => updateForm({ clientAddress: e.target.value })}
+                onChange={(event) =>
+                  updateForm({ clientAddress: event.target.value })
+                }
               />
 
               <Input
                 label="Project Identifier"
                 value={form.projectId}
-                onChange={(e) => updateForm({ projectId: e.target.value })}
-              />
-
-              <Input
-                label="Structure / Design Details"
-                value={form.structureDetails}
-                onChange={(e) =>
-                  updateForm({ structureDetails: e.target.value })
+                required
+                onChange={(event) =>
+                  updateForm({ projectId: event.target.value })
                 }
-                placeholder="e.g. SLAB 3000 psi @ 7 days"
               />
 
               <Input
                 label="Requested Test Type"
                 value={form.requestedTestType}
-                onChange={(e) =>
-                  updateForm({ requestedTestType: e.target.value })
+                required
+                onChange={(event) =>
+                  updateForm({ requestedTestType: event.target.value })
                 }
                 placeholder="e.g. Concrete Compression Test"
+              />
+
+              <Textarea
+                label="Structure / Design Details"
+                value={form.structureDetails}
+                onChange={(event) =>
+                  updateForm({ structureDetails: event.target.value })
+                }
+                placeholder="e.g. SLAB 3000 psi @ 7 days"
+                rows={3}
               />
 
               <Input
                 label="Registry Branch"
                 value={form.branchLabel}
-                onChange={() => {}}
                 readOnly
               />
 
-              <Input
-                label="Terminal Staff"
-                value={form.staff}
-                onChange={() => {}}
-                readOnly
-              />
+              <Input label="Terminal Staff" value={form.staff} readOnly />
             </div>
           </Card>
 
           <Card
             title="Payment Information"
-            subtitle="Record payment requirement before testing and release."
+            subtitle="Record the payment condition before testing and release."
           >
-            <div className="form">
-              <label className="field">
-                <span>Client Type</span>
-                <select
-                  value={form.clientType}
-                  onChange={(e) => updateForm({ clientType: e.target.value })}
-                >
-                  <option>Walk-in</option>
-                  <option>Quotation</option>
-                </select>
-              </label>
+            <div className="formGrid">
+              <Select
+                label="Client Type"
+                name="clientType"
+                value={form.clientType}
+                required
+                onChange={(event) =>
+                  updateForm({ clientType: event.target.value })
+                }
+              >
+                <option value="Walk-in">Walk-in</option>
+                <option value="Quotation">Quotation</option>
+              </Select>
 
-              <label className="field">
-                <span>Payment Method</span>
-                <select
-                  value={form.paymentRequirement}
-                  onChange={(e) =>
-                    updateForm({ paymentRequirement: e.target.value })
-                  }
-                >
-                  <option>50% Downpayment</option>
-                  <option>Full Payment</option>
-                  <option>Purchase Order</option>
-                </select>
-              </label>
+              <Select
+                label="Payment Requirement"
+                name="paymentRequirement"
+                value={form.paymentRequirement}
+                required
+                onChange={(event) =>
+                  updateForm({ paymentRequirement: event.target.value })
+                }
+              >
+                <option value="50% Downpayment or Full Payment">
+                  50% Downpayment or Full Payment
+                </option>
+                <option value="50% Downpayment">50% Downpayment</option>
+                <option value="Full Payment">Full Payment</option>
+                <option value="Purchase Order">Purchase Order</option>
+              </Select>
 
-              <label className="field">
-                <span>Payment Status</span>
-                <select
-                  value={form.paymentStatus}
-                  onChange={(e) =>
-                    updateForm({ paymentStatus: e.target.value })
-                  }
-                >
-                  <option>Unpaid</option>
-                  <option>Downpayment Paid</option>
-                  <option>Purchase Order Provided</option>
-                  <option>Fully Paid</option>
-                </select>
-              </label>
+              <Select
+                label="Payment Status"
+                name="paymentStatus"
+                value={form.paymentStatus}
+                required
+                onChange={(event) =>
+                  updateForm({ paymentStatus: event.target.value })
+                }
+              >
+                <option value="Unpaid">Unpaid</option>
+                <option value="Downpayment Paid">Downpayment Paid</option>
+                <option value="PO Submitted">PO Submitted</option>
+                <option value="Fully Paid">Fully Paid</option>
+              </Select>
 
               <Input
                 label="Amount Paid"
                 value={form.amountPaid}
-                onChange={(e) => updateForm({ amountPaid: e.target.value })}
+                required
+                onChange={(event) =>
+                  updateForm({ amountPaid: event.target.value })
+                }
                 placeholder="e.g. 2500"
               />
 
               <Input
                 label="Balance"
                 value={form.balance}
-                onChange={(e) => updateForm({ balance: e.target.value })}
+                onChange={(event) =>
+                  updateForm({ balance: event.target.value })
+                }
                 placeholder="e.g. 2500"
               />
 
-              <Input
+              <Textarea
                 label="Billing Notes"
                 value={form.billingNotes}
-                onChange={(e) => updateForm({ billingNotes: e.target.value })}
+                onChange={(event) =>
+                  updateForm({ billingNotes: event.target.value })
+                }
+                rows={3}
               />
             </div>
           </Card>
 
           <Card
             title="Lab Tech Test Slip"
-            subtitle="Record physical sample inspection before testing."
+            subtitle="Record physical sample inspection before test encoding."
           >
-            <div className="form">
+            <div className="formGrid">
               <label className="checkField">
                 <input
                   type="checkbox"
                   checked={form.actualSampleChecked}
-                  onChange={(e) =>
-                    updateForm({ actualSampleChecked: e.target.checked })
+                  onChange={(event) =>
+                    updateForm({ actualSampleChecked: event.target.checked })
                   }
                 />
-                <span>Actual sample checked</span>
+                <span>
+                  Actual sample checked <em>Required</em>
+                </span>
               </label>
 
               <Input
                 label="Voids / Cracks Observed"
                 value={form.voidsCracks}
-                onChange={(e) => updateForm({ voidsCracks: e.target.value })}
+                onChange={(event) =>
+                  updateForm({ voidsCracks: event.target.value })
+                }
                 placeholder="e.g. No visible cracks"
               />
 
               <Input
                 label="Weight"
                 value={form.weight}
-                onChange={(e) => updateForm({ weight: e.target.value })}
+                onChange={(event) => updateForm({ weight: event.target.value })}
                 placeholder="e.g. 8.2 kg"
               />
 
               <Input
                 label="Diameter"
                 value={form.diameter}
-                onChange={(e) => updateForm({ diameter: e.target.value })}
+                onChange={(event) =>
+                  updateForm({ diameter: event.target.value })
+                }
                 placeholder="e.g. 150 mm"
               />
 
               <Input
                 label="Reference Test IDs"
                 value={form.referenceTestIds}
-                onChange={(e) =>
-                  updateForm({ referenceTestIds: e.target.value })
+                onChange={(event) =>
+                  updateForm({ referenceTestIds: event.target.value })
                 }
                 placeholder="e.g. CT-001, CT-002"
               />
 
-              <Input
+              <Textarea
                 label="Condition Notes"
                 value={form.conditionNotes}
-                onChange={(e) => updateForm({ conditionNotes: e.target.value })}
+                onChange={(event) =>
+                  updateForm({ conditionNotes: event.target.value })
+                }
+                rows={3}
               />
             </div>
           </Card>
+        </section>
 
+        <aside className="sideColumn">
           <Card
             title="AI Material Identification"
-            subtitle="Upload or capture the sample image for classification."
+            subtitle="Upload the sample image for classification."
           >
             <div className="panel">
               <div className="uploadBox">
@@ -343,8 +442,8 @@ export default function Page() {
                   id="sample-upload"
                   type="file"
                   accept="image/*"
-                  onChange={(e) =>
-                    updateForm({ file: e.target.files?.[0] || null })
+                  onChange={(event) =>
+                    updateForm({ file: event.target.files?.[0] || null })
                   }
                   className="hiddenInput"
                 />
@@ -353,213 +452,279 @@ export default function Page() {
                   <>
                     <img
                       src={previewUrl}
-                      alt="preview"
+                      alt="Selected sample preview"
                       className="previewImage"
                     />
+
                     <label
                       htmlFor="sample-upload"
                       className="uploadTrigger secondaryUpload"
                     >
                       Change Image
                     </label>
+
                     <p className="uploadText">{form.file?.name}</p>
                   </>
                 ) : (
                   <>
                     <div className="cameraIconWrap">
-                      <Camera size={56} />
+                      <Camera size={42} weight="duotone" />
                     </div>
+
                     <label htmlFor="sample-upload" className="uploadTrigger">
                       Upload or Capture Sample
                     </label>
+
                     <p className="uploadText">No image selected yet.</p>
                   </>
                 )}
               </div>
 
-              <div className="actions">
-                <Button
-                  onClick={analyze}
-                  fullWidth
-                  disabled={
-                    isAnalyzing ||
-                    !form.file ||
-                    !form.clientName.trim() ||
-                    !form.projectId.trim() ||
-                    !form.requestedTestType.trim() ||
-                    !!createdSampleId
-                  }
-                >
-                  {isAnalyzing
-                    ? "Analyzing..."
-                    : createdSampleId
-                      ? "Sample Created"
-                      : "Analyze Image"}
-                </Button>
+              {missingRequiredFields.length > 0 && !createdSampleId && (
+                <div className="requiredBox">
+                  <span>Required before analysis</span>
+                  <p>{missingRequiredFields.join(", ")}</p>
+                </div>
+              )}
 
-                {error && <p className="errorText">{error}</p>}
+              <Button
+                onClick={analyze}
+                fullWidth
+                disabled={!canAnalyze}
+                variant={createdSampleId ? "secondary" : "primary"}
+              >
+                {isAnalyzing
+                  ? "Analyzing..."
+                  : createdSampleId
+                    ? "Sample Created"
+                    : "Analyze Image"}
+              </Button>
 
-                {createdSampleId && (
-                  <div className="createdBox">
-                    <p className="helperText">
-                      Sample ID: <strong>{createdSampleId}</strong>
-                    </p>
-                    <button
-                      type="button"
-                      className="linkButton"
-                      onClick={() =>
-                        router.push(`/technical/tracking/${createdSampleId}`)
-                      }
-                    >
-                      View Sample Record
-                    </button>
-                  </div>
-                )}
+              {error && <div className="errorBox">{error}</div>}
 
-                {result?.manual_review_queue?.review_case_id && (
-                  <p className="helperText">
-                    Queued for review as{" "}
-                    {result.manual_review_queue.review_case_id}.
-                  </p>
-                )}
-              </div>
+              {createdSampleId && (
+                <div className="createdBox">
+                  <span>Sample ID</span>
+                  <strong>{createdSampleId}</strong>
+
+                  <button
+                    type="button"
+                    className="linkButton"
+                    onClick={goToCreatedSample}
+                  >
+                    View Sample Record
+                  </button>
+                </div>
+              )}
+
+              {result?.manual_review_queue?.review_case_id && (
+                <div className="reviewBox">
+                  Queued for review as{" "}
+                  <strong>{result.manual_review_queue.review_case_id}</strong>.
+                </div>
+              )}
 
               <div className="resultCard">
                 <div className="resultTop">
                   <div className="resultTitle">
-                    <Sparkle size={18} />
-                    <span>ANALYSIS RESULT</span>
+                    <Sparkle size={16} weight="regular" />
+                    <span>Analysis Result</span>
                   </div>
-                  <div className="resultBadge">
-                    {result?.decision || "PENDING"}
-                  </div>
+
+                  <DecisionBadge decision={result?.decision} />
                 </div>
 
                 <div className="resultGrid">
-                  <div>
-                    <p className="resultLabel">CLASSIFICATION</p>
-                    <h3>
-                      {result?.predicted_label_db ||
-                        result?.predicted_label ||
-                        "-"}
-                    </h3>
-                  </div>
+                  <ResultItem
+                    label="Classification"
+                    value={
+                      result?.predicted_label_db || result?.predicted_label
+                    }
+                  />
 
-                  <div>
-                    <p className="resultLabel">CONFIDENCE</p>
-                    <h3>
-                      {confidencePercent !== null
-                        ? `${confidencePercent}%`
-                        : "-"}
-                    </h3>
-                  </div>
+                  <ResultItem
+                    label="Confidence"
+                    value={
+                      confidencePercent !== null ? `${confidencePercent}%` : "-"
+                    }
+                  />
 
-                  <div>
-                    <p className="resultLabel">MODEL VERSION</p>
-                    <h3>{result?.model_version || "-"}</h3>
-                  </div>
+                  <ResultItem
+                    label="Model Version"
+                    value={result?.model_version}
+                  />
 
-                  <div>
-                    <p className="resultLabel">ROUTING</p>
-                    <h3>{result?.decision || "-"}</h3>
-                  </div>
+                  <ResultItem label="Routing" value={result?.decision} />
                 </div>
               </div>
             </div>
           </Card>
-        </div>
+        </aside>
       </div>
 
       <style jsx>{`
         .page {
           display: flex;
           flex-direction: column;
-          gap: 28px;
+          gap: 22px;
+          color: var(--color-text-primary);
         }
 
-        .titleRow {
+        .header {
           display: flex;
-          align-items: center;
-          gap: 16px;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 18px;
         }
 
-        .backButton {
-          border: none;
-          background: transparent;
-          cursor: pointer;
-        }
-
-        .pageHeader h1 {
+        h1 {
           margin: 0;
-          font-size: 24px;
+          color: var(--color-text-primary);
+          font-size: 18px;
+          font-weight: 600;
+          letter-spacing: -0.02em;
         }
 
-        .pageHeader p {
+        .header p {
           margin: 4px 0 0;
-          color: #64748b;
+          color: var(--color-text-secondary);
+          font-size: 11px;
+          line-height: 1.45;
+        }
+
+        .header p strong {
+          color: var(--color-text-primary);
+          font-weight: 500;
+        }
+
+        .statusStrip {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 14px;
+          padding: 14px 0;
+          border-top: 1px solid var(--color-border-soft);
+          border-bottom: 1px solid var(--color-border-soft);
+        }
+
+        .statusStrip div {
+          display: grid;
+          gap: 5px;
+          text-align: center;
+          min-width: 0;
+        }
+
+        .statusStrip span {
+          color: var(--color-text-secondary);
+          font-size: 10px;
+          font-weight: 500;
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
+        }
+
+        .statusStrip strong {
+          color: var(--color-text-primary);
+          font-size: var(--text-sm);
+          font-weight: 500;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
         }
 
         .grid {
           display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 20px;
+          grid-template-columns: minmax(0, 1fr) 390px;
+          gap: 18px;
           align-items: start;
         }
 
-        .form {
+        .mainColumn {
           display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 16px;
+          gap: 18px;
+          min-width: 0;
         }
 
-        .field {
-          display: flex;
-          flex-direction: column;
-          gap: 8px;
+        .sideColumn {
+          display: grid;
+          gap: 18px;
+          min-width: 0;
+          position: sticky;
+          top: 18px;
         }
 
-        .field span {
-          font-size: 13px;
-          font-weight: 700;
-          color: #334155;
-        }
-
-        select {
-          height: 44px;
-          border: 1px solid #d1d5db;
-          border-radius: 12px;
-          padding: 0 12px;
-          background: #fff;
-          color: #111827;
+        .formGrid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 14px;
         }
 
         .checkField {
-          grid-column: span 2;
-          display: flex;
+          grid-column: 1 / -1;
+          display: inline-flex;
           align-items: center;
           gap: 10px;
-          font-size: 14px;
-          font-weight: 700;
-          color: #334155;
+          color: var(--color-text-primary);
+          font-size: var(--text-sm);
+          font-weight: 500;
         }
 
         .checkField input {
-          width: 18px;
-          height: 18px;
+          width: 17px;
+          height: 17px;
+          accent-color: var(--color-brand);
+        }
+
+        .checkField em {
+          margin-left: 6px;
+          color: var(--color-text-muted);
+          font-size: 10px;
+          font-style: normal;
+          font-weight: 400;
         }
 
         .panel {
-          display: flex;
-          flex-direction: column;
-          gap: 16px;
+          display: grid;
+          gap: 14px;
         }
 
-        .uploadBox,
+        .panel :global(button) {
+          box-shadow: none;
+        }
+
+        .panel :global(button:hover:not(:disabled)) {
+          box-shadow: none;
+        }
+
+        .panel :global(.btn.primary) {
+          background: color-mix(in srgb, var(--color-brand) 72%, white);
+          border-color: color-mix(in srgb, var(--color-brand) 55%, white);
+          color: #ffffff;
+        }
+
+        .panel :global(.btn.primary:hover:not(:disabled)) {
+          background: var(--color-brand);
+          border-color: var(--color-brand);
+        }
+
+        .uploadBox {
+          display: grid;
+          justify-items: center;
+          text-align: center;
+          gap: 10px;
+          border: 1px dashed var(--color-border);
+          border-radius: var(--radius-lg);
+          background: color-mix(
+            in srgb,
+            var(--color-overlay) 42%,
+            var(--color-surface)
+          );
+          padding: 22px 16px;
+        }
+
         .resultCard {
-          border: 1px solid #e5e7eb;
-          border-radius: 18px;
-          background: #fafafa;
-          padding: 18px;
+          border: 1px solid var(--color-border-soft);
+          border-radius: var(--radius-lg);
+          background: var(--color-surface);
+          padding: 15px;
         }
 
         .hiddenInput {
@@ -568,12 +733,30 @@ export default function Page() {
 
         .uploadTrigger {
           display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-height: 34px;
           cursor: pointer;
-          border: 1px solid #d1d5db;
-          border-radius: 12px;
-          padding: 12px 16px;
-          font-weight: 600;
-          background: #fff;
+          border: 1px solid var(--color-border-soft);
+          border-radius: var(--radius-md);
+          padding: 0 13px;
+          color: var(--color-text-primary);
+          font-size: var(--text-xs);
+          font-weight: 500;
+          background: var(--color-surface);
+          box-shadow: none;
+          transition:
+            background-color var(--transition-base),
+            border-color var(--transition-base),
+            color var(--transition-base),
+            box-shadow var(--transition-base);
+        }
+
+        .uploadTrigger:hover {
+          background: var(--color-overlay);
+          border-color: var(--color-border);
+          color: var(--color-brand);
+          box-shadow: none;
         }
 
         .secondaryUpload {
@@ -582,111 +765,238 @@ export default function Page() {
 
         .previewImage {
           width: 100%;
-          max-height: 260px;
+          max-height: 230px;
           object-fit: contain;
-          border-radius: 14px;
-          background: white;
+          border-radius: var(--radius-md);
+          background: var(--color-surface);
+          border: 1px solid var(--color-border-soft);
         }
 
         .cameraIconWrap {
-          color: #cbd5e1;
-          margin-bottom: 10px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 44px;
+          height: 44px;
+          border-radius: var(--radius-md);
+          color: var(--color-text-muted);
+          background: color-mix(
+            in srgb,
+            var(--color-overlay) 70%,
+            var(--color-surface)
+          );
         }
 
         .uploadText {
-          margin: 10px 0 0;
-          color: #64748b;
-          font-size: 13px;
+          margin: 0;
+          color: var(--color-text-muted);
+          font-size: var(--text-xs);
+          line-height: 1.45;
+          overflow-wrap: anywhere;
         }
 
-        .actions {
-          display: flex;
-          flex-direction: column;
-          gap: 10px;
-        }
-
-        .resultGrid {
+        .requiredBox {
           display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 16px;
+          gap: 5px;
+          padding: 11px 12px;
+          border-radius: var(--radius-md);
+          border: 1px solid var(--color-border-soft);
+          background: var(--color-overlay);
         }
 
-        .resultBadge {
-          border-radius: 999px;
-          background: #e2e8f0;
-          padding: 8px 12px;
-          font-size: 11px;
-          font-weight: 700;
+        .requiredBox span {
+          color: var(--color-text-secondary);
+          font-size: 10px;
+          font-weight: 500;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+
+        .requiredBox p {
+          margin: 0;
+          color: var(--color-text-secondary);
+          font-size: var(--text-xs);
+          font-weight: 400;
+          line-height: 1.45;
+        }
+
+        .errorBox {
+          border: 1px solid var(--color-danger-border);
+          border-radius: var(--radius-md);
+          background: var(--color-danger-bg);
+          color: var(--color-danger);
+          padding: 11px 12px;
+          font-size: var(--text-xs);
+          font-weight: 500;
+          line-height: 1.45;
+        }
+
+        .createdBox {
+          display: grid;
+          gap: 5px;
+          border: 1px solid
+            color-mix(in srgb, var(--color-success-border) 70%, white);
+          background: color-mix(in srgb, var(--color-success-bg) 70%, white);
+          color: var(--color-success);
+          border-radius: var(--radius-md);
+          padding: 12px;
+        }
+
+        .createdBox span {
+          font-size: 10px;
+          font-weight: 500;
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
+        }
+
+        .createdBox strong {
+          color: var(--color-text-primary);
+          font-size: var(--text-sm);
+          font-weight: 600;
+        }
+
+        .linkButton {
+          justify-self: start;
+          margin-top: 3px;
+          border: none;
+          background: transparent;
+          color: var(--color-success);
+          font-size: var(--text-xs);
+          font-weight: 500;
+          cursor: pointer;
+          padding: 0;
+        }
+
+        .linkButton:hover {
+          text-decoration: underline;
+        }
+
+        .reviewBox {
+          border: 1px solid
+            color-mix(in srgb, var(--color-warning-border) 70%, white);
+          background: color-mix(in srgb, var(--color-warning-bg) 70%, white);
+          color: var(--color-warning);
+          border-radius: var(--radius-md);
+          padding: 11px 12px;
+          font-size: var(--text-xs);
+          font-weight: 400;
+          line-height: 1.45;
         }
 
         .resultTop {
           display: flex;
           justify-content: space-between;
           align-items: center;
+          gap: 12px;
           margin-bottom: 14px;
         }
 
         .resultTitle {
-          display: flex;
+          display: inline-flex;
           align-items: center;
           gap: 8px;
-          font-size: 12px;
-          font-weight: 800;
-          color: #334155;
+          color: var(--color-text-secondary);
+          font-size: 10px;
+          font-weight: 400;
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
         }
 
-        .resultLabel {
-          font-size: 11px;
-          font-weight: 800;
-          color: #64748b;
-          margin-bottom: 4px;
+        .resultGrid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 14px;
         }
 
-        .resultGrid h3 {
-          margin: 0;
-          font-size: 15px;
-          color: #111827;
+        @media (max-width: 1080px) {
+          .grid {
+            grid-template-columns: 1fr;
+          }
+
+          .sideColumn {
+            position: static;
+          }
         }
 
-        .helperText {
-          font-size: 13px;
-          color: #475569;
-        }
-
-        .errorText {
-          font-size: 12px;
-          color: #dc2626;
-        }
-
-        .createdBox {
-          border: 1px solid #bbf7d0;
-          background: #f0fdf4;
-          border-radius: 14px;
-          padding: 12px;
-        }
-
-        .linkButton {
-          margin-top: 6px;
-          border: none;
-          background: transparent;
-          color: #166534;
-          font-weight: 800;
-          cursor: pointer;
-          padding: 0;
-        }
-
-        @media (max-width: 900px) {
-          .grid,
-          .form,
+        @media (max-width: 720px) {
+          .statusStrip,
+          .formGrid,
           .resultGrid {
             grid-template-columns: 1fr;
           }
 
-          .checkField {
-            grid-column: span 1;
+          .statusStrip div {
+            text-align: left;
           }
         }
       `}</style>
-    </>
+    </div>
   );
+}
+
+function DecisionBadge({ decision }) {
+  const label = decision || "Pending";
+
+  const variant =
+    decision === "AUTO_ACCEPTED"
+      ? "success"
+      : decision === "MANUAL_REVIEW"
+        ? "warning"
+        : decision === "REJECTED"
+          ? "danger"
+          : "neutral";
+
+  return (
+    <Badge variant={variant} size="sm">
+      {formatDecision(label)}
+    </Badge>
+  );
+}
+
+function ResultItem({ label, value }) {
+  return (
+    <div className="resultItem">
+      <span>{label}</span>
+      <strong>{formatEmpty(value)}</strong>
+
+      <style jsx>{`
+        .resultItem {
+          display: grid;
+          gap: 4px;
+          min-width: 0;
+        }
+
+        span {
+          color: var(--color-text-secondary);
+          font-size: 10px;
+          font-weight: 500;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+
+        strong {
+          color: var(--color-text-primary);
+          font-size: var(--text-xs);
+          font-weight: 400;
+          overflow-wrap: anywhere;
+          line-height: 1.4;
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function formatDecision(value) {
+  if (!value) return "Pending";
+
+  return String(value)
+    .replaceAll("_", " ")
+    .replaceAll("-", " ")
+    .toLowerCase()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function formatEmpty(value) {
+  if (value === null || value === undefined || value === "") return "-";
+  return value;
 }

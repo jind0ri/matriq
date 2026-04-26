@@ -34,7 +34,7 @@ export default function Button({
           border: 1px solid transparent;
           border-radius: var(--radius-sm);
           font-family: inherit;
-          font-weight: 850;
+          font-weight: 600;
           cursor: pointer;
           display: inline-flex;
           align-items: center;
@@ -47,17 +47,14 @@ export default function Button({
             background-color var(--transition-base),
             border-color var(--transition-base),
             box-shadow var(--transition-base),
-            transform var(--transition-fast),
             opacity var(--transition-base);
         }
 
         .btn:hover:not(:disabled) {
-          transform: translateY(-1px);
           box-shadow: var(--shadow-xs);
         }
 
         .btn:active:not(:disabled) {
-          transform: translateY(0);
           box-shadow: none;
         }
 
@@ -70,7 +67,6 @@ export default function Button({
           opacity: 0.55;
           cursor: not-allowed;
           box-shadow: none;
-          transform: none;
         }
 
         .sm {

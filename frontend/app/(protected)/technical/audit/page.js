@@ -1,6 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+
+import Badge from "@/components/ui/Badge";
+import Button from "@/components/ui/Button";
+import Card from "@/components/ui/Card";
+import EmptyState from "@/components/ui/EmptyState";
+import Input from "@/components/ui/Input";
+import Loader from "@/components/ui/Loader";
+import Select from "@/components/ui/Select";
 import { apiClient, getStoredUser } from "@/services/apiClient";
 
 const IMPORTANT_ACTIONS = [
@@ -48,11 +56,10 @@ export default function AuditPage() {
       const action = log.action || "";
       const endpoint = log.endpoint_accessed || "";
       const sampleId = log.sample_id || "";
-      const userId = log.user_id || "";
+      const userId = getUserDisplay(log);
       const details = JSON.stringify(log.new_value || log.old_value || {});
 
-      const matchesAction =
-        actionFilter === "ALL" || action === actionFilter;
+      const matchesAction = actionFilter === "ALL" || action === actionFilter;
 
       const matchesSearch =
         !q ||
@@ -91,28 +98,24 @@ export default function AuditPage() {
   if (user?.role !== "Administrator") {
     return (
       <div className="page">
-        <div className="card error">
-          Only Administrators can access audit logs.
-        </div>
+        <Card>
+          <div className="errorText">
+            Only Administrators can access audit logs.
+          </div>
+        </Card>
 
         <style jsx>{`
           .page {
-            padding: 24px;
-            background: #f7f7fb;
-            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            gap: 22px;
+            color: var(--color-text-primary);
           }
 
-          .card {
-            background: #fff;
-            border: 1px solid #e7e7ef;
-            border-radius: 18px;
-            padding: 18px;
-          }
-
-          .error {
-            color: #b91c1c;
-            border-color: #fecaca;
-            background: #fff7f7;
+          .errorText {
+            color: var(--color-danger);
+            font-size: var(--text-sm);
+            font-weight: 500;
           }
         `}</style>
       </div>
@@ -121,208 +124,173 @@ export default function AuditPage() {
 
   return (
     <div className="page">
-      <div className="header">
+      <header className="header">
         <div>
-          <p className="eyebrow">Administrator Module</p>
-          <h1>Audit Log Viewer</h1>
+          <h1>Audit Logs</h1>
           <p>
-            Trace system events, AI actions, testing updates, QA overrides,
-            report release, and lifecycle changes.
+            Trace system events, testing updates, QA reviews, report release,
+            and lifecycle changes.
           </p>
         </div>
 
-        <button onClick={loadLogs}>Refresh</button>
-      </div>
+        <Button variant="secondary" size="sm" onClick={loadLogs}>
+          Refresh
+        </Button>
+      </header>
 
-      <div className="notice">
-        Audit logs support traceability and accountability. QA overrides should
-        always show the original system result, QA final result, reviewer, time,
-        and justification.
-      </div>
+      <section className="notice">
+        <strong>Traceability record</strong>
+        <span>
+          Audit logs are read-only records used for accountability. Workflow
+          actions, QA overrides, and report releases should remain traceable by
+          user, sample, timestamp, and recorded details.
+        </span>
+      </section>
 
-      <div className="stats">
-        <StatCard label="Total Events" value={stats.total} />
-        <StatCard label="Test Data Entries" value={stats.testData} />
-        <StatCard label="QA Overrides" value={stats.overrides} />
-        <StatCard label="Report Releases" value={stats.releases} />
-      </div>
+      {loading && <Loader label="Loading audit logs..." />}
 
-      <div className="toolbar">
-        <div className="searchBox">
-          <span>⌕</span>
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search action, user, sample, endpoint, or details..."
-          />
-        </div>
-
-        <select
-          value={actionFilter}
-          onChange={(e) => setActionFilter(e.target.value)}
-        >
-          {IMPORTANT_ACTIONS.map((action) => (
-            <option key={action} value={action}>
-              {action === "ALL" ? "All Actions" : formatAction(action)}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {loading && <div className="card">Loading audit logs...</div>}
-      {!loading && error && <div className="card error">{error}</div>}
+      {!loading && error && (
+        <Card>
+          <div className="errorText">{error}</div>
+        </Card>
+      )}
 
       {!loading && !error && (
-        <div className="logsList">
-          {filteredLogs.length === 0 && (
-            <div className="card empty">
-              No audit logs match the current filters.
-            </div>
-          )}
+        <>
+          <section className="stats">
+            <StatCard label="Total Events" value={stats.total} />
+            <StatCard label="Test Data Entries" value={stats.testData} />
+            <StatCard label="QA Overrides" value={stats.overrides} />
+            <StatCard label="Report Releases" value={stats.releases} />
+          </section>
 
-          {filteredLogs.map((log, index) => (
-            <AuditCard key={log.audit_id || index} log={log} />
-          ))}
-        </div>
+          <section className="toolbar">
+            <Input
+              name="auditSearch"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search action, user, sample, endpoint, or details..."
+            />
+
+            <Select
+              name="actionFilter"
+              value={actionFilter}
+              onChange={(event) => setActionFilter(event.target.value)}
+            >
+              {IMPORTANT_ACTIONS.map((action) => (
+                <option key={action} value={action}>
+                  {action === "ALL" ? "All Actions" : formatAction(action)}
+                </option>
+              ))}
+            </Select>
+          </section>
+
+          {filteredLogs.length === 0 ? (
+            <Card>
+              <EmptyState
+                title="No audit logs found"
+                description="No audit records match the current filters."
+              />
+            </Card>
+          ) : (
+            <section className="logsList">
+              {filteredLogs.map((log, index) => (
+                <AuditCard key={log.audit_id || index} log={log} />
+              ))}
+            </section>
+          )}
+        </>
       )}
 
       <style jsx>{`
         .page {
-          min-height: 100vh;
-          padding: 28px;
-          background: #f6f7fb;
-          color: #111827;
+          display: flex;
+          flex-direction: column;
+          gap: 22px;
+          color: var(--color-text-primary);
         }
 
         .header {
           display: flex;
           justify-content: space-between;
           align-items: flex-start;
-          gap: 16px;
-          margin-bottom: 18px;
-        }
-
-        .eyebrow {
-          margin: 0 0 6px;
-          font-size: 12px;
-          font-weight: 900;
-          color: #4f46e5;
-          text-transform: uppercase;
-          letter-spacing: 0.08em;
+          gap: 18px;
         }
 
         h1 {
           margin: 0;
-          font-size: 28px;
-          color: #111827;
+          color: var(--color-text-primary);
+          font-size: 18px;
+          font-weight: 600;
           letter-spacing: -0.02em;
         }
 
-        p {
-          margin: 6px 0 0;
-          color: #4b5563;
-          font-size: 14px;
-          line-height: 1.5;
-        }
-
-        button {
-          border: none;
-          border-radius: 12px;
-          padding: 12px 16px;
-          font-weight: 800;
-          cursor: pointer;
-          background: #111827;
-          color: #fff;
+        .header p {
+          margin: 4px 0 0;
+          color: var(--color-text-secondary);
+          font-size: 11px;
+          line-height: 1.45;
         }
 
         .notice {
-          background: #eff6ff;
-          color: #1e40af;
-          border: 1px solid #bfdbfe;
-          padding: 14px 16px;
-          border-radius: 16px;
-          font-size: 13px;
+          display: grid;
+          gap: 4px;
+          padding: 12px 14px;
+          border: 1px solid var(--color-info-border);
+          border-radius: var(--radius-md);
+          background: var(--color-info-bg);
+          color: var(--color-info);
+          font-size: var(--text-xs);
           line-height: 1.5;
-          margin-bottom: 16px;
+        }
+
+        .notice strong {
+          color: var(--color-info);
+          font-size: var(--text-xs);
+          font-weight: 600;
         }
 
         .stats {
           display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-          gap: 14px;
-          margin-bottom: 16px;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 24px;
+          padding: 4px 0 2px;
         }
 
         .toolbar {
           display: grid;
-          grid-template-columns: 1fr 240px;
+          grid-template-columns: minmax(0, 1fr) 260px;
           gap: 12px;
-          margin-bottom: 16px;
-        }
-
-        .searchBox {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          background: #ffffff;
-          border: 1px solid #e5e7eb;
-          border-radius: 16px;
-          padding: 0 14px;
-        }
-
-        .searchBox span {
-          color: #6b7280;
-          font-weight: 900;
-        }
-
-        .searchBox input {
-          width: 100%;
-          border: none;
-          outline: none;
-          padding: 13px 0;
-          background: transparent;
-          color: #111827;
-          font-size: 14px;
-        }
-
-        select {
-          border: 1px solid #d1d5db;
-          border-radius: 16px;
-          padding: 0 12px;
-          background: white;
-          color: #111827;
-          font-weight: 800;
-        }
-
-        .card {
-          background: #fff;
-          border: 1px solid #e5e7eb;
-          border-radius: 18px;
-          padding: 18px;
-          box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
-        }
-
-        .error {
-          color: #b91c1c;
-          border-color: #fecaca;
-          background: #fff7f7;
+          align-items: end;
         }
 
         .logsList {
           display: grid;
-          gap: 12px;
+          gap: 14px;
         }
 
-        .empty {
-          color: #475569;
+        .errorText {
+          color: var(--color-danger);
+          font-size: var(--text-sm);
+          font-weight: 500;
         }
 
-        @media (max-width: 820px) {
+        @media (max-width: 900px) {
+          .stats {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+
+          .toolbar {
+            grid-template-columns: 1fr;
+          }
+        }
+
+        @media (max-width: 640px) {
           .header {
             flex-direction: column;
           }
 
-          .toolbar {
+          .stats {
             grid-template-columns: 1fr;
           }
         }
@@ -337,56 +305,60 @@ function AuditCard({ log }) {
   const isOverride = action === "QA_RESULT_OVERRIDE";
   const isRelease = action === "QA_RELEASE_REVIEW";
   const isTestData = action === "UPDATE_TEST_DATA";
+  const isStatusUpdate = action === "UPDATE_SAMPLE_STATUS";
 
   return (
-    <article className="auditCard">
-      <div className="topRow">
-        <div>
-          <ActionBadge action={action} />
-          <h2>{formatAction(action)}</h2>
-          <p>{formatDate(log.timestamp)}</p>
-        </div>
+    <Card>
+      <article className="auditCard">
+        <div className="topRow">
+          <div className="titleBlock">
+            <ActionBadge action={action} />
+            <h2>{formatAction(action)}</h2>
+            <p>{formatDate(log.timestamp)}</p>
+          </div>
 
-        <div className="metaRight">
-          <span>User: {log.user_id || "-"}</span>
-          <span>Sample: {log.sample_id || extractSampleId(details) || "-"}</span>
-        </div>
-      </div>
-
-      <div className="infoGrid">
-        <Info label="Endpoint" value={log.endpoint_accessed} />
-        <Info label="Action" value={action} />
-        <Info label="User ID" value={log.user_id} />
-        <Info label="Sample ID" value={log.sample_id || extractSampleId(details)} />
-      </div>
-
-      {isOverride && (
-        <div className="highlightBox override">
-          <strong>QA Result Override</strong>
-          <div className="highlightGrid">
-            <Info label="System Result" value={details.system_result} />
-            <Info label="Previous Result" value={details.previous_result} />
-            <Info label="QA Final Result" value={details.qa_final_result} emphasis />
-            <Info label="Override Reason" value={details.override_reason} />
+          <div className="metaRight">
+            <MetaPill label="User" value={getUserDisplay(log)} />
+            <MetaPill
+              label="Sample"
+              value={log.sample_id || extractSampleId(details)}
+            />
           </div>
         </div>
-      )}
 
-      {isRelease && (
-        <div className="highlightBox release">
-          <strong>Official Report Released</strong>
-          <div className="highlightGrid">
+        <div className="infoGrid">
+          <Info label="Endpoint" value={log.endpoint_accessed} />
+          <Info label="Action" value={formatAction(action)} />
+          <Info label="User" value={getUserDisplay(log)} />
+          <Info
+            label="Sample ID"
+            value={log.sample_id || extractSampleId(details)}
+          />
+        </div>
+
+        {isOverride && (
+          <HighlightBox type="override" title="QA Result Override">
+            <Info label="System Result" value={details.system_result} />
+            <Info label="Previous Result" value={details.previous_result} />
+            <Info
+              label="QA Final Result"
+              value={details.qa_final_result}
+              emphasis
+            />
+            <Info label="Override Reason" value={details.override_reason} />
+          </HighlightBox>
+        )}
+
+        {isRelease && (
+          <HighlightBox type="release" title="Official Report Released">
             <Info label="Status" value={details.status} />
             <Info label="Test Result" value={details.test_result} />
             <Info label="Release Note" value={details.release_note} />
-          </div>
-        </div>
-      )}
+          </HighlightBox>
+        )}
 
-      {isTestData && (
-        <div className="highlightBox testing">
-          <strong>Test Data Recorded</strong>
-          <div className="highlightGrid">
+        {isTestData && (
+          <HighlightBox type="testing" title="Test Data Recorded">
             <Info
               label="Test Result"
               value={details.test_data?.result}
@@ -394,7 +366,7 @@ function AuditCard({ log }) {
             />
             <Info
               label="Test Type"
-              value={formatText(details.test_data?.test_type)}
+              value={formatLabel(details.test_data?.test_type)}
             />
             <Info
               label="Auto Transition"
@@ -406,22 +378,27 @@ function AuditCard({ log }) {
                   : "-"
               }
             />
-          </div>
-        </div>
-      )}
+          </HighlightBox>
+        )}
 
-      <details className="details">
-        <summary>View raw audit details</summary>
-        <pre>{JSON.stringify(details, null, 2)}</pre>
-      </details>
+        {isStatusUpdate && (
+          <HighlightBox type="status" title="Lifecycle Status Updated">
+            <Info label="From" value={details.from || details.previous_state} />
+            <Info label="To" value={details.to || details.new_state} emphasis />
+            <Info label="Reason" value={details.reason || details.note} />
+          </HighlightBox>
+        )}
+
+        <details className="details">
+          <summary>View raw audit details</summary>
+          <pre>{JSON.stringify(details, null, 2)}</pre>
+        </details>
+      </article>
 
       <style jsx>{`
         .auditCard {
-          background: #ffffff;
-          border: 1px solid #e5e7eb;
-          border-radius: 20px;
-          box-shadow: 0 12px 32px rgba(15, 23, 42, 0.06);
-          overflow: hidden;
+          display: grid;
+          gap: 16px;
         }
 
         .topRow {
@@ -429,96 +406,77 @@ function AuditCard({ log }) {
           justify-content: space-between;
           align-items: flex-start;
           gap: 18px;
-          padding: 18px;
-          background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
-          border-bottom: 1px solid #e5e7eb;
+        }
+
+        .titleBlock {
+          display: grid;
+          gap: 6px;
+          min-width: 0;
         }
 
         h2 {
-          margin: 8px 0 0;
-          font-size: 18px;
-          color: #111827;
+          margin: 0;
+          color: var(--color-text-primary);
+          font-size: 15px;
+          font-weight: 600;
+          letter-spacing: -0.01em;
         }
 
         p {
-          margin: 4px 0 0;
-          color: #64748b;
-          font-size: 13px;
+          margin: 0;
+          color: var(--color-text-secondary);
+          font-size: var(--text-xs);
+          line-height: 1.45;
         }
 
         .metaRight {
-          display: grid;
-          gap: 6px;
-          justify-items: end;
-          color: #475569;
-          font-size: 12px;
-          font-weight: 800;
+          display: flex;
+          justify-content: flex-end;
+          align-items: flex-start;
+          gap: 8px;
+          flex-wrap: wrap;
         }
 
-        .infoGrid,
-        .highlightGrid {
+        .infoGrid {
           display: grid;
-          grid-template-columns: repeat(4, 1fr);
+          grid-template-columns: repeat(4, minmax(0, 1fr));
           gap: 14px;
-          padding: 18px;
-        }
-
-        .highlightBox {
-          margin: 0 18px 16px;
-          border-radius: 16px;
-          padding: 14px;
-          border: 1px solid #e5e7eb;
-        }
-
-        .highlightBox strong {
-          display: block;
-          margin-bottom: 10px;
-          font-size: 13px;
-          color: #111827;
-        }
-
-        .highlightBox .highlightGrid {
-          padding: 0;
-        }
-
-        .override {
-          background: #fff7ed;
-          border-color: #fed7aa;
-        }
-
-        .release {
-          background: #f0fdf4;
-          border-color: #bbf7d0;
-        }
-
-        .testing {
-          background: #eff6ff;
-          border-color: #bfdbfe;
+          padding-top: 14px;
+          border-top: 1px solid var(--color-border-soft);
         }
 
         .details {
-          border-top: 1px solid #e5e7eb;
-          background: #f8fafc;
+          border: 1px solid var(--color-border-soft);
+          border-radius: var(--radius-md);
+          background: var(--color-surface);
+          overflow: hidden;
         }
 
         .details summary {
           cursor: pointer;
-          padding: 14px 18px;
-          color: #334155;
-          font-size: 13px;
-          font-weight: 900;
+          padding: 12px 13px;
+          color: var(--color-brand);
+          font-size: var(--text-xs);
+          font-weight: 500;
+          line-height: 1.4;
         }
 
         pre {
-          margin: 0 18px 18px;
-          max-height: 260px;
+          width: calc(100% - 26px);
+          max-width: 100%;
+          max-height: 300px;
           overflow: auto;
+          margin: 0 13px 13px;
+          padding: 12px;
+          border-radius: var(--radius-md);
           background: #0f172a;
           color: #e2e8f0;
-          border-radius: 12px;
-          padding: 12px;
           font-size: 11px;
-          line-height: 1.6;
+          line-height: 1.55;
+          white-space: pre-wrap;
+          overflow-wrap: anywhere;
+          word-break: break-word;
+          box-sizing: border-box;
         }
 
         @media (max-width: 900px) {
@@ -527,16 +485,87 @@ function AuditCard({ log }) {
           }
 
           .metaRight {
-            justify-items: start;
+            justify-content: flex-start;
           }
 
-          .infoGrid,
+          .infoGrid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+        }
+
+        @media (max-width: 560px) {
+          .infoGrid {
+            grid-template-columns: 1fr;
+          }
+        }
+      `}</style>
+    </Card>
+  );
+}
+
+function HighlightBox({ title, type = "default", children }) {
+  return (
+    <section className={`highlightBox ${type}`}>
+      <h3>{title}</h3>
+      <div className="highlightGrid">{children}</div>
+
+      <style jsx>{`
+        .highlightBox {
+          display: grid;
+          gap: 12px;
+          padding: 13px;
+          border-radius: var(--radius-md);
+          border: 1px solid var(--color-border-soft);
+          background: var(--color-overlay);
+        }
+
+        .highlightBox.override {
+          background: var(--color-warning-bg);
+          border-color: var(--color-warning-border);
+        }
+
+        .highlightBox.release {
+          background: var(--color-success-bg);
+          border-color: var(--color-success-border);
+        }
+
+        .highlightBox.testing {
+          background: var(--color-info-bg);
+          border-color: var(--color-info-border);
+        }
+
+        .highlightBox.status {
+          background: var(--color-brand-light);
+          border-color: color-mix(in srgb, var(--color-brand) 24%, white);
+        }
+
+        h3 {
+          margin: 0;
+          color: var(--color-text-primary);
+          font-size: var(--text-xs);
+          font-weight: 600;
+          line-height: 1.4;
+        }
+
+        .highlightGrid {
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 13px;
+        }
+
+        @media (max-width: 900px) {
+          .highlightGrid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+        }
+
+        @media (max-width: 560px) {
           .highlightGrid {
             grid-template-columns: 1fr;
           }
         }
       `}</style>
-    </article>
+    </section>
   );
 }
 
@@ -548,26 +577,23 @@ function StatCard({ label, value }) {
 
       <style jsx>{`
         .statCard {
-          background: #ffffff;
-          border: 1px solid #e5e7eb;
-          border-radius: 18px;
-          padding: 18px;
-          box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+          display: grid;
+          gap: 8px;
         }
 
-        .statCard span {
-          display: block;
-          margin-bottom: 8px;
-          color: #64748b;
-          font-size: 11px;
-          font-weight: 900;
+        span {
+          color: var(--color-text-secondary);
+          font-size: 10px;
+          font-weight: 500;
           text-transform: uppercase;
-          letter-spacing: 0.06em;
+          letter-spacing: 0.05em;
         }
 
-        .statCard strong {
-          color: #111827;
-          font-size: 30px;
+        strong {
+          color: var(--color-text-primary);
+          font-size: 18px;
+          font-weight: 600;
+          line-height: 1;
         }
       `}</style>
     </div>
@@ -586,96 +612,101 @@ function Info({ label, value, emphasis = false }) {
         .info {
           display: grid;
           gap: 4px;
+          min-width: 0;
         }
 
-        .info span {
-          color: #64748b;
+        span {
+          color: var(--color-text-secondary);
           font-size: 10px;
-          font-weight: 900;
+          font-weight: 500;
           text-transform: uppercase;
           letter-spacing: 0.05em;
         }
 
-        .info strong {
-          color: #111827;
-          font-size: 13px;
+        strong {
+          color: var(--color-text-primary);
+          font-size: var(--text-xs);
+          font-weight: 400;
           line-height: 1.45;
-          word-break: break-word;
+          overflow-wrap: anywhere;
         }
 
-        .info strong.emphasis {
-          color: #2563eb;
-          font-weight: 900;
+        strong.emphasis {
+          color: var(--color-brand);
+          font-weight: 500;
         }
       `}</style>
     </div>
   );
 }
 
-function ActionBadge({ action }) {
-  const cls =
-    action === "QA_RESULT_OVERRIDE"
-      ? "override"
-      : action === "QA_RELEASE_REVIEW"
-        ? "release"
-        : action === "UPDATE_TEST_DATA"
-          ? "testing"
-          : action === "UPDATE_SAMPLE_STATUS"
-            ? "status"
-            : "default";
-
+function MetaPill({ label, value }) {
   return (
-    <span className={`badge ${cls}`}>
-      {action || "-"}
+    <span className="metaPill">
+      <small>{label}</small>
+      {formatValue(value)}
 
       <style jsx>{`
-        .badge {
+        .metaPill {
           display: inline-flex;
-          width: fit-content;
+          align-items: center;
+          gap: 5px;
+          min-height: 28px;
+          padding: 0 10px;
           border-radius: 999px;
-          padding: 7px 11px;
+          border: 1px solid var(--color-border-soft);
+          background: var(--color-surface);
+          color: var(--color-text-primary);
           font-size: 11px;
-          font-weight: 900;
+          font-weight: 500;
           white-space: nowrap;
         }
 
-        .override {
-          background: #ffedd5;
-          color: #9a3412;
-          border: 1px solid #fed7aa;
-        }
-
-        .release {
-          background: #dcfce7;
-          color: #166534;
-          border: 1px solid #bbf7d0;
-        }
-
-        .testing {
-          background: #dbeafe;
-          color: #1d4ed8;
-          border: 1px solid #bfdbfe;
-        }
-
-        .status {
-          background: #e0e7ff;
-          color: #3730a3;
-          border: 1px solid #c7d2fe;
-        }
-
-        .default {
-          background: #f1f5f9;
-          color: #475569;
-          border: 1px solid #e2e8f0;
+        small {
+          color: var(--color-text-secondary);
+          font-size: 9px;
+          font-weight: 500;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
         }
       `}</style>
     </span>
   );
 }
 
+function ActionBadge({ action }) {
+  const variant =
+    action === "QA_RESULT_OVERRIDE"
+      ? "warning"
+      : action === "QA_RELEASE_REVIEW"
+        ? "success"
+        : action === "UPDATE_TEST_DATA"
+          ? "info"
+          : action === "UPDATE_SAMPLE_STATUS"
+            ? "brand"
+            : "neutral";
+
+  return (
+    <Badge variant={variant} size="sm">
+      {formatAction(action)}
+    </Badge>
+  );
+}
+
 function extractSampleId(details) {
   if (!details || typeof details !== "object") return null;
   return details.sample_id || details?.test_data?.sample_id || null;
+}
+
+function getUserDisplay(log) {
+  return (
+    log.user_name ||
+    log.user_display ||
+    log.user_full_name ||
+    log.actor_name ||
+    log.actor_display ||
+    formatUser(log.user_id)
+  );
 }
 
 function formatAction(action) {
@@ -687,12 +718,13 @@ function formatAction(action) {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-function formatText(value) {
+function formatLabel(value) {
   if (!value) return "-";
 
   return String(value)
     .replaceAll("_", " ")
     .replaceAll("-", " ")
+    .toLowerCase()
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
@@ -710,4 +742,16 @@ function formatDate(value) {
   } catch {
     return value;
   }
+}
+
+function formatUser(userId) {
+  if (!userId) return "-";
+
+  const value = String(userId);
+
+  if (Number.isNaN(Number(value))) {
+    return value;
+  }
+
+  return `User ${value}`;
 }

@@ -20,7 +20,7 @@ export default function Badge({
           justify-content: center;
           border-radius: var(--radius-full);
           border: 1px solid transparent;
-          font-weight: 850;
+          font-weight: 600;
           line-height: 1;
           white-space: nowrap;
         }

@@ -1,6 +1,14 @@
 "use client";
 
-import { Children, cloneElement, isValidElement, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Children,
+  cloneElement,
+  isValidElement,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 export default function Select({
   label,
@@ -146,7 +154,7 @@ export default function Select({
           justify-content: space-between;
           gap: 10px;
           font-size: var(--text-xs);
-          font-weight: 850;
+          font-weight: 500;
           color: var(--color-text-secondary);
           text-transform: uppercase;
           letter-spacing: 0.05em;
@@ -155,7 +163,7 @@ export default function Select({
         label span {
           color: var(--color-text-muted);
           font-size: 10px;
-          font-weight: 750;
+          font-weight: 400;
           text-transform: none;
           letter-spacing: 0;
         }
@@ -175,7 +183,7 @@ export default function Select({
           color: var(--color-text-primary);
           font-family: inherit;
           font-size: var(--text-xs);
-          font-weight: 850;
+          font-weight: 500;
           display: flex;
           align-items: center;
           justify-content: space-between;
@@ -187,14 +195,12 @@ export default function Select({
             border-color var(--transition-base),
             background-color var(--transition-base),
             box-shadow var(--transition-base),
-            transform var(--transition-fast),
             opacity var(--transition-base);
         }
 
         .selectTrigger:hover:not(:disabled) {
           background: var(--color-overlay);
           border-color: var(--color-border-strong);
-          transform: none;
           box-shadow: var(--shadow-xs);
         }
 
@@ -213,7 +219,6 @@ export default function Select({
           cursor: not-allowed;
           opacity: 0.55;
           background: var(--color-overlay);
-          transform: none;
           box-shadow: none;
         }
 
@@ -277,7 +282,7 @@ export default function Select({
           color: var(--color-text-primary);
           font-family: inherit;
           font-size: var(--text-xs);
-          font-weight: 750;
+          font-weight: 400;
           text-align: left;
           display: flex;
           align-items: center;
@@ -287,14 +292,13 @@ export default function Select({
 
         .option:hover:not(:disabled) {
           background: var(--color-overlay);
-          transform: none;
           box-shadow: none;
         }
 
         .option.selected {
           background: var(--color-brand-light);
           color: var(--color-brand-dark);
-          font-weight: 900;
+          font-weight: 600;
         }
 
         .option:disabled {
@@ -305,7 +309,7 @@ export default function Select({
         .errorText,
         .helperText {
           font-size: var(--text-xs);
-          font-weight: 700;
+          font-weight: 400;
           line-height: 1.4;
         }
 

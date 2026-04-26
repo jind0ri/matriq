@@ -3,12 +3,17 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { apiClient, getStoredUser } from "@/services/apiClient";
+import { apiClient } from "@/services/apiClient";
+
+import Badge from "@/components/ui/Badge";
+import Button from "@/components/ui/Button";
+import Card from "@/components/ui/Card";
+import EmptyState from "@/components/ui/EmptyState";
+import Loader from "@/components/ui/Loader";
 
 export default function TrackingDetailPage() {
   const params = useParams();
   const sampleId = params?.sampleId;
-  const user = getStoredUser();
 
   const [item, setItem] = useState(null);
   const [error, setError] = useState("");
@@ -16,6 +21,7 @@ export default function TrackingDetailPage() {
 
   async function loadSample() {
     if (!sampleId) return;
+
     setLoading(true);
     setError("");
 
@@ -29,53 +35,6 @@ export default function TrackingDetailPage() {
     }
   }
 
-  async function handleRelease() {
-    const paymentStatus = item?.device_metadata?.payment?.payment_status;
-
-    if (paymentStatus !== "Fully Paid" && user?.role !== "Administrator") {
-      alert("Cannot release sample. Payment must be fully paid first.");
-      return;
-    }
-
-    try {
-      await apiClient.updateSampleStatus(sampleId, { status: "Released" });
-      await loadSample();
-    } catch (err) {
-      alert(err.message || "Release failed");
-    }
-  }
-
-  async function handleArchive() {
-    try {
-      await apiClient.updateSampleStatus(sampleId, { status: "Archived" });
-      await loadSample();
-    } catch (err) {
-      alert(err.message || "Archive failed");
-    }
-  }
-
-  async function handleStartTesting() {
-    try {
-      await apiClient.updateSampleStatus(sampleId, { status: "In Testing" });
-      await loadSample();
-    } catch (err) {
-      alert(err.message || "Failed to start testing");
-    }
-  }
-
-  async function handleSubmitForReview() {
-    try {
-      await apiClient.updateSampleStatus(sampleId, { status: "For Review" });
-      await loadSample();
-    } catch (err) {
-      alert(err.message || "Failed to submit for review");
-    }
-  }
-
-  function handlePrintReport() {
-    window.print();
-  }
-
   useEffect(() => {
     loadSample();
   }, [sampleId]);
@@ -87,802 +46,715 @@ export default function TrackingDetailPage() {
   const testData = metadata.test_data || null;
   const testValues = testData?.values || {};
   const qa = metadata.qa || {};
+
   const finalResult = getFinalResult(testData);
+  const systemResult = getSystemResult(testData);
+  const qaOverride = getQaOverride(testData);
   const specificationStatus = getSpecificationStatus(finalResult);
-
-  const canStartTesting =
-    item &&
-    item.current_state === "Registered" &&
-    (user?.role === "Lab Technician" || user?.role === "Administrator");
-
-  const canSubmitForReview =
-    item &&
-    item.current_state === "In Testing" &&
-    (user?.role === "Senior Technician" || user?.role === "Administrator");
-
-  const canRelease =
-    item &&
-    item.current_state === "For Review" &&
-    (user?.role === "QA Engineer" || user?.role === "Administrator");
-
-  const canArchive =
-    item &&
-    item.current_state === "Released" &&
-    (user?.role === "QA Engineer" || user?.role === "Administrator");
 
   const isReleased = item?.current_state === "Released";
   const isArchived = item?.current_state === "Archived";
   const isReadOnly = item?.is_immutable || isArchived || isReleased;
 
-  return (
-    <div className="admin-container">
-      <nav className="breadcrumb-nav no-print">
-        <Link href="/technical/registry" className="back-button">
-          Back to Registry
-        </Link>
-      </nav>
+  function handlePrintReport() {
+    window.print();
+  }
 
-      <header className="main-header no-print">
-        <div className="title-block">
-          <h1>
-            Sample Detail <span className="id-sub">#{sampleId}</span>
-          </h1>
-          <p className="description">
-            Comprehensive technical record and workflow management.
+  return (
+    <div className="page">
+      <header className="header no-print">
+        <div>
+          <h1>Sample Tracking</h1>
+          <p>
+            Full technical workflow record for <strong>{sampleId}</strong>.
           </p>
         </div>
 
         {!loading && item && (
-          <div className="header-meta">
-            <div className="status-indicator">
-              <span className="dot"></span>
-              {item.current_state || "Unknown State"}
-            </div>
+          <div className="headerActions">
+            <LifecycleBadge status={item.current_state} />
+
+            <Button variant="secondary" size="sm" onClick={loadSample}>
+              Refresh
+            </Button>
           </div>
         )}
       </header>
 
-      {loading && (
-        <div className="loading-state">Initializing secure data fetch...</div>
+      {loading && <Loader label="Loading sample detail..." />}
+
+      {!loading && error && (
+        <Card>
+          <div className="errorText">{error}</div>
+        </Card>
       )}
 
-      {!loading && error && <div className="error-notice">{error}</div>}
+      {!loading && !error && !item && (
+        <EmptyState
+          title="Sample not found"
+          description="The selected tracking record could not be loaded."
+        />
+      )}
 
       {!loading && !error && item && (
-        <main className="content-layout">
-          <div className="primary-column">
-            {isReadOnly && (
-              <div className="status-banner info no-print">
-                <strong>Read-Only Record:</strong> This record has been
-                released, archived, or marked immutable.
-              </div>
-            )}
+        <>
+          {isReadOnly && (
+            <section className="notice no-print">
+              <strong>Read-only record</strong>
+              <span>
+                This sample has been released, archived, or marked immutable.
+                Workflow changes are restricted.
+              </span>
+            </section>
+          )}
 
-            {isReleased && testData && (
-              <OfficialReport
-                item={item}
-                trf={trf}
-                payment={payment}
-                testData={testData}
-                testValues={testValues}
-                qa={qa}
-                onPrint={handlePrintReport}
-              />
-            )}
+          {isReleased && testData && (
+            <OfficialReport
+              item={item}
+              trf={trf}
+              payment={payment}
+              testData={testData}
+              testValues={testValues}
+              qa={qa}
+              onPrint={handlePrintReport}
+            />
+          )}
 
-            <section className="data-card no-print">
-              <h2 className="card-heading">Core Specifications</h2>
+          <main className="contentGrid no-print">
+            <section className="mainColumn">
+              <Card
+                title="Core Specifications"
+                subtitle="Sample identity and registration context."
+              >
+                <div className="detailGrid">
+                  <Detail label="Sample ID" value={item.sample_id} />
+                  <Detail
+                    label="Material Type"
+                    value={normalizeMaterialName(
+                      item.material_type || item.ai_predicted_label,
+                    )}
+                  />
+                  <Detail
+                    label="Project Reference"
+                    value={item.project_reference}
+                  />
+                  <Detail label="Client" value={item.client_name} />
+                  <Detail
+                    label="AI Prediction"
+                    value={normalizeMaterialName(item.ai_predicted_label)}
+                  />
+                  <Detail
+                    label="AI Confidence"
+                    value={formatConfidence(item.ai_confidence_score)}
+                  />
+                  <Detail label="Decision" value={item.decision} />
+                  <Detail label="Branch" value={formatBranch(item.branch_id)} />
+                </div>
+              </Card>
 
-              <div className="data-grid">
-                <Info label="Sample ID" value={item.sample_id} emphasis />
-                <Info label="Material Type" value={item.material_type} />
-                <Info label="Project Ref" value={item.project_reference} />
-                <Info label="Client" value={item.client_name} />
-                <Info
-                  label="AI Prediction"
-                  value={item.ai_predicted_label}
-                  emphasis
-                />
-                <Info
-                  label="AI Confidence"
-                  value={
-                    typeof item.ai_confidence_score === "number"
-                      ? `${Math.round(item.ai_confidence_score * 100)}%`
-                      : "-"
-                  }
-                />
-                <Info label="Decision" value={item.decision} />
-                <Info label="Branch ID" value={item.branch_id} />
-              </div>
+              <section className="dualGrid">
+                <Card
+                  title="Test Request Form"
+                  subtitle="TRF details linked to the sample."
+                >
+                  <div className="stackDetails">
+                    <Detail
+                      label="Client Name"
+                      value={trf.client_name || item.client_name}
+                    />
+                    <Detail
+                      label="Requested Test"
+                      value={trf.requested_test_type}
+                    />
+                    <Detail
+                      label="Project ID"
+                      value={trf.project_identifier || item.project_reference}
+                    />
+                    <Detail
+                      label="Branch"
+                      value={formatBranch(
+                        trf.registry_branch || item.branch_id,
+                      )}
+                    />
+                  </div>
+                </Card>
+
+                <Card
+                  title="Payment and Billing"
+                  subtitle="Financial readiness for testing and release."
+                >
+                  <div className="stackDetails">
+                    <Detail
+                      label="Payment Status"
+                      value={payment.payment_status || "Unpaid"}
+                    />
+                    <Detail
+                      label="Requirement"
+                      value={payment.payment_requirement}
+                    />
+                    <Detail
+                      label="Amount Paid"
+                      value={formatCurrency(payment.amount_paid)}
+                    />
+                    <Detail
+                      label="Balance"
+                      value={formatCurrency(payment.balance)}
+                    />
+                    <Detail
+                      label="Updated By"
+                      value={
+                        payment.payment_updated_by_name ||
+                        payment.payment_updated_by_display ||
+                        payment.payment_updated_by_full_name ||
+                        formatUser(payment.payment_updated_by)
+                      }
+                    />
+                  </div>
+                </Card>
+              </section>
+
+              <Card
+                title="Technical Test Slip"
+                subtitle="Physical sample verification details."
+              >
+                <div className="detailGrid">
+                  <Detail label="Weight" value={testSlip.weight} />
+                  <Detail label="Diameter" value={testSlip.diameter} />
+                  <Detail label="Condition" value={testSlip.condition_notes} />
+                  <Detail
+                    label="Sample Verified"
+                    value={testSlip.actual_sample_checked ? "Yes" : "No"}
+                  />
+                </div>
+              </Card>
+
+              {testData ? (
+                <Card
+                  title="Computed and Reviewed Test Result"
+                  subtitle="System-generated result and QA final result."
+                >
+                  <div className="resultHeader">
+                    <div>
+                      <span>QA Final Result</span>
+                      <strong>{finalResult || "No Result"}</strong>
+                    </div>
+
+                    <ResultBadge result={finalResult} />
+                  </div>
+
+                  <div className="detailGrid">
+                    <Detail
+                      label="Test Type"
+                      value={formatFieldLabel(testData.test_type)}
+                    />
+                    <Detail label="Standard" value={testValues.standard} />
+                    <Detail label="System Result" value={systemResult} />
+                    <Detail label="QA Final Result" value={finalResult} />
+                    <Detail
+                      label="Specification Status"
+                      value={specificationStatus}
+                    />
+                    <Detail
+                      label="System Remarks"
+                      value={testData.system_remarks || testData.remarks}
+                    />
+                    <Detail
+                      label="Technician Remarks"
+                      value={testData.remarks}
+                    />
+                    <Detail
+                      label="Entered By"
+                      value={
+                        testData.entered_by_name ||
+                        testData.entered_by_display ||
+                        testData.entered_by_full_name ||
+                        formatUser(testData.entered_by)
+                      }
+                    />
+                    <Detail
+                      label="Entered At"
+                      value={formatDate(testData.entered_at)}
+                    />
+                    <Detail
+                      label="Computed By System"
+                      value={
+                        testData.computed_by_system === true
+                          ? "Yes"
+                          : testData.computed_by_system === false
+                            ? "No"
+                            : "-"
+                      }
+                    />
+                  </div>
+
+                  {qaOverride && (
+                    <section className="subSection">
+                      <div className="sectionTitle">
+                        <h3>QA Result Review</h3>
+                        <ResultBadge result={qaOverride.override_result} />
+                      </div>
+
+                      <div className="detailGrid">
+                        <Detail
+                          label="Original System Result"
+                          value={qaOverride.system_result}
+                        />
+                        <Detail
+                          label="QA Final Result"
+                          value={qaOverride.override_result}
+                        />
+                        <Detail
+                          label="Specification Status"
+                          value={getSpecificationStatus(
+                            qaOverride.override_result,
+                          )}
+                        />
+                        <Detail
+                          label="Override Applied"
+                          value={qaOverride.is_overridden ? "Yes" : "No"}
+                        />
+                        <Detail
+                          label="Reviewed By"
+                          value={
+                            qaOverride.overridden_by_name ||
+                            qaOverride.overridden_by_display ||
+                            qaOverride.overridden_by_full_name ||
+                            formatUser(qaOverride.overridden_by)
+                          }
+                        />
+                        <Detail
+                          label="Reviewed At"
+                          value={formatDate(qaOverride.overridden_at)}
+                        />
+                        <Detail
+                          label="Review / Override Reason"
+                          value={qaOverride.override_reason}
+                          wide
+                        />
+                      </div>
+                    </section>
+                  )}
+
+                  <section className="subSection">
+                    <div className="sectionTitle">
+                      <h3>Recorded / Computed Values</h3>
+                    </div>
+
+                    {Object.keys(testValues).length === 0 ? (
+                      <p className="mutedText">
+                        No recorded computed values found.
+                      </p>
+                    ) : (
+                      <div className="computedGrid">
+                        {Object.entries(testValues).map(([key, value]) => (
+                          <Detail
+                            key={key}
+                            label={formatFieldLabel(key)}
+                            value={formatValue(value)}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </section>
+                </Card>
+              ) : (
+                <Card
+                  title="Computed Test Result"
+                  subtitle="No test data has been entered yet."
+                >
+                  <p className="mutedText">
+                    Test results will appear here once laboratory data is
+                    encoded in the Workflow page.
+                  </p>
+                </Card>
+              )}
             </section>
 
-            <div className="dual-section no-print">
-              <Section title="Test Request Form (TRF)">
-                <Info
-                  label="Client Name"
-                  value={trf.client_name || item.client_name}
-                />
-                <Info label="Requested Test" value={trf.requested_test_type} />
-                <Info
-                  label="Project ID"
-                  value={trf.project_identifier || item.project_reference}
-                />
-                <Info label="Branch" value={trf.registry_branch} />
-              </Section>
-
-              <Section title="Payment and Billing">
-                <Info label="Payment Status" value={payment.payment_status} />
-                <Info label="Requirement" value={payment.payment_requirement} />
-                <Info label="Amount Paid" value={payment.amount_paid} />
-                <Info label="Balance" value={payment.balance} />
-              </Section>
-            </div>
-
-            <div className="no-print">
-              <Section title="Technical Test Slip">
-                <Info label="Weight" value={testSlip.weight} />
-                <Info label="Diameter" value={testSlip.diameter} />
-                <Info label="Condition" value={testSlip.condition_notes} />
-                <Info
-                  label="Sample Verified"
-                  value={testSlip.actual_sample_checked ? "Yes" : "No"}
-                />
-              </Section>
-            </div>
-
-            {testData && (
-              <section className="data-card test-result-card no-print">
-                <div className="test-result-header">
-                  <div>
-                    <h2 className="card-heading">
-                      Computed and Reviewed Test Result
-                    </h2>
-                    <p className="result-subtitle">
-                      System-generated result with QA-reviewed final report
-                      result.
-                    </p>
-                  </div>
-
-                  <ResultBadge result={finalResult} />
-                </div>
-
-                <div className="data-grid">
-                  <Info
-                    label="Test Type"
-                    value={formatFieldLabel(testData.test_type)}
-                    emphasis
-                  />
-                  <Info label="Standard" value={testValues.standard} />
-                  <Info label="System Result" value={getSystemResult(testData)} />
-                  <Info label="QA Final Result" value={finalResult} emphasis />
-                  <Info
-                    label="Specification Status"
-                    value={specificationStatus}
-                    emphasis
-                  />
-                  <Info
-                    label="System Remarks"
-                    value={testData.system_remarks || testData.remarks}
-                  />
-                  <Info label="Technician Remarks" value={testData.remarks} />
-                  <Info label="Entered By" value={testData.entered_by} />
-                  <Info
-                    label="Entered At"
-                    value={formatDate(testData.entered_at)}
-                  />
-                  <Info
-                    label="Computed By System"
+            <aside className="sideColumn">
+              <Card title="Record Metadata">
+                <div className="sideList">
+                  <SideItem
+                    label="Registered By"
                     value={
-                      testData.computed_by_system === true
-                        ? "Yes"
-                        : testData.computed_by_system === false
-                          ? "No"
-                          : "-"
+                      item.registered_by_name ||
+                      item.registered_by_display ||
+                      item.registered_by_full_name ||
+                      formatUser(item.registered_by)
                     }
                   />
-                </div>
-
-                {getQaOverride(testData) && (
-                  <div className="qa-review-box">
-                    <h3>QA Result Review</h3>
-
-                    <div className="data-grid">
-                      <Info
-                        label="Original System Result"
-                        value={getQaOverride(testData).system_result}
-                      />
-                      <Info
-                        label="QA Final Result"
-                        value={getQaOverride(testData).override_result}
-                        emphasis
-                      />
-                      <Info
-                        label="Specification Status"
-                        value={getSpecificationStatus(
-                          getQaOverride(testData).override_result,
-                        )}
-                        emphasis
-                      />
-                      <Info
-                        label="Override Applied"
-                        value={
-                          getQaOverride(testData).is_overridden ? "Yes" : "No"
-                        }
-                      />
-                      <Info
-                        label="Reviewed By"
-                        value={getQaOverride(testData).overridden_by}
-                      />
-                      <Info
-                        label="Reviewed At"
-                        value={formatDate(getQaOverride(testData).overridden_at)}
-                      />
-                      <Info
-                        label="Review / Override Reason"
-                        value={getQaOverride(testData).override_reason}
-                      />
-                    </div>
-                  </div>
-                )}
-
-                <div className="computed-values">
-                  <h3>Recorded / Computed Values</h3>
-
-                  <div className="computed-grid">
-                    {Object.entries(testValues).map(([key, value]) => (
-                      <Info
-                        key={key}
-                        label={formatFieldLabel(key)}
-                        value={formatValue(value)}
-                      />
-                    ))}
-                  </div>
-                </div>
-              </section>
-            )}
-
-            {!testData && (
-              <section className="data-card muted-card no-print">
-                <h2 className="card-heading">Computed Test Result</h2>
-                <p className="muted-text">
-                  No test data has been entered for this sample yet.
-                </p>
-              </section>
-            )}
-          </div>
-
-          <aside className="secondary-column no-print">
-            <div className="sidebar-card">
-              <h3 className="sidebar-heading">Record Metadata</h3>
-
-              <div className="sidebar-list">
-                <div className="list-item">
-                  <span className="label">Registered By</span>
-                  <span className="value">{item.registered_by || "-"}</span>
-                </div>
-
-                <div className="list-item">
-                  <span className="label">Last Action</span>
-                  <span className="value">
-                    {formatDate(
-                      item.intake_timestamp || item.inference_timestamp,
+                  <SideItem
+                    label="Last Action"
+                    value={formatDate(
+                      item.intake_timestamp ||
+                        item.inference_timestamp ||
+                        item.updated_at,
                     )}
-                  </span>
+                  />
+                  <SideItem label="Model Version" value={item.model_version} />
+                  <SideItem
+                    label="Branch"
+                    value={formatBranch(item.branch_id)}
+                  />
                 </div>
+              </Card>
 
-                <div className="list-item">
-                  <span className="label">Model Version</span>
-                  <span className="value">{item.model_version || "-"}</span>
-                </div>
-              </div>
-            </div>
-
-            {testData && (
-              <div className="sidebar-card">
-                <h3 className="sidebar-heading">Testing Summary</h3>
-
-                <div className="sidebar-list">
-                  <div className="list-item">
-                    <span className="label">Test Type</span>
-                    <span className="value">
-                      {formatFieldLabel(testData.test_type)}
-                    </span>
-                  </div>
-
-                  <div className="list-item">
-                    <span className="label">Standard</span>
-                    <span className="value">{testValues.standard || "-"}</span>
-                  </div>
-
-                  <div className="list-item">
-                    <span className="label">QA Final Result</span>
-                    <ResultBadge result={finalResult} small />
-                  </div>
-
-                  <div className="list-item">
-                    <span className="label">Specification Status</span>
-                    <span className="value">{specificationStatus}</span>
-                  </div>
-
-                  {getQaOverride(testData)?.is_overridden && (
-                    <div className="list-item">
-                      <span className="label">Original System Result</span>
-                      <ResultBadge result={getSystemResult(testData)} small />
+              {testData && (
+                <Card title="Testing Summary">
+                  <div className="sideList">
+                    <SideItem
+                      label="Test Type"
+                      value={formatFieldLabel(testData.test_type)}
+                    />
+                    <SideItem label="Standard" value={testValues.standard} />
+                    <div className="sideBadgeRow">
+                      <span>QA Final Result</span>
+                      <ResultBadge result={finalResult} />
                     </div>
-                  )}
-                </div>
-              </div>
-            )}
+                    <SideItem
+                      label="Specification Status"
+                      value={specificationStatus}
+                    />
+                    {qaOverride?.is_overridden && (
+                      <div className="sideBadgeRow">
+                        <span>Original System Result</span>
+                        <ResultBadge result={systemResult} />
+                      </div>
+                    )}
+                  </div>
+                </Card>
+              )}
 
-            {isReleased && (
-              <div className="sidebar-card">
-                <h3 className="sidebar-heading">Official Report</h3>
-                <p className="side-note">
-                  This report documents the actual laboratory result. It does
-                  not imply material acceptance unless separately certified by
-                  authorized personnel.
-                </p>
-                <button className="btn btn-primary" onClick={handlePrintReport}>
-                  Print / Save Report
-                </button>
-              </div>
-            )}
+              {isReleased && (
+                <Card title="Official Report">
+                  <p className="sideNote">
+                    This report documents the actual laboratory result. It does
+                    not imply material acceptance unless separately certified.
+                  </p>
 
-            <div className="sidebar-card raw-meta">
-              <details>
-                <summary>View System JSON</summary>
-                <div className="json-container">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={handlePrintReport}
+                  >
+                    Print / Save Report
+                  </Button>
+                </Card>
+              )}
+
+              <Card title="System JSON">
+                <details>
+                  <summary>View raw metadata</summary>
                   <pre>{JSON.stringify(metadata, null, 2)}</pre>
-                </div>
-              </details>
-            </div>
+                </details>
+              </Card>
 
-            {(canStartTesting ||
-              canSubmitForReview ||
-              canRelease ||
-              canArchive) && (
-              <div className="action-card">
-                <h3 className="sidebar-heading">Workflow Actions</h3>
+              <Card title="Workflow Ownership">
+                <p className="sideNote">
+                  Workflow actions are now handled in the Workflow Monitor. This
+                  tracking page is kept as the full detail, history, and report
+                  reference for the sample.
+                </p>
 
-                <div className="action-stack">
-                  {canStartTesting && (
-                    <button
-                      className="btn btn-primary"
-                      onClick={handleStartTesting}
-                    >
-                      Start Laboratory Testing
-                    </button>
-                  )}
-
-                  {canSubmitForReview && (
-                    <button
-                      className="btn btn-primary"
-                      onClick={handleSubmitForReview}
-                    >
-                      Submit for QA Review
-                    </button>
-                  )}
-
-                  {canRelease && (
-                    <button className="btn btn-success" onClick={handleRelease}>
-                      Release Official Report
-                    </button>
-                  )}
-
-                  {canArchive && (
-                    <button className="btn btn-outline" onClick={handleArchive}>
-                      Archive Record
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-          </aside>
-        </main>
+                <Link href="/technical/workflow" className="sideLinkButton">
+                  Open Workflow
+                </Link>
+              </Card>
+            </aside>
+          </main>
+        </>
       )}
 
       <style jsx>{`
-        .admin-container {
+        .page {
           max-width: 1200px;
           margin: 0 auto;
-          padding: 32px 24px 100px;
-          color: #1a1c21;
-          font-family:
-            Inter,
-            -apple-system,
-            BlinkMacSystemFont,
-            "Segoe UI",
-            sans-serif;
-        }
-
-        .breadcrumb-nav {
-          margin-bottom: 24px;
-        }
-
-        .back-button {
-          text-decoration: none;
-          color: #6b7280;
-          font-size: 13px;
-          font-weight: 600;
+          padding: 28px 24px 96px;
           display: flex;
-          align-items: center;
-          gap: 4px;
+          flex-direction: column;
+          gap: 22px;
+          color: var(--color-text-primary);
         }
 
-        .back-button:hover {
-          color: #111827;
-        }
-
-        .main-header {
+        .header {
           display: flex;
           justify-content: space-between;
-          align-items: flex-end;
-          padding-bottom: 32px;
-          border-bottom: 1px solid #d1d5db;
-          margin-bottom: 32px;
-          gap: 20px;
+          align-items: flex-start;
+          gap: 18px;
+          padding-bottom: 18px;
+          border-bottom: 1px solid var(--color-border-soft);
         }
 
-        h1 {
+        .header h1 {
           margin: 0;
-          font-size: 24px;
-          font-weight: 700;
-          color: #111827;
-          letter-spacing: -0.01em;
+          color: var(--color-text-primary);
+          font-size: 18px;
+          font-weight: 600;
+          letter-spacing: -0.02em;
         }
 
-        .id-sub {
-          color: #9ca3af;
-          font-weight: 500;
-          font-size: 20px;
-          margin-left: 8px;
-        }
-
-        .description {
-          color: #6b7280;
+        .header p {
           margin: 4px 0 0;
-          font-size: 14px;
+          color: var(--color-text-secondary);
+          font-size: 11px;
+          line-height: 1.45;
         }
 
-        .status-indicator {
+        .header p strong {
+          color: var(--color-text-primary);
+          font-weight: 500;
+        }
+
+        .headerActions {
           display: flex;
           align-items: center;
-          gap: 8px;
-          padding: 7px 13px;
-          background: #f8fafc;
-          border: 1px solid #cbd5e1;
-          border-radius: 999px;
-          font-size: 13px;
-          font-weight: 700;
-          color: #374151;
-          white-space: nowrap;
+          justify-content: flex-end;
+          gap: 10px;
+          flex-wrap: wrap;
         }
 
-        .dot {
-          width: 8px;
-          height: 8px;
-          background: #10b981;
-          border-radius: 50%;
+        .notice {
+          display: grid;
+          gap: 4px;
+          border-radius: var(--radius-md);
+          border: 1px solid var(--color-info-border);
+          background: var(--color-info-bg);
+          color: var(--color-info);
+          padding: 12px 14px;
+          font-size: var(--text-xs);
+          line-height: 1.45;
         }
 
-        .content-layout {
+        .notice strong {
+          font-size: var(--text-xs);
+          font-weight: 600;
+        }
+
+        .contentGrid {
           display: grid;
           grid-template-columns: minmax(0, 1fr) 320px;
-          gap: 32px;
+          gap: 22px;
           align-items: start;
         }
 
-        .loading-state {
-          padding: 40px;
-          text-align: center;
-          color: #6b7280;
-          font-style: italic;
-        }
-
-        .error-notice {
-          padding: 20px;
-          background: #fff7f7;
-          color: #b91c1c;
-          border-radius: 14px;
-          border: 1px solid #fca5a5;
-        }
-
-        .data-card {
-          background: #fff;
-          border: 1px solid #d1d5db;
-          border-radius: 18px;
-          padding: 24px;
-          margin-bottom: 24px;
-          box-shadow:
-            0 2px 8px rgba(0, 0, 0, 0.05),
-            0 1px 2px rgba(0, 0, 0, 0.03);
-        }
-
-        .card-heading {
-          font-size: 14px;
-          font-weight: 800;
-          color: #111827;
-          margin: 0 0 20px;
-        }
-
-        .data-grid {
+        .mainColumn,
+        .sideColumn {
           display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 24px;
+          gap: 18px;
+          min-width: 0;
         }
 
-        .dual-section {
+        .dualGrid {
           display: grid;
           grid-template-columns: 1fr 1fr;
-          gap: 24px;
-          margin-bottom: 24px;
+          gap: 18px;
         }
 
-        .status-banner {
-          padding: 14px 18px;
-          border-radius: 14px;
-          font-size: 13px;
-          margin-bottom: 24px;
-          background: #eff6ff;
-          color: #1e40af;
-          border: 1px solid #93c5fd;
-        }
-
-        .test-result-card {
-          border-color: #93c5fd;
-          background: #ffffff;
-        }
-
-        .test-result-header {
-          display: flex;
-          align-items: flex-start;
-          justify-content: space-between;
-          gap: 16px;
-          margin-bottom: 20px;
-        }
-
-        .test-result-header .card-heading {
-          margin-bottom: 4px;
-        }
-
-        .result-subtitle {
-          margin: 0;
-          font-size: 13px;
-          color: #6b7280;
-        }
-
-        .qa-review-box {
-          margin-top: 24px;
-          padding-top: 20px;
-          border-top: 1px solid #d1d5db;
-        }
-
-        .qa-review-box h3 {
-          margin: 0 0 16px;
-          font-size: 12px;
-          font-weight: 800;
-          color: #111827;
-          text-transform: uppercase;
-          letter-spacing: 0.025em;
-        }
-
-        .computed-values {
-          margin-top: 24px;
-          padding-top: 20px;
-          border-top: 1px solid #d1d5db;
-        }
-
-        .computed-values h3 {
-          margin: 0 0 16px;
-          font-size: 12px;
-          font-weight: 800;
-          color: #111827;
-          text-transform: uppercase;
-          letter-spacing: 0.025em;
-        }
-
-        .computed-grid {
+        .detailGrid,
+        .computedGrid {
           display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 20px;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 14px;
         }
 
-        .muted-card {
-          background: #ffffff;
+        .stackDetails {
+          display: grid;
+          gap: 14px;
         }
 
-        .muted-text {
-          margin: 0;
-          font-size: 14px;
-          color: #6b7280;
+        .resultHeader {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 16px;
+          border: 1px solid var(--color-border-soft);
+          border-radius: var(--radius-md);
+          background: var(--color-overlay);
+          padding: 13px 14px;
+          margin-bottom: 16px;
         }
 
-        .sidebar-card {
-          background: #ffffff;
-          border: 1px solid #d1d5db;
-          border-radius: 18px;
-          padding: 20px;
-          margin-bottom: 20px;
-          box-shadow:
-            0 2px 8px rgba(0, 0, 0, 0.05),
-            0 1px 2px rgba(0, 0, 0, 0.03);
-        }
-
-        .sidebar-heading {
-          font-size: 11px;
-          font-weight: 800;
-          color: #6b7280;
+        .resultHeader span {
+          display: block;
+          color: var(--color-text-secondary);
+          font-size: 10px;
+          font-weight: 500;
           text-transform: uppercase;
-          margin: 0 0 16px;
           letter-spacing: 0.05em;
         }
 
-        .sidebar-list {
-          display: grid;
-          gap: 12px;
-        }
-
-        .list-item {
-          display: flex;
-          flex-direction: column;
-          gap: 2px;
-        }
-
-        .list-item .label {
-          font-size: 10px;
-          color: #9ca3af;
-          text-transform: uppercase;
-          font-weight: 800;
-        }
-
-        .list-item .value {
-          font-size: 13px;
+        .resultHeader strong {
+          display: block;
+          margin-top: 4px;
+          color: var(--color-text-primary);
+          font-size: 18px;
           font-weight: 600;
-          color: #374151;
-          word-break: break-word;
         }
 
-        .side-note {
-          margin: 0 0 14px;
-          font-size: 13px;
-          line-height: 1.5;
-          color: #4b5563;
+        .subSection {
+          margin-top: 18px;
+          padding-top: 18px;
+          border-top: 1px solid var(--color-border-soft);
         }
 
-        .raw-meta {
-          padding: 0;
-          overflow: hidden;
-        }
-
-        .raw-meta summary {
-          padding: 12px 20px;
-          font-size: 12px;
-          color: #4b5563;
-          cursor: pointer;
-          font-weight: 700;
-          background: #f8fafc;
-          list-style: none;
-        }
-
-        .raw-meta summary:hover {
-          background: #f1f5f9;
-        }
-
-        .json-container {
-          background: #0f172a;
-        }
-
-        .raw-meta pre {
-          font-family: ui-monospace, SFMono-Regular, monospace;
-          font-size: 12px;
-          line-height: 1.6;
-          color: #e2e8f0;
-          padding: 20px;
-          margin: 0;
-          overflow: auto;
-          max-height: 500px;
-        }
-
-        .action-card {
-          background: #fff;
-          border: 1px solid #111827;
-          border-radius: 18px;
-          padding: 20px;
-          position: sticky;
-          top: 20px;
-          box-shadow:
-            0 2px 8px rgba(0, 0, 0, 0.05),
-            0 1px 2px rgba(0, 0, 0, 0.03);
-        }
-
-        .action-stack {
+        .sectionTitle {
           display: flex;
-          flex-direction: column;
-          gap: 10px;
+          justify-content: space-between;
+          align-items: center;
+          gap: 14px;
+          margin-bottom: 14px;
         }
 
-        .btn {
-          width: 100%;
-          padding: 12px;
-          border-radius: 8px;
-          font-size: 13px;
-          font-weight: 800;
-          cursor: pointer;
+        .sectionTitle h3 {
+          margin: 0;
+          color: var(--color-text-primary);
+          font-size: var(--text-sm);
+          font-weight: 600;
+        }
+
+        .mutedText,
+        .sideNote {
+          margin: 0;
+          color: var(--color-text-secondary);
+          font-size: var(--text-xs);
+          line-height: 1.5;
+        }
+
+        .sideList {
+          display: grid;
+          gap: 13px;
+        }
+
+        .sideBadgeRow {
+          display: grid;
+          gap: 5px;
+        }
+
+        .sideBadgeRow span {
+          color: var(--color-text-secondary);
+          font-size: 10px;
+          font-weight: 500;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+
+        :global(.sideLinkButton) {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: fit-content;
+          min-height: 34px;
+          margin-top: 14px;
+          padding: 0 13px;
+          border: 1px solid var(--color-border-soft);
+          border-radius: var(--radius-md);
+          background: var(--color-surface);
+          color: var(--color-text-primary);
+          font-size: var(--text-xs);
+          font-weight: 500;
+          line-height: 1;
+          text-decoration: none;
+          white-space: nowrap;
+          box-shadow: none;
           transition:
-            background-color 180ms ease,
-            transform 100ms ease,
-            box-shadow 100ms ease;
-          border: 1px solid transparent;
+            background-color var(--transition-base),
+            border-color var(--transition-base),
+            color var(--transition-base);
         }
 
-        .btn:hover {
-          transform: scale(1.01);
-          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+        :global(.sideLinkButton:hover) {
+          background: var(--color-overlay);
+          border-color: var(--color-border);
+          color: var(--color-brand);
+          text-decoration: none;
         }
 
-        .btn-primary {
-          background: #111827;
-          color: #fff;
+        details {
+          display: grid;
+          gap: 10px;
+          min-width: 0;
         }
 
-        .btn-primary:hover {
-          background: #374151;
+        summary {
+          cursor: pointer;
+          color: var(--color-brand);
+          font-size: var(--text-xs);
+          font-weight: 500;
         }
 
-        .btn-success {
-          background: #059669;
-          color: #fff;
+        pre {
+          width: 100%;
+          max-width: 100%;
+          max-height: 360px;
+          overflow: auto;
+          margin: 10px 0 0;
+          padding: 12px;
+          border-radius: var(--radius-md);
+          background: #0f172a;
+          color: #e2e8f0;
+          font-size: 11px;
+          line-height: 1.55;
+          white-space: pre-wrap;
+          overflow-wrap: anywhere;
+          word-break: break-word;
+          box-sizing: border-box;
         }
 
-        .btn-success:hover {
-          background: #047857;
+        .errorText {
+          color: var(--color-danger);
+          font-size: var(--text-sm);
+          font-weight: 500;
         }
 
-        .btn-outline {
-          background: transparent;
-          border: 1px solid #d1d5db;
-          color: #374151;
+        :global(.sideColumn > *) {
+          min-width: 0;
         }
 
-        .btn-outline:hover {
-          background: #f9fafb;
+        :global(.sideColumn details) {
+          min-width: 0;
+          max-width: 100%;
         }
 
-        @media (max-width: 900px) {
-          .content-layout {
+        :global(.sideColumn summary) {
+          max-width: 100%;
+        }
+
+        @media (max-width: 980px) {
+          .contentGrid {
             grid-template-columns: 1fr;
           }
 
-          .dual-section {
+          .dualGrid {
             grid-template-columns: 1fr;
-          }
-
-          .data-grid,
-          .computed-grid {
-            grid-template-columns: 1fr 1fr;
-          }
-
-          .action-card {
-            position: static;
           }
         }
 
-        @media (max-width: 640px) {
-          .admin-container {
-            padding: 24px 16px 120px;
+        @media (max-width: 760px) {
+          .page {
+            padding: 24px 16px 96px;
           }
 
-          .main-header {
-            align-items: flex-start;
+          .header {
             flex-direction: column;
           }
 
-          .data-grid,
-          .computed-grid {
+          .headerActions {
+            justify-content: flex-start;
+          }
+
+          .detailGrid,
+          .computedGrid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+        }
+
+        @media (max-width: 520px) {
+          .detailGrid,
+          .computedGrid {
             grid-template-columns: 1fr;
           }
 
-          .test-result-header {
+          .resultHeader {
+            align-items: flex-start;
             flex-direction: column;
           }
         }
@@ -890,11 +762,39 @@ export default function TrackingDetailPage() {
         @media print {
           html,
           body {
-            background: white !important;
+            width: 210mm;
+            min-height: 297mm;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: #ffffff !important;
           }
 
           body * {
             visibility: hidden !important;
+          }
+
+          .page {
+            max-width: none !important;
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            display: block !important;
+          }
+
+          .no-print,
+          .contentGrid,
+          .notice,
+          .header {
+            display: none !important;
+          }
+
+          .official-report {
+            display: block !important;
+            visibility: visible !important;
+            position: static !important;
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
           }
 
           .official-report,
@@ -902,39 +802,139 @@ export default function TrackingDetailPage() {
             visibility: visible !important;
           }
 
-          .official-report {
-            position: absolute !important;
-            left: 0 !important;
-            top: 0 !important;
-            width: 100% !important;
+          .official-report :global(section),
+          .official-report :global(article),
+          .official-report :global(div) {
+            break-inside: avoid;
+            page-break-inside: avoid;
           }
 
-          .no-print {
+          .official-report :global(.card) {
+            border: none !important;
+            box-shadow: none !important;
+            padding: 0 !important;
+          }
+
+          .official-report :global(.no-print-card-header > .header) {
             display: none !important;
-          }
-
-          .admin-container {
-            max-width: none;
-            padding: 0;
-            margin: 0;
-            font-family: Arial, sans-serif;
-          }
-
-          .content-layout {
-            display: block;
-          }
-
-          .primary-column {
-            width: 100%;
           }
 
           @page {
             size: A4;
-            margin: 14mm;
+            margin: 12mm;
           }
         }
       `}</style>
     </div>
+  );
+}
+
+function Detail({ label, value, wide = false }) {
+  return (
+    <div className={wide ? "detail wide" : "detail"}>
+      <span>{label}</span>
+      <strong>{formatValue(value)}</strong>
+
+      <style jsx>{`
+        .detail {
+          display: grid;
+          gap: 4px;
+          min-width: 0;
+        }
+
+        .detail.wide {
+          grid-column: 1 / -1;
+        }
+
+        span {
+          color: var(--color-text-secondary);
+          font-size: 10px;
+          font-weight: 500;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+
+        strong {
+          color: var(--color-text-primary);
+          font-size: var(--text-xs);
+          font-weight: 400;
+          line-height: 1.45;
+          overflow-wrap: anywhere;
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function SideItem({ label, value }) {
+  return (
+    <div className="sideItem">
+      <span>{label}</span>
+      <strong>{formatValue(value)}</strong>
+
+      <style jsx>{`
+        .sideItem {
+          display: grid;
+          gap: 4px;
+        }
+
+        span {
+          color: var(--color-text-secondary);
+          font-size: 10px;
+          font-weight: 500;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+
+        strong {
+          color: var(--color-text-primary);
+          font-size: var(--text-xs);
+          font-weight: 400;
+          line-height: 1.45;
+          overflow-wrap: anywhere;
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function LifecycleBadge({ status }) {
+  const variant =
+    status === "Released"
+      ? "success"
+      : status === "In Testing"
+        ? "warning"
+        : status === "For Review"
+          ? "info"
+          : status === "Archived"
+            ? "neutral"
+            : "brand";
+
+  return (
+    <Badge variant={variant} size="sm">
+      {status || "-"}
+    </Badge>
+  );
+}
+
+function ResultBadge({ result }) {
+  const normalized = result || "RECORDED";
+
+  const variant =
+    normalized === "PASS"
+      ? "success"
+      : normalized === "FAIL"
+        ? "danger"
+        : normalized === "INCOMPLETE"
+          ? "warning"
+          : normalized === "RECORDED"
+            ? "info"
+            : "neutral";
+
+  return (
+    <Badge variant={variant} size="sm">
+      {normalized}
+    </Badge>
   );
 }
 
@@ -951,141 +951,128 @@ function OfficialReport({
   const finalResult = getFinalResult(testData) || systemResult;
   const specificationStatus = getSpecificationStatus(finalResult);
   const qaOverride = getQaOverride(testData);
-  const result = finalResult;
-  const generatedAt = new Date().toLocaleString();
   const reportNumber = `RPT-${item.sample_id}`;
+  const generatedAt = new Date().toLocaleString();
 
   return (
     <section className="official-report">
-      <div className="report-actions no-print">
-        <div>
-          <p className="actions-eyebrow">Released Official Record</p>
-          <h2>Laboratory Test Report Preview</h2>
-          <p>Review the finalized report before printing or saving a PDF copy.</p>
-        </div>
+      <Card
+        title="Laboratory Test Report Preview"
+        subtitle="Review the finalized report before printing or saving a PDF copy."
+        className="no-print-card-header"
+        actions={
+          <Button variant="primary" size="sm" onClick={onPrint}>
+            Print / Save PDF
+          </Button>
+        }
+      >
+        <article className="reportSheet">
+          <header className="reportHeader">
+            <div>
+              <p>MATRIQ LIMS</p>
+              <h1>Official Laboratory Test Report</h1>
+              <span>
+                AI-assisted documentation and workflow tracking for construction
+                material testing laboratories.
+              </span>
+            </div>
 
-        <button className="print-btn" onClick={onPrint}>
-          Print / Save as PDF
-        </button>
-      </div>
+            <div className="reportMeta">
+              <span>Report No.</span>
+              <strong>{reportNumber}</strong>
+              <small>Generated: {generatedAt}</small>
+            </div>
+          </header>
 
-      <article className="report-sheet">
-        <header className="report-header">
-          <div>
-            <p className="system-name">MATRIQ LIMS</p>
-            <h1>Official Laboratory Test Report</h1>
-            <p className="subtitle">
-              AI-assisted documentation and workflow tracking for construction
-              material testing laboratories.
-            </p>
-          </div>
+          <section className="reportStrip">
+            <ReportTile label="Sample ID" value={item.sample_id} />
+            <ReportTile
+              label="Status"
+              value={item.current_state || "Released"}
+            />
+            <ReportTile label="Branch" value={formatBranch(item.branch_id)} />
+            <ReportTile label="QA Final Result" value={finalResult} />
+          </section>
 
-          <div className="report-meta-box">
-            <span>Report No.</span>
-            <strong>{reportNumber}</strong>
-            <small>Generated: {generatedAt}</small>
-          </div>
-        </header>
+          <section className="reportWarning">
+            <strong>Report Scope:</strong> This report documents the recorded
+            laboratory test outcome stored in Matriq. QA release confirms report
+            authorization and record finalization. This report does not
+            independently certify material acceptance.
+          </section>
 
-        <section className="report-summary-strip">
-          <div>
-            <span>Sample ID</span>
-            <strong>{item.sample_id}</strong>
-          </div>
+          <section className="reportResult">
+            <div>
+              <span>Specification Status</span>
+              <strong>{specificationStatus}</strong>
+              <p>
+                {qaOverride?.is_overridden
+                  ? `QA reviewed the system-computed result (${systemResult}) and finalized the report result as ${finalResult}.`
+                  : finalResult === "FAIL"
+                    ? "The report records a result below the specified requirement."
+                    : finalResult === "PASS"
+                      ? "The report records a result that meets the specified requirement."
+                      : "The report records test data without a project-specific pass/fail threshold."}
+              </p>
+            </div>
 
-          <div>
-            <span>Status</span>
-            <strong>{item.current_state || "Released"}</strong>
-          </div>
+            <ResultBadge result={finalResult} />
+          </section>
 
-          <div>
-            <span>Branch</span>
-            <strong>
-              {item.branch_id === 2 ? "Pateros Branch" : "Marikina Branch"}
-            </strong>
-          </div>
-
-          <div>
-            <span>QA Final Result</span>
-            <strong className={`result-word ${result.toLowerCase()}`}>
-              {result}
-            </strong>
-          </div>
-        </section>
-
-        <section className="report-warning">
-          <strong>Report Scope:</strong> This report documents the recorded
-          laboratory test outcome stored in Matriq. QA release confirms report
-          authorization and record finalization. This report does not
-          independently certify material acceptance.
-        </section>
-
-        <section className="result-block">
-          <div>
-            <span className="block-label">Specification Status</span>
-            <strong className={`result-text ${result.toLowerCase()}`}>
-              {specificationStatus}
-            </strong>
-            <p>
-              {qaOverride?.is_overridden
-                ? `QA reviewed the system-computed result (${systemResult}) and finalized the report result as ${finalResult}.`
-                : result === "FAIL"
-                  ? "The report records a result below the specified requirement. This does not prevent official report release because the report documents the actual result."
-                  : result === "PASS"
-                    ? "The report records a result that meets the specified requirement based on encoded test data and QA review."
-                    : "The report records test data without a project-specific pass/fail threshold."}
-            </p>
-          </div>
-
-          <ResultBadge result={result} />
-        </section>
-
-        <section className="report-section">
-          <h3>1. Client and Sample Information</h3>
-
-          <div className="report-table">
+          <ReportSection title="1. Client and Sample Information">
             <ReportRow label="Sample ID" value={item.sample_id} />
             <ReportRow label="Client" value={item.client_name} />
-            <ReportRow label="Project Reference" value={item.project_reference} />
+            <ReportRow
+              label="Project Reference"
+              value={item.project_reference}
+            />
             <ReportRow
               label="TRF Client"
               value={trf.client_name || item.client_name}
             />
             <ReportRow label="Requested Test" value={trf.requested_test_type} />
-            <ReportRow label="Material Type" value={item.material_type} />
             <ReportRow
-              label="Branch"
-              value={item.branch_id === 2 ? "Pateros Branch" : "Marikina Branch"}
+              label="Material Type"
+              value={normalizeMaterialName(item.material_type)}
             />
-          </div>
-        </section>
+            <ReportRow label="Branch" value={formatBranch(item.branch_id)} />
+          </ReportSection>
 
-        <section className="report-section">
-          <h3>2. Test Information</h3>
-
-          <div className="report-table">
+          <ReportSection title="2. Test Information">
             <ReportRow
               label="Test Type"
               value={formatFieldLabel(testData.test_type)}
             />
             <ReportRow
               label="Test Name"
-              value={testValues.test_name || formatFieldLabel(testData.test_type)}
+              value={
+                testValues.test_name || formatFieldLabel(testData.test_type)
+              }
             />
-            <ReportRow label="Applicable Standard" value={testValues.standard} />
+            <ReportRow
+              label="Applicable Standard"
+              value={testValues.standard}
+            />
             <ReportRow
               label="Computed by System"
               value={testData.computed_by_system ? "Yes" : "No"}
             />
-            <ReportRow label="Encoded By" value={testData.entered_by} />
-            <ReportRow label="Encoded At" value={formatDate(testData.entered_at)} />
-          </div>
-        </section>
+            <ReportRow
+              label="Encoded By"
+              value={
+                testData.entered_by_name ||
+                testData.entered_by_display ||
+                testData.entered_by_full_name ||
+                formatUser(testData.entered_by)
+              }
+            />
+            <ReportRow
+              label="Encoded At"
+              value={formatDate(testData.entered_at)}
+            />
+          </ReportSection>
 
-        <section className="report-section avoid-break">
-          <h3>3. QA Result Review</h3>
-
-          <div className="report-table">
+          <ReportSection title="3. QA Result Review">
             <ReportRow label="Original System Result" value={systemResult} />
             <ReportRow label="QA Final Result" value={finalResult} />
             <ReportRow
@@ -1102,7 +1089,14 @@ function OfficialReport({
             />
             <ReportRow
               label="Reviewed By"
-              value={qaOverride?.overridden_by || qa.result_reviewed_by || "-"}
+              value={
+                qaOverride?.overridden_by_name ||
+                qaOverride?.overridden_by_display ||
+                qaOverride?.overridden_by_full_name ||
+                qa.result_reviewed_by_name ||
+                qa.result_reviewed_by_display ||
+                formatUser(qaOverride?.overridden_by || qa.result_reviewed_by)
+              }
             />
             <ReportRow
               label="Reviewed At"
@@ -1110,13 +1104,9 @@ function OfficialReport({
                 qaOverride?.overridden_at || qa.result_reviewed_at,
               )}
             />
-          </div>
-        </section>
+          </ReportSection>
 
-        <section className="report-section avoid-break">
-          <h3>4. Recorded and Computed Values</h3>
-
-          <div className="values-table">
+          <ReportSection title="4. Recorded and Computed Values">
             {Object.entries(testValues).map(([key, value]) => (
               <ReportRow
                 key={key}
@@ -1124,537 +1114,325 @@ function OfficialReport({
                 value={formatValue(value)}
               />
             ))}
-          </div>
-        </section>
+          </ReportSection>
 
-        <section className="report-section avoid-break">
-          <h3>5. Remarks</h3>
+          <ReportSection title="5. Remarks">
+            <ReportRow label="System Remarks" value={testData.system_remarks} />
+            <ReportRow label="Technician Remarks" value={testData.remarks} />
+          </ReportSection>
 
-          <div className="remarks-table">
-            <div>
-              <span>System Remarks</span>
-              <p>{testData.system_remarks || "-"}</p>
-            </div>
-
-            <div>
-              <span>Technician Remarks</span>
-              <p>{testData.remarks || "-"}</p>
-            </div>
-          </div>
-        </section>
-
-        <section className="report-section avoid-break">
-          <h3>6. Release and Payment Information</h3>
-
-          <div className="report-table">
-            <ReportRow
-              label="Payment Status"
-              value={payment.payment_status || "-"}
-            />
-            <ReportRow label="Report Status" value={item.current_state || "-"} />
+          <ReportSection title="6. Release and Payment Information">
+            <ReportRow label="Payment Status" value={payment.payment_status} />
+            <ReportRow label="Report Status" value={item.current_state} />
             <ReportRow
               label="QA Released By"
-              value={qa.release_reviewed_by || "-"}
+              value={
+                qa.release_reviewed_by_name ||
+                qa.release_reviewed_by_display ||
+                qa.release_reviewed_by_full_name ||
+                formatUser(qa.release_reviewed_by)
+              }
             />
             <ReportRow
               label="QA Released At"
               value={formatDate(qa.release_reviewed_at)}
             />
-          </div>
-        </section>
+          </ReportSection>
 
-        <footer className="report-footer avoid-break">
-          <div className="signature-box">
-            <div className="signature-line" />
-            <strong>Prepared / Encoded By</strong>
-            <span>Laboratory Personnel</span>
-          </div>
+          <footer className="reportFooter">
+            <div className="signatureBlock">
+              <div className="signatureLine" />
+              <strong>Prepared / Encoded By</strong>
+              <span>Laboratory Personnel</span>
+            </div>
 
-          <div className="signature-box">
-            <div className="signature-line" />
-            <strong>Authorized for Release By</strong>
-            <span>QA Engineer / Authorized Engineer</span>
-          </div>
-        </footer>
+            <div className="signatureBlock">
+              <div className="signatureLine" />
+              <strong>Authorized for Release By</strong>
+              <span>QA Engineer / Authorized Engineer</span>
+            </div>
+          </footer>
 
-        <p className="footer-note">
-          Generated through Matriq AI-Assisted Laboratory Information Management
-          System. Physical testing, quantitative interpretation, and compliance
-          certification remain under qualified laboratory personnel and
-          authorized engineers.
-        </p>
-      </article>
+          <p className="footerNote">
+            Generated through Matriq AI-Assisted Laboratory Information
+            Management System. Physical testing, quantitative interpretation,
+            and compliance certification remain under qualified laboratory
+            personnel and authorized engineers.
+          </p>
+        </article>
+      </Card>
 
       <style jsx>{`
         .official-report {
-          margin-bottom: 28px;
+          margin-bottom: 22px;
         }
 
-        .report-actions {
+        .reportSheet {
+          display: grid;
+          gap: 16px;
+        }
+
+        .reportHeader {
           display: flex;
           justify-content: space-between;
-          align-items: center;
-          gap: 18px;
-          background: #ffffff;
-          border: 1px solid #d1d5db;
-          border-radius: 18px;
-          padding: 18px 20px;
-          margin-bottom: 20px;
-          box-shadow:
-            0 2px 8px rgba(0, 0, 0, 0.05),
-            0 1px 2px rgba(0, 0, 0, 0.03);
+          align-items: flex-start;
+          gap: 24px;
+          padding-bottom: 15px;
+          border-bottom: 2px solid var(--color-text-primary);
         }
 
-        .actions-eyebrow,
-        .system-name {
+        .reportHeader p {
           margin: 0 0 4px;
-          color: #4f46e5;
-          font-size: 11px;
-          font-weight: 900;
+          color: var(--color-brand);
+          font-size: 10px;
+          font-weight: 600;
           text-transform: uppercase;
           letter-spacing: 0.08em;
         }
 
-        .report-actions h2 {
+        .reportHeader h1 {
           margin: 0;
+          color: var(--color-text-primary);
           font-size: 18px;
-          color: #111827;
-        }
-
-        .report-actions p {
-          margin: 4px 0 0;
-          color: #64748b;
-          font-size: 13px;
-          line-height: 1.5;
-        }
-
-        .print-btn {
-          border: none;
-          border-radius: 8px;
-          background: #111827;
-          color: white;
-          padding: 12px 16px;
-          font-size: 13px;
-          font-weight: 800;
-          cursor: pointer;
-          white-space: nowrap;
-          transition:
-            background-color 180ms ease,
-            transform 100ms ease,
-            box-shadow 100ms ease;
-        }
-
-        .print-btn:hover {
-          transform: scale(1.01);
-          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
-        }
-
-        .report-sheet {
-          background: #ffffff;
-          border: 1px solid #d1d5db;
-          border-radius: 18px;
-          padding: 34px;
-          box-shadow:
-            0 4px 16px rgba(0, 0, 0, 0.07),
-            0 2px 4px rgba(0, 0, 0, 0.04);
-        }
-
-        .report-header {
-          display: flex;
-          justify-content: space-between;
-          gap: 24px;
-          align-items: flex-start;
-          padding-bottom: 18px;
-          border-bottom: 3px solid #111827;
-          margin-bottom: 16px;
-        }
-
-        .report-header h1 {
-          margin: 0;
-          color: #111827;
-          font-size: 24px;
-          line-height: 1.2;
+          font-weight: 600;
           text-transform: uppercase;
           letter-spacing: 0.04em;
         }
 
-        .subtitle {
-          margin: 8px 0 0;
-          color: #4b5563;
-          font-size: 13px;
+        .reportHeader span {
+          display: block;
+          margin-top: 7px;
+          color: var(--color-text-secondary);
+          font-size: var(--text-xs);
           line-height: 1.5;
           max-width: 560px;
         }
 
-        .report-meta-box {
-          min-width: 220px;
-          border: 1px solid #d1d5db;
-          border-radius: 14px;
-          padding: 14px;
+        .reportMeta {
+          min-width: 210px;
+          border: 1px solid var(--color-border-soft);
+          border-radius: var(--radius-md);
+          padding: 13px;
           text-align: right;
-          background: #ffffff;
         }
 
-        .report-meta-box span {
+        .reportMeta span,
+        .reportStrip span,
+        .reportResult span {
           display: block;
-          color: #64748b;
-          font-size: 10px;
-          font-weight: 900;
+          color: var(--color-text-secondary);
+          font-size: 9px;
+          font-weight: 500;
           text-transform: uppercase;
           letter-spacing: 0.06em;
         }
 
-        .report-meta-box strong {
+        .reportMeta strong {
           display: block;
           margin-top: 4px;
-          color: #111827;
-          font-size: 16px;
-          font-weight: 900;
+          color: var(--color-text-primary);
+          font-size: var(--text-sm);
+          font-weight: 600;
         }
 
-        .report-meta-box small {
+        .reportMeta small {
           display: block;
           margin-top: 5px;
-          color: #4b5563;
-          font-size: 11px;
-          font-weight: 700;
+          color: var(--color-text-secondary);
+          font-size: 10px;
+          font-weight: 400;
         }
 
-        .report-summary-strip {
+        .reportStrip {
           display: grid;
           grid-template-columns: repeat(4, 1fr);
-          border: 1px solid #d1d5db;
-          border-radius: 14px;
+          border: 1px solid var(--color-border-soft);
+          border-radius: var(--radius-md);
           overflow: hidden;
-          margin-bottom: 14px;
         }
 
-        .report-summary-strip div {
-          padding: 12px;
-          border-right: 1px solid #d1d5db;
-          background: #ffffff;
-        }
-
-        .report-summary-strip div:last-child {
-          border-right: none;
-        }
-
-        .report-summary-strip span {
-          display: block;
-          color: #64748b;
-          font-size: 9px;
-          font-weight: 900;
-          text-transform: uppercase;
-          letter-spacing: 0.06em;
-          margin-bottom: 4px;
-        }
-
-        .report-summary-strip strong {
-          color: #111827;
-          font-size: 13px;
-          font-weight: 900;
-        }
-
-        .result-word.pass {
-          color: #166534;
-        }
-
-        .result-word.fail {
-          color: #991b1b;
-        }
-
-        .result-word.recorded {
-          color: #3730a3;
-        }
-
-        .report-warning {
+        .reportWarning {
           padding: 11px 13px;
-          border: 1px solid #cbd5e1;
-          border-radius: 14px;
-          background: #f8fafc;
-          color: #334155;
-          font-size: 12px;
+          border: 1px solid var(--color-border-soft);
+          border-radius: var(--radius-md);
+          background: var(--color-overlay);
+          color: var(--color-text-secondary);
+          font-size: var(--text-xs);
           line-height: 1.6;
-          margin-bottom: 14px;
         }
 
-        .report-warning strong {
-          color: #111827;
+        .reportWarning strong {
+          color: var(--color-text-primary);
+          font-weight: 600;
         }
 
-        .result-block {
+        .reportResult {
           display: flex;
           justify-content: space-between;
           align-items: center;
           gap: 18px;
-          border: 1px solid #d1d5db;
-          border-radius: 14px;
+          border: 1px solid var(--color-border-soft);
+          border-radius: var(--radius-md);
           padding: 14px;
-          margin-bottom: 20px;
         }
 
-        .block-label {
+        .reportResult strong {
           display: block;
-          color: #64748b;
-          font-size: 10px;
-          font-weight: 900;
-          text-transform: uppercase;
-          letter-spacing: 0.06em;
-          margin-bottom: 4px;
-        }
-
-        .result-text {
-          display: block;
-          font-size: 22px;
-          font-weight: 900;
-          letter-spacing: -0.03em;
-        }
-
-        .result-text.pass {
-          color: #166534;
-        }
-
-        .result-text.fail {
-          color: #991b1b;
-        }
-
-        .result-text.recorded {
-          color: #3730a3;
-        }
-
-        .result-block p {
-          margin: 5px 0 0;
-          color: #475569;
-          font-size: 12px;
-          line-height: 1.5;
-        }
-
-        .report-section {
-          margin-top: 20px;
-          break-inside: avoid;
-          page-break-inside: avoid;
-        }
-
-        .report-section h3 {
-          margin: 0 0 9px;
-          color: #111827;
-          font-size: 12px;
-          font-weight: 900;
-          text-transform: uppercase;
-          letter-spacing: 0.06em;
-          padding-bottom: 7px;
-          border-bottom: 1px solid #d1d5db;
-        }
-
-        .report-table,
-        .values-table {
-          border: 1px solid #d1d5db;
-          border-radius: 10px;
-          overflow: hidden;
-        }
-
-        .remarks-table {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 12px;
-        }
-
-        .remarks-table div {
-          border: 1px solid #d1d5db;
-          border-radius: 10px;
-          padding: 12px;
-          background: #ffffff;
-        }
-
-        .remarks-table span {
-          display: block;
-          color: #64748b;
-          font-size: 10px;
-          font-weight: 900;
-          text-transform: uppercase;
-          letter-spacing: 0.06em;
-          margin-bottom: 6px;
-        }
-
-        .remarks-table p {
-          margin: 0;
-          color: #111827;
-          font-size: 13px;
+          margin-top: 4px;
+          color: var(--color-text-primary);
+          font-size: 18px;
           font-weight: 600;
+        }
+
+        .reportResult p {
+          margin: 5px 0 0;
+          color: var(--color-text-secondary);
+          font-size: var(--text-xs);
           line-height: 1.5;
         }
 
-        .report-footer {
+        .reportFooter {
           display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 36px;
-          margin-top: 42px;
-          break-inside: avoid;
-          page-break-inside: avoid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 40px;
+          margin-top: 38px;
+          align-items: end;
         }
 
-        .signature-line {
-          border-top: 1px solid #111827;
-          margin-bottom: 8px;
+        .signatureBlock {
+          display: grid;
+          justify-items: center;
+          text-align: center;
+          gap: 4px;
+        }
+
+        .signatureLine {
+          width: min(100%, 260px);
           height: 1px;
+          border-top: 1px solid var(--color-text-primary);
+          margin-bottom: 7px;
         }
 
-        .signature-box strong {
+        .signatureBlock strong {
           display: block;
-          color: #111827;
-          font-size: 12px;
+          color: var(--color-text-primary);
+          font-size: var(--text-xs);
+          font-weight: 600;
         }
 
-        .signature-box span {
+        .signatureBlock span {
           display: block;
-          color: #64748b;
-          font-size: 11px;
-          margin-top: 2px;
+          color: var(--color-text-secondary);
+          font-size: 10px;
+          margin-top: 1px;
         }
 
-        .footer-note {
-          margin: 22px 0 0;
+        .footerNote {
+          margin: 6px 0 0;
           padding-top: 12px;
-          border-top: 1px solid #d1d5db;
-          color: #64748b;
-          font-size: 11px;
+          border-top: 1px solid var(--color-border-soft);
+          color: var(--color-text-secondary);
+          font-size: 10px;
           line-height: 1.6;
         }
 
         @media print {
           .official-report {
-            margin: 0;
+            margin: 0 !important;
           }
 
-          .report-sheet {
-            width: 100%;
-            box-shadow: none;
-            border: none;
-            border-radius: 0;
-            padding: 0;
+          .reportSheet {
+            gap: 10px;
           }
 
-          .report-header {
-            margin-bottom: 12px;
-            padding-bottom: 12px;
+          .reportHeader {
+            gap: 16px;
+            padding-bottom: 10px;
+            border-bottom-width: 1.5px;
           }
 
-          .report-header h1 {
-            font-size: 17px;
-          }
-
-          .subtitle {
-            font-size: 10px;
-          }
-
-          .system-name {
-            font-size: 9px;
-          }
-
-          .report-meta-box {
-            min-width: 190px;
-            padding: 10px;
-          }
-
-          .report-meta-box strong {
-            font-size: 12px;
-          }
-
-          .report-meta-box small {
-            font-size: 9px;
-          }
-
-          .report-summary-strip {
-            margin-bottom: 10px;
-          }
-
-          .report-summary-strip div {
-            padding: 8px;
-            background: white !important;
-          }
-
-          .report-summary-strip span {
-            font-size: 8px;
-          }
-
-          .report-summary-strip strong {
-            font-size: 10px;
-          }
-
-          .report-meta-box,
-          .report-warning,
-          .result-block,
-          .report-table,
-          .values-table,
-          .remarks-table div {
-            background: white !important;
-          }
-
-          .report-warning {
-            padding: 8px 10px;
-            margin-bottom: 10px;
-            font-size: 9px;
-          }
-
-          .result-block {
-            padding: 8px 10px;
-            margin-bottom: 12px;
-          }
-
-          .result-text {
+          .reportHeader h1 {
             font-size: 15px;
           }
 
-          .result-block p {
-            font-size: 9px;
-          }
-
-          .report-section {
-            margin-top: 12px;
-          }
-
-          .report-section h3 {
-            font-size: 9px;
-            margin-bottom: 6px;
-            padding-bottom: 5px;
-          }
-
-          .remarks-table {
-            gap: 8px;
-          }
-
-          .remarks-table div {
-            padding: 8px;
-          }
-
-          .remarks-table span {
-            font-size: 8px;
-          }
-
-          .remarks-table p {
-            font-size: 9px;
-          }
-
-          .report-footer {
-            margin-top: 28px;
-          }
-
-          .signature-box strong {
-            font-size: 10px;
-          }
-
-          .signature-box span {
-            font-size: 9px;
-          }
-
-          .footer-note {
+          .reportHeader p {
             font-size: 8.5px;
-            margin-top: 14px;
           }
 
-          .avoid-break {
+          .reportHeader span,
+          .reportWarning,
+          .reportResult p,
+          .footerNote {
+            font-size: 8px;
+            line-height: 1.35;
+          }
+
+          .reportMeta {
+            min-width: 165px;
+            padding: 9px;
+          }
+
+          .reportStrip {
+            grid-template-columns: repeat(4, 1fr);
+          }
+
+          .reportResult {
+            padding: 9px;
+          }
+
+          .reportResult strong {
+            font-size: 13px;
+          }
+
+          .reportFooter {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 26px;
+            margin-top: 28px;
             break-inside: avoid;
             page-break-inside: avoid;
+          }
+
+          .signatureLine {
+            width: 190px;
+            margin-bottom: 6px;
+          }
+
+          .signatureBlock strong {
+            font-size: 8.5px;
+          }
+
+          .signatureBlock span {
+            font-size: 7.5px;
+          }
+
+          .footerNote {
+            padding-top: 8px;
+          }
+        }
+
+        @media (max-width: 760px) {
+          .reportHeader,
+          .reportResult {
+            flex-direction: column;
+          }
+
+          .reportMeta {
+            width: 100%;
+            text-align: left;
+          }
+
+          .reportStrip,
+          .reportFooter {
+            grid-template-columns: 1fr;
+          }
+
+          .signatureBlock {
+            justify-items: start;
+            text-align: left;
+          }
+
+          .signatureLine {
+            width: min(100%, 260px);
           }
         }
       `}</style>
@@ -1662,135 +1440,168 @@ function OfficialReport({
   );
 }
 
-function Info({ label, value, emphasis }) {
+function ReportTile({ label, value }) {
   return (
-    <div className="info-cell">
-      <div className="label">{label}</div>
-      <div className={`value ${emphasis ? "emphasis" : ""}`}>
-        {formatValue(value)}
-      </div>
+    <div className="tile">
+      <span>{label}</span>
+      <strong>{formatValue(value)}</strong>
 
       <style jsx>{`
-        .info-cell {
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
+        .tile {
+          padding: 11px 12px;
+          border-right: 1px solid var(--color-border-soft);
         }
 
-        .label {
-          font-size: 11px;
-          font-weight: 700;
-          color: #9ca3af;
+        .tile:last-child {
+          border-right: none;
+        }
+
+        span {
+          display: block;
+          color: var(--color-text-secondary);
+          font-size: 9px;
+          font-weight: 500;
           text-transform: uppercase;
-          letter-spacing: 0.02em;
+          letter-spacing: 0.06em;
+          margin-bottom: 4px;
         }
 
-        .value {
-          font-size: 14px;
-          font-weight: 600;
-          color: #111827;
-          word-break: break-word;
+        strong {
+          color: var(--color-text-primary);
+          font-size: var(--text-xs);
+          font-weight: 500;
         }
 
-        .emphasis {
-          color: #2563eb;
-          font-weight: 800;
+        @media print {
+          .tile {
+            padding: 7px 8px;
+          }
+
+          span {
+            font-size: 7.5px;
+          }
+
+          strong {
+            font-size: 8.5px;
+          }
+        }
+
+        @media (max-width: 760px) {
+          .tile {
+            border-right: none;
+            border-bottom: 1px solid var(--color-border-soft);
+          }
+
+          .tile:last-child {
+            border-bottom: none;
+          }
         }
       `}</style>
     </div>
   );
 }
 
-function ReportInfo({ label, value }) {
+function ReportSection({ title, children }) {
   return (
-    <div className="report-info">
-      <div className="report-info-label">{label}</div>
-      <div className="report-info-value">{formatValue(value)}</div>
+    <section className="reportSection">
+      <h3>{title}</h3>
+      <div>{children}</div>
 
       <style jsx>{`
-        .report-info {
-          display: grid;
-          gap: 4px;
-          padding: 10px 0;
+        .reportSection {
+          break-inside: avoid;
+          page-break-inside: avoid;
         }
 
-        .report-info-label {
-          font-size: 10px;
-          font-weight: 900;
-          color: #64748b;
+        h3 {
+          margin: 0 0 8px;
+          padding-bottom: 7px;
+          border-bottom: 1px solid var(--color-border-soft);
+          color: var(--color-text-primary);
+          font-size: 11px;
+          font-weight: 600;
           text-transform: uppercase;
-          letter-spacing: 0.05em;
+          letter-spacing: 0.06em;
         }
 
-        .report-info-value {
-          font-size: 14px;
-          color: #111827;
-          font-weight: 800;
-          line-height: 1.45;
-          word-break: break-word;
+        div {
+          border: 1px solid var(--color-border-soft);
+          border-radius: var(--radius-md);
+          overflow: hidden;
+        }
+
+        @media print {
+          h3 {
+            margin-bottom: 5px;
+            padding-bottom: 4px;
+            font-size: 8.8px;
+          }
         }
       `}</style>
-    </div>
+    </section>
   );
 }
 
 function ReportRow({ label, value }) {
   return (
-    <div className="report-row">
+    <div className="row">
       <span>{label}</span>
       <strong>{formatValue(value)}</strong>
 
       <style jsx>{`
-        .report-row {
+        .row {
           display: grid;
-          grid-template-columns: 230px minmax(0, 1fr);
-          gap: 16px;
+          grid-template-columns: 220px minmax(0, 1fr);
+          gap: 14px;
           padding: 9px 12px;
-          border-bottom: 1px solid #d1d5db;
-          background: #ffffff;
+          border-bottom: 1px solid var(--color-border-soft);
         }
 
-        .report-row:nth-child(even) {
-          background: #f8fafc;
+        .row:nth-child(even) {
+          background: var(--color-overlay);
         }
 
-        .report-row:last-child {
+        .row:last-child {
           border-bottom: none;
         }
 
-        .report-row span {
-          color: #64748b;
-          font-size: 10px;
-          font-weight: 900;
+        span {
+          color: var(--color-text-secondary);
+          font-size: 9px;
+          font-weight: 500;
           text-transform: uppercase;
           letter-spacing: 0.05em;
         }
 
-        .report-row strong {
-          color: #111827;
-          font-size: 13px;
-          font-weight: 800;
+        strong {
+          color: var(--color-text-primary);
+          font-size: var(--text-xs);
+          font-weight: 400;
           line-height: 1.4;
-          word-break: break-word;
+          overflow-wrap: anywhere;
         }
 
         @media print {
-          .report-row {
-            grid-template-columns: 170px minmax(0, 1fr);
-            padding: 5px 8px;
+          .row {
+            grid-template-columns: 160px minmax(0, 1fr);
+            gap: 8px;
+            padding: 4px 7px;
           }
 
-          .report-row,
-          .report-row:nth-child(even) {
-            background: white !important;
+          span {
+            font-size: 7px;
           }
 
-          .report-row span {
-            font-size: 7.8px;
+          strong {
+            font-size: 8px;
+            line-height: 1.25;
           }
+        }
 
-          .report-row strong {
-            font-size: 9px;
+        @media (max-width: 640px) {
+          .row {
+            grid-template-columns: 1fr;
+            gap: 4px;
           }
         }
       `}</style>
@@ -1798,122 +1609,50 @@ function ReportRow({ label, value }) {
   );
 }
 
-function Section({ title, children }) {
-  return (
-    <div className="data-card-sec">
-      <h3 className="card-heading-sec">{title}</h3>
-      <div className="section-grid">{children}</div>
+function normalizeMaterialName(value) {
+  if (!value) return "-";
 
-      <style jsx>{`
-        .data-card-sec {
-          background: #fff;
-          border: 1px solid #d1d5db;
-          border-radius: 18px;
-          padding: 24px;
-          margin-bottom: 24px;
-          box-shadow:
-            0 2px 8px rgba(0, 0, 0, 0.05),
-            0 1px 2px rgba(0, 0, 0, 0.03);
-        }
+  const normalized = String(value).trim().toLowerCase();
 
-        .card-heading-sec {
-          font-size: 12px;
-          font-weight: 800;
-          color: #111827;
-          margin: 0 0 16px;
-          text-transform: uppercase;
-          border-bottom: 1px solid #d1d5db;
-          padding-bottom: 8px;
-          letter-spacing: 0.025em;
-        }
+  if (
+    normalized === "rsb" ||
+    normalized === "rebar" ||
+    normalized === "reinforcing steel" ||
+    normalized === "reinforcing steel bar" ||
+    normalized === "steel bar" ||
+    normalized === "metal" ||
+    normalized.includes("rsb") ||
+    normalized.includes("rebar") ||
+    normalized.includes("reinforcing") ||
+    normalized.includes("steel") ||
+    normalized.includes("metal")
+  ) {
+    return "Reinforcing Steel Bar";
+  }
 
-        .section-grid {
-          display: grid;
-          grid-template-columns: 1fr;
-          gap: 16px;
-        }
-      `}</style>
-    </div>
-  );
-}
+  if (
+    normalized === "soil aggregates" ||
+    normalized === "soil aggregate" ||
+    normalized === "soil_aggregates" ||
+    normalized === "soil-aggregates" ||
+    normalized === "aggregate" ||
+    normalized === "aggregates" ||
+    normalized.includes("soil") ||
+    normalized.includes("aggregate")
+  ) {
+    return "Soil Aggregates";
+  }
 
-function ResultBadge({ result, small = false }) {
-  const normalized = result || "RECORDED";
+  if (
+    normalized === "concrete" ||
+    normalized === "cement concrete" ||
+    normalized.includes("concrete") ||
+    normalized.includes("cement")
+  ) {
+    return "Concrete";
+  }
 
-  const cls =
-    normalized === "PASS"
-      ? "pass"
-      : normalized === "FAIL"
-        ? "fail"
-        : normalized === "RECORDED"
-          ? "recorded"
-          : normalized === "INCOMPLETE"
-            ? "incomplete"
-            : "default";
-
-  return (
-    <span className={`result-badge ${cls} ${small ? "small" : ""}`}>
-      {normalized}
-
-      <style jsx>{`
-        .result-badge {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          width: fit-content;
-          border-radius: 999px;
-          padding: 9px 14px;
-          font-size: 12px;
-          font-weight: 900;
-          white-space: nowrap;
-          letter-spacing: 0.02em;
-        }
-
-        .result-badge.small {
-          padding: 6px 10px;
-          font-size: 11px;
-        }
-
-        .pass {
-          background: #dcfce7;
-          color: #166534;
-          border: 1px solid #86efac;
-        }
-
-        .fail {
-          background: #fee2e2;
-          color: #991b1b;
-          border: 1px solid #fca5a5;
-        }
-
-        .recorded {
-          background: #e0e7ff;
-          color: #3730a3;
-          border: 1px solid #a5b4fc;
-        }
-
-        .incomplete {
-          background: #fef3c7;
-          color: #92400e;
-          border: 1px solid #facc15;
-        }
-
-        .default {
-          background: #f1f5f9;
-          color: #475569;
-          border: 1px solid #cbd5e1;
-        }
-
-        @media print {
-          .result-badge {
-            background: white !important;
-            color: #111827 !important;
-            border: 1px solid #111827 !important;
-          }
-        }
-      `}</style>
-    </span>
-  );
+  return formatFieldLabel(value);
 }
 
 function formatFieldLabel(value) {
@@ -1922,6 +1661,7 @@ function formatFieldLabel(value) {
   return String(value)
     .replaceAll("_", " ")
     .replaceAll("-", " ")
+    .toLowerCase()
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
@@ -1941,6 +1681,34 @@ function formatDate(value) {
   }
 }
 
+function formatCurrency(value) {
+  if (value === null || value === undefined || value === "") return "-";
+  return `₱${Number(value || 0).toLocaleString()}`;
+}
+
+function formatConfidence(value) {
+  if (typeof value !== "number") return "-";
+  return `${Math.round(value * 100)}%`;
+}
+
+function formatBranch(branchId) {
+  if (Number(branchId) === 1) return "Marikina";
+  if (Number(branchId) === 2) return "Pateros";
+  return branchId ? `Branch ${branchId}` : "-";
+}
+
+function formatUser(userId) {
+  if (!userId) return "-";
+
+  const value = String(userId);
+
+  if (Number.isNaN(Number(value))) {
+    return value;
+  }
+
+  return `User ${value}`;
+}
+
 function getSystemResult(testData) {
   return (
     testData?.system_result ||
@@ -1951,7 +1719,12 @@ function getSystemResult(testData) {
 }
 
 function getFinalResult(testData) {
-  return testData?.qa_final_result || testData?.result || null;
+  return (
+    testData?.qa_final_result ||
+    testData?.final_result ||
+    testData?.result ||
+    null
+  );
 }
 
 function getQaOverride(testData) {

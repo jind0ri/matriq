@@ -8,6 +8,7 @@ import Badge from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
 import EmptyState from "@/components/ui/EmptyState";
 import Loader from "@/components/ui/Loader";
+import Modal from "@/components/ui/Modal";
 import Select from "@/components/ui/Select";
 import Table from "@/components/ui/Table";
 
@@ -20,21 +21,16 @@ const LIFECYCLE_STATES = [
 ];
 
 const RECENT_SAMPLE_COLUMNS = [
-  { key: "sample_id", label: "Sample ID" },
-  { key: "material_type", label: "Material" },
-  { key: "branch_id", label: "Branch" },
-  { key: "current_state", label: "Status" },
-  { key: "action", label: "Action" },
+  { key: "sample_id", label: "Sample ID", width: "135px" },
+  { key: "material_type", label: "Material", width: "170px" },
+  { key: "branch_id", label: "Branch", width: "120px" },
+  { key: "current_state", label: "Status", width: "135px" },
+  { key: "action", label: "Action", align: "right", width: "100px" },
 ];
 
-const MATERIAL_COLORS = [
-  "#4f6f8f",
-  "#5b5f97",
-  "#8a6f5a",
-  "#9a7b4f",
-  "#58745d",
-  "#6b7280",
-];
+const MATERIAL_COLORS = ["#4f6f8f", "#5b5f97", "#8a6f5a"];
+
+const MATERIAL_ORDER = ["Reinforcing Steel Bar", "Soil Aggregates", "Concrete"];
 
 export default function TechnicalDashboardPage() {
   const user = getStoredUser();
@@ -49,6 +45,8 @@ export default function TechnicalDashboardPage() {
 
   const [samples, setSamples] = useState([]);
   const [branchFilter, setBranchFilter] = useState("All");
+  const [selectedSample, setSelectedSample] = useState(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -97,6 +95,16 @@ export default function TechnicalDashboardPage() {
     });
   }, [samples, branchFilter]);
 
+  const sampleById = useMemo(() => {
+    const map = new Map();
+
+    samples.forEach((sample) => {
+      map.set(sample.sample_id, sample);
+    });
+
+    return map;
+  }, [samples]);
+
   const lifecycleCounts = useMemo(() => {
     const counts = {};
 
@@ -116,17 +124,24 @@ export default function TechnicalDashboardPage() {
   }, [visibleSamples]);
 
   const materialCounts = useMemo(() => {
-    const counts = {};
+    const counts = {
+      "Reinforcing Steel Bar": 0,
+      "Soil Aggregates": 0,
+      Concrete: 0,
+    };
 
     visibleSamples.forEach((sample) => {
-      const material = sample.material_type || "Unspecified";
+      const material = normalizeMaterialName(
+        sample.material_type || sample.ai_predicted_label || "Concrete",
+      );
+
       counts[material] = (counts[material] || 0) + 1;
     });
 
-    return Object.entries(counts)
-      .map(([label, value]) => ({ label, value }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 5);
+    return MATERIAL_ORDER.map((label) => ({
+      label,
+      value: counts[label] || 0,
+    })).filter((item) => item.value > 0);
   }, [visibleSamples]);
 
   const recentSamples = useMemo(() => {
@@ -136,8 +151,10 @@ export default function TechnicalDashboardPage() {
         ? dashboard.recent_samples
         : visibleSamples;
 
-    return [...source].slice(0, 5);
-  }, [dashboard.recent_samples, visibleSamples]);
+    return [...source].slice(0, 5).map((sample) => {
+      return sampleById.get(sample.sample_id) || sample;
+    });
+  }, [dashboard.recent_samples, visibleSamples, sampleById]);
 
   const topMetrics = getTopMetrics({
     role,
@@ -151,12 +168,28 @@ export default function TechnicalDashboardPage() {
     ...LIFECYCLE_STATES.map((state) => Number(lifecycleCounts[state]) || 0),
   );
 
+  function openDetails(sample) {
+    setSelectedSample(sample);
+    setDetailsOpen(true);
+  }
+
+  function closeDetails() {
+    setDetailsOpen(false);
+    setSelectedSample(null);
+  }
+
   return (
     <div className="page">
       <header className="header">
         <div>
           <h1>{getDashboardTitle(role)}</h1>
-          <p>Operational overview across all testing branches.</p>
+          <p>
+            Operational overview for{" "}
+            <strong>
+              {branchFilter === "All" ? "all branches" : branchFilter}
+            </strong>
+            .
+          </p>
         </div>
 
         <div className="headerControls">
@@ -268,9 +301,12 @@ export default function TechnicalDashboardPage() {
             <div className="tableHeader">
               <div>
                 <h2>Recent Registered Samples</h2>
+                <p>Click a row to view details, or open the tracking record.</p>
               </div>
 
-              <Link href="/technical/registry">View All</Link>
+              <Link href="/technical/registry" className="viewAllButton">
+                View All
+              </Link>
             </div>
 
             <Table
@@ -279,22 +315,36 @@ export default function TechnicalDashboardPage() {
               emptyText="No samples registered yet."
               density="comfortable"
               variant="minimal"
+              className="recentSamplesTable"
               renderRow={(sample) => (
-                <tr key={sample.sample_id}>
+                <tr
+                  key={sample.sample_id}
+                  className="clickableRow"
+                  onClick={() => openDetails(sample)}
+                  tabIndex={0}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      openDetails(sample);
+                    }
+                  }}
+                >
                   <td>
-                    <Link
-                      href={`/technical/tracking/${sample.sample_id}`}
-                      className="sampleLink"
-                    >
-                      {sample.sample_id}
-                    </Link>
+                    <span className="sampleId">{sample.sample_id}</span>
                   </td>
-                  <td>{sample.material_type || "-"}</td>
+                  <td>
+                    {normalizeMaterialName(
+                      sample.material_type || sample.ai_predicted_label,
+                    )}
+                  </td>
                   <td>{formatBranch(sample.branch_id)}</td>
                   <td>
                     <LifecycleBadge status={sample.current_state} />
                   </td>
-                  <td>
+                  <td
+                    className="right"
+                    onClick={(event) => event.stopPropagation()}
+                  >
                     <Link
                       href={`/technical/tracking/${sample.sample_id}`}
                       className="rowAction"
@@ -308,6 +358,26 @@ export default function TechnicalDashboardPage() {
           </section>
         </>
       )}
+
+      <Modal
+        open={detailsOpen}
+        title="Sample Details"
+        description="Quick context for this sample. Open tracking for full test workflow."
+        onClose={closeDetails}
+        size="lg"
+        footer={
+          selectedSample?.sample_id ? (
+            <Link
+              href={`/technical/tracking/${selectedSample.sample_id}`}
+              className="footerButton"
+            >
+              Open Tracking
+            </Link>
+          ) : null
+        }
+      >
+        {selectedSample && <SampleDetails sample={selectedSample} />}
+      </Modal>
 
       <style jsx>{`
         .page {
@@ -327,7 +397,7 @@ export default function TechnicalDashboardPage() {
         .header h1 {
           margin: 0;
           font-size: 18px;
-          font-weight: 850;
+          font-weight: 600;
           letter-spacing: -0.02em;
           color: var(--color-text-primary);
         }
@@ -337,6 +407,11 @@ export default function TechnicalDashboardPage() {
           color: var(--color-text-secondary);
           font-size: 11px;
           line-height: 1.4;
+        }
+
+        .header p strong {
+          color: var(--color-text-primary);
+          font-weight: 600;
         }
 
         .headerControls {
@@ -360,6 +435,7 @@ export default function TechnicalDashboardPage() {
 
         .notice strong {
           font-size: 12px;
+          font-weight: 600;
         }
 
         .errorBox {
@@ -369,7 +445,7 @@ export default function TechnicalDashboardPage() {
           border: 1px solid var(--color-danger-border);
           color: var(--color-danger);
           font-size: 12px;
-          font-weight: 800;
+          font-weight: 500;
         }
 
         .metrics {
@@ -387,20 +463,20 @@ export default function TechnicalDashboardPage() {
         .metric span {
           color: var(--color-text-secondary);
           font-size: 10px;
-          font-weight: 750;
+          font-weight: 500;
         }
 
         .metric strong {
           color: var(--color-text-primary);
           font-size: 18px;
-          font-weight: 850;
+          font-weight: 600;
           line-height: 1;
         }
 
         .charts {
           display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 34px;
+          grid-template-columns: minmax(0, 1fr) minmax(360px, 0.9fr);
+          gap: 44px;
           align-items: start;
         }
 
@@ -417,20 +493,28 @@ export default function TechnicalDashboardPage() {
           margin: 0;
           color: var(--color-text-primary);
           font-size: 12px;
-          font-weight: 800;
+          font-weight: 600;
           letter-spacing: -0.01em;
         }
 
         .barChart {
           height: 235px;
-          display: grid;
-          grid-template-columns: repeat(5, minmax(0, 1fr));
+          display: flex;
           align-items: end;
-          gap: 18px;
+          justify-content: center;
+          gap: 42px;
+          padding: 0 12px;
+          overflow-x: auto;
+          overflow-y: hidden;
+        }
+
+        .barChart::-webkit-scrollbar {
+          height: 0;
         }
 
         .barColumn {
-          min-width: 0;
+          width: 66px;
+          min-width: 66px;
           display: grid;
           justify-items: center;
           gap: 7px;
@@ -440,26 +524,27 @@ export default function TechnicalDashboardPage() {
           height: 12px;
           color: var(--color-text-secondary);
           font-size: 9px;
-          font-weight: 750;
+          font-weight: 400;
           line-height: 1;
         }
 
         .barTrack {
           height: 178px;
           width: 100%;
-          max-width: 46px;
+          max-width: 42px;
           display: flex;
           align-items: end;
           justify-content: center;
           border-radius: var(--radius-md);
-          background: var(--color-overlay);
-          border: 1px solid var(--color-border-soft);
-          overflow: hidden;
+          background: transparent;
+          border: none;
+          overflow: visible;
         }
 
         .bar {
-          width: 100%;
-          border-radius: var(--radius-md) var(--radius-md) 0 0;
+          width: 42px;
+          min-height: 10px;
+          border-radius: var(--radius-md);
         }
 
         .lifeRegistered,
@@ -484,7 +569,7 @@ export default function TechnicalDashboardPage() {
         .barColumn span {
           color: var(--color-text-secondary);
           font-size: 9px;
-          font-weight: 650;
+          font-weight: 400;
           text-align: center;
           line-height: 1.25;
           min-height: 22px;
@@ -492,9 +577,15 @@ export default function TechnicalDashboardPage() {
 
         .donutSection {
           display: grid;
-          grid-template-columns: 210px minmax(0, 1fr);
-          gap: 22px;
+          grid-template-columns: 260px minmax(0, 1fr);
+          gap: 26px;
           align-items: center;
+        }
+
+        .donutChart {
+          width: 260px;
+          height: 260px;
+          max-width: 100%;
         }
 
         .legend {
@@ -509,7 +600,7 @@ export default function TechnicalDashboardPage() {
           align-items: center;
           color: var(--color-text-secondary);
           font-size: 10px;
-          font-weight: 700;
+          font-weight: 400;
         }
 
         .legendItem i {
@@ -527,7 +618,7 @@ export default function TechnicalDashboardPage() {
         .legendItem strong {
           color: var(--color-text-primary);
           font-size: 10px;
-          font-weight: 850;
+          font-weight: 600;
         }
 
         .tableSection {
@@ -537,27 +628,106 @@ export default function TechnicalDashboardPage() {
         .tableHeader {
           display: flex;
           justify-content: space-between;
-          align-items: center;
+          align-items: flex-end;
           gap: 14px;
-          margin-bottom: 10px;
+          margin-bottom: 12px;
         }
 
-        .tableHeader a,
-        .sampleLink,
+        .tableHeader p {
+          margin: 4px 0 0;
+          color: var(--color-text-secondary);
+          font-size: 10px;
+          line-height: 1.4;
+        }
+
+        :global(.viewAllButton) {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-height: 34px;
+          padding: 0 13px;
+          border: 1px solid var(--color-border-soft);
+          border-radius: var(--radius-md);
+          background: var(--color-surface);
+          color: var(--color-text-primary);
+          font-size: var(--text-xs);
+          font-weight: 500;
+          line-height: 1;
+          text-decoration: none;
+          white-space: nowrap;
+          box-shadow: none;
+          transition:
+            background-color var(--transition-base),
+            border-color var(--transition-base),
+            color var(--transition-base);
+        }
+
+        :global(.viewAllButton:hover) {
+          background: var(--color-overlay);
+          border-color: var(--color-border);
+          color: var(--color-brand);
+          text-decoration: none;
+        }
+
         .rowAction {
           color: var(--color-brand);
-          font-size: 10px;
-          font-weight: 850;
+          font-size: var(--text-xs);
+          font-weight: 500;
           text-decoration: none;
           white-space: nowrap;
         }
 
-        .tableHeader a:hover,
-        .sampleLink:hover,
         .rowAction:hover {
           color: var(--color-brand-dark);
           text-decoration: underline;
           transform: none;
+        }
+
+        .sampleId {
+          color: var(--color-brand);
+          font-size: var(--text-xs);
+          font-weight: 500;
+        }
+
+        .footerButton {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-height: 34px;
+          padding: 0 14px;
+          border: 1px solid var(--color-brand);
+          border-radius: var(--radius-md);
+          background: var(--color-brand);
+          color: #ffffff;
+          font-size: var(--text-xs);
+          font-weight: 600;
+          text-decoration: none;
+          line-height: 1;
+        }
+
+        .footerButton:hover {
+          background: var(--color-brand-dark);
+          border-color: var(--color-brand-dark);
+          text-decoration: none;
+        }
+
+        :global(.right) {
+          text-align: right;
+        }
+
+        :global(.recentSamplesTable .clickableRow) {
+          cursor: pointer;
+          transition: background-color var(--transition-base);
+        }
+
+        :global(.recentSamplesTable .clickableRow:hover) {
+          background: var(--color-overlay);
+        }
+
+        :global(.recentSamplesTable .clickableRow:focus-visible) {
+          outline: 2px solid var(--color-brand);
+          outline-offset: -2px;
+          background: var(--color-overlay);
         }
 
         @media (max-width: 1080px) {
@@ -566,7 +736,7 @@ export default function TechnicalDashboardPage() {
           }
 
           .donutSection {
-            grid-template-columns: 210px minmax(0, 1fr);
+            grid-template-columns: 260px minmax(0, 1fr);
           }
         }
 
@@ -585,6 +755,11 @@ export default function TechnicalDashboardPage() {
           .metrics {
             grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 18px;
+          }
+
+          .barChart {
+            gap: 28px;
+            padding-left: 0;
           }
 
           .donutSection {
@@ -607,8 +782,175 @@ export default function TechnicalDashboardPage() {
           }
 
           .barChart {
-            gap: 10px;
+            gap: 20px;
           }
+
+          .barColumn {
+            width: 62px;
+            min-width: 62px;
+          }
+
+          .bar {
+            width: 40px;
+          }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function SampleDetails({ sample }) {
+  const metadata = sample.device_metadata || {};
+  const testData = metadata.test_data || {};
+  const payment = metadata.payment || {};
+
+  return (
+    <div className="details">
+      <section className="detailGrid">
+        <Detail label="Sample ID" value={sample.sample_id} />
+        <Detail label="Client" value={sample.client_name} />
+        <Detail label="Project Reference" value={sample.project_reference} />
+        <Detail
+          label="Material"
+          value={normalizeMaterialName(
+            sample.material_type || sample.ai_predicted_label,
+          )}
+        />
+        <Detail label="Branch" value={formatBranch(sample.branch_id)} />
+        <Detail
+          label="Lifecycle Status"
+          value={normalizeLifecycleState(sample.current_state || sample.status)}
+        />
+        <Detail label="Decision" value={sample.decision} />
+        <Detail label="Registered At" value={formatDate(sample.created_at)} />
+      </section>
+
+      <section className="sectionBox">
+        <div className="sectionTitle">
+          <h3>Testing Summary</h3>
+          <LifecycleBadge status={sample.current_state} />
+        </div>
+
+        <div className="detailGrid">
+          <Detail label="Final Result" value={getFinalResult(testData)} />
+          <Detail label="Specification" value={getSpecification(testData)} />
+          <Detail
+            label="Technician"
+            value={
+              testData.entered_by_name ||
+              testData.entered_by_display ||
+              testData.entered_by_full_name ||
+              formatUser(testData.entered_by || testData.technician_id)
+            }
+          />
+          <Detail
+            label="Reviewed By"
+            value={
+              testData.reviewed_by_name ||
+              testData.reviewed_by_display ||
+              testData.reviewed_by_full_name ||
+              formatUser(testData.reviewed_by)
+            }
+          />
+          <Detail label="Review Notes" value={testData.review_notes} wide />
+        </div>
+      </section>
+
+      <section className="sectionBox">
+        <div className="sectionTitle">
+          <h3>Billing Readiness</h3>
+          <PaymentBadge status={payment.payment_status} />
+        </div>
+
+        <div className="detailGrid">
+          <Detail
+            label="Payment Status"
+            value={payment.payment_status || "Unpaid"}
+          />
+          <Detail
+            label="Release Cleared"
+            value={payment.financially_cleared_for_release ? "Yes" : "No"}
+          />
+          <Detail label="Billing Notes" value={payment.billing_notes} wide />
+        </div>
+      </section>
+
+      <style jsx>{`
+        .details {
+          display: grid;
+          gap: 16px;
+        }
+
+        .detailGrid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 12px;
+        }
+
+        .sectionBox {
+          display: grid;
+          gap: 13px;
+          padding: 14px;
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-md);
+          background: var(--color-surface);
+        }
+
+        .sectionTitle {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 12px;
+        }
+
+        .sectionTitle h3 {
+          margin: 0;
+          color: var(--color-text-primary);
+          font-size: var(--text-sm);
+          font-weight: 600;
+        }
+
+        @media (max-width: 640px) {
+          .detailGrid {
+            grid-template-columns: 1fr;
+          }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function Detail({ label, value, wide = false }) {
+  return (
+    <div className={wide ? "detail wide" : "detail"}>
+      <span>{label}</span>
+      <strong>{formatEmpty(value)}</strong>
+
+      <style jsx>{`
+        .detail {
+          display: grid;
+          gap: 4px;
+          min-width: 0;
+        }
+
+        .detail.wide {
+          grid-column: 1 / -1;
+        }
+
+        span {
+          color: var(--color-text-secondary);
+          font-size: 10px;
+          font-weight: 500;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+
+        strong {
+          color: var(--color-text-primary);
+          font-size: var(--text-xs);
+          font-weight: 500;
+          line-height: 1.45;
+          overflow-wrap: anywhere;
         }
       `}</style>
     </div>
@@ -617,20 +959,30 @@ export default function TechnicalDashboardPage() {
 
 function DonutChart({ data }) {
   const total = data.reduce((sum, item) => sum + item.value, 0);
-  const radius = 62;
+  const radius = 78;
+  const strokeWidth = 36;
+  const size = 260;
+  const center = size / 2;
+  const innerCircleRadius = radius - strokeWidth / 2 + 4;
   const circumference = 2 * Math.PI * radius;
 
   let offset = 0;
 
   return (
-    <svg width="210" height="210" viewBox="0 0 210 210" aria-hidden="true">
+    <svg
+      width={size}
+      height={size}
+      viewBox={`0 0 ${size} ${size}`}
+      aria-hidden="true"
+      className="donutChart"
+    >
       <circle
-        cx="105"
-        cy="105"
+        cx={center}
+        cy={center}
         r={radius}
         fill="none"
         stroke="var(--color-overlay)"
-        strokeWidth="32"
+        strokeWidth={strokeWidth}
       />
 
       {data.map((item, index) => {
@@ -643,20 +995,26 @@ function DonutChart({ data }) {
         return (
           <circle
             key={item.label}
-            cx="105"
-            cy="105"
+            cx={center}
+            cy={center}
             r={radius}
             fill="none"
             stroke={MATERIAL_COLORS[index % MATERIAL_COLORS.length]}
-            strokeWidth="32"
+            strokeWidth={strokeWidth}
             strokeDasharray={dashArray}
             strokeDashoffset={dashOffset}
-            transform="rotate(-90 105 105)"
+            strokeLinecap="round"
+            transform={`rotate(-90 ${center} ${center})`}
           />
         );
       })}
 
-      <circle cx="105" cy="105" r="38" fill="var(--color-surface)" />
+      <circle
+        cx={center}
+        cy={center}
+        r={innerCircleRadius}
+        fill="var(--color-surface)"
+      />
     </svg>
   );
 }
@@ -678,6 +1036,23 @@ function LifecycleBadge({ status }) {
   return (
     <Badge variant={variant} size="sm">
       {normalized || "-"}
+    </Badge>
+  );
+}
+
+function PaymentBadge({ status }) {
+  const variant =
+    status === "Fully Paid"
+      ? "success"
+      : status === "PO Submitted"
+        ? "info"
+        : status === "Downpayment Paid"
+          ? "warning"
+          : "danger";
+
+  return (
+    <Badge variant={variant} size="sm">
+      {status || "Unpaid"}
     </Badge>
   );
 }
@@ -738,8 +1113,105 @@ function getLifecycleClass(state) {
   return "lifeDefault";
 }
 
+function normalizeMaterialName(value) {
+  if (!value) return "Concrete";
+
+  const normalized = String(value).trim().toLowerCase();
+
+  if (
+    normalized === "rsb" ||
+    normalized === "rebar" ||
+    normalized === "reinforcing steel" ||
+    normalized === "reinforcing steel bar" ||
+    normalized === "steel bar" ||
+    normalized === "metal" ||
+    normalized.includes("rsb") ||
+    normalized.includes("rebar") ||
+    normalized.includes("reinforcing") ||
+    normalized.includes("steel") ||
+    normalized.includes("metal")
+  ) {
+    return "Reinforcing Steel Bar";
+  }
+
+  if (
+    normalized === "soil aggregates" ||
+    normalized === "soil aggregate" ||
+    normalized === "soil_aggregates" ||
+    normalized === "soil-aggregates" ||
+    normalized === "aggregate" ||
+    normalized === "aggregates" ||
+    normalized.includes("soil") ||
+    normalized.includes("aggregate")
+  ) {
+    return "Soil Aggregates";
+  }
+
+  if (
+    normalized === "concrete" ||
+    normalized === "cement concrete" ||
+    normalized.includes("concrete") ||
+    normalized.includes("cement")
+  ) {
+    return "Concrete";
+  }
+
+  return "Concrete";
+}
+
+function getFinalResult(testData) {
+  if (!testData) return null;
+
+  return (
+    testData.qa_final_result ||
+    testData.final_result ||
+    testData.result ||
+    testData.status ||
+    null
+  );
+}
+
+function getSpecification(testData) {
+  if (!testData) return null;
+
+  return (
+    testData.specification_status ||
+    testData.specification_result ||
+    testData.standard_compliance ||
+    testData.compliance_status ||
+    null
+  );
+}
+
 function formatBranch(branchId) {
   if (Number(branchId) === 1) return "Marikina";
   if (Number(branchId) === 2) return "Pateros";
-  return branchId || "-";
+  return branchId ? `Branch ${branchId}` : "-";
+}
+
+function formatUser(userId) {
+  if (!userId) return "-";
+
+  const value = String(userId);
+
+  if (Number.isNaN(Number(value))) {
+    return value;
+  }
+
+  return `User ${value}`;
+}
+
+function formatDate(value) {
+  if (!value) return "-";
+
+  try {
+    return new Date(value).toLocaleString();
+  } catch {
+    return value;
+  }
+}
+
+function formatEmpty(value) {
+  if (value === null || value === undefined || value === "") return "-";
+  return value;
 }

@@ -108,7 +108,7 @@ export default function Table({
           background: var(--color-overlay);
           color: var(--color-text-secondary);
           font-size: 10px;
-          font-weight: 900;
+          font-weight: 600;
           text-transform: uppercase;
           letter-spacing: 0.06em;
           border-bottom: 1px solid var(--color-border);
@@ -120,7 +120,7 @@ export default function Table({
           border-bottom: 1px solid var(--color-border-soft);
           color: var(--color-text-primary);
           font-size: 12px;
-          font-weight: 650;
+          font-weight: 400;
           line-height: 1.45;
           vertical-align: middle;
           overflow: hidden;
@@ -179,13 +179,13 @@ export default function Table({
           color: var(--color-text-secondary);
           padding: 36px 18px;
           font-size: var(--text-sm);
-          font-weight: 750;
+          font-weight: 400;
           white-space: normal;
         }
 
         :global(.matriqTable a) {
           color: var(--color-brand);
-          font-weight: 850;
+          font-weight: 600;
           text-decoration: none;
         }
 

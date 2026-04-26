@@ -38,10 +38,10 @@ export default function Card({
       <style jsx>{`
         .card {
           background: var(--color-surface);
-          border: 1px solid var(--color-border);
+          border: 1px solid var(--color-border-soft);
           border-radius: var(--radius-lg);
           padding: 20px;
-          box-shadow: var(--shadow-xs);
+          box-shadow: none;
           min-width: 0;
         }
 
@@ -52,20 +52,21 @@ export default function Card({
 
         .card.plain {
           box-shadow: none;
+          border-color: transparent;
+          background: transparent;
+          padding: 0;
         }
 
         .card.interactive {
           transition:
-            transform var(--transition-base),
             border-color var(--transition-base),
             box-shadow var(--transition-base),
             background-color var(--transition-base);
         }
 
         .card.interactive:hover {
-          transform: translateY(-1px);
-          border-color: var(--color-border-strong);
-          box-shadow: var(--shadow-sm);
+          border-color: var(--color-border);
+          box-shadow: var(--shadow-xs);
         }
 
         .header {
@@ -83,15 +84,16 @@ export default function Card({
         h2 {
           margin: 0;
           color: var(--color-text-primary);
-          font-size: var(--text-md);
-          font-weight: 850;
-          letter-spacing: -0.02em;
+          font-size: 15px;
+          font-weight: 600;
+          letter-spacing: -0.015em;
         }
 
         p {
-          margin: 5px 0 0;
+          margin: 6px 0 0;
           color: var(--color-text-secondary);
-          font-size: var(--text-sm);
+          font-size: 12px;
+          font-weight: 400;
           line-height: 1.55;
         }
 

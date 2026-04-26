@@ -57,17 +57,17 @@ export default function Input({
           align-items: center;
           justify-content: space-between;
           gap: 10px;
-          font-size: var(--text-xs);
-          font-weight: 850;
+          font-size: 10px;
+          font-weight: 500;
           color: var(--color-text-secondary);
           text-transform: uppercase;
-          letter-spacing: 0.05em;
+          letter-spacing: 0.055em;
         }
 
         label span {
           color: var(--color-text-muted);
           font-size: 10px;
-          font-weight: 750;
+          font-weight: 400;
           text-transform: none;
           letter-spacing: 0;
         }
@@ -76,11 +76,11 @@ export default function Input({
           width: 100%;
           min-height: 40px;
           padding: 0 12px;
-          border: 1px solid var(--color-border);
-          border-radius: var(--radius-sm);
+          border: 1px solid var(--color-border-soft);
+          border-radius: var(--radius-md);
           font-family: inherit;
           font-size: var(--text-sm);
-          font-weight: 600;
+          font-weight: 400;
           color: var(--color-text-primary);
           background: var(--color-surface);
           outline: none;
@@ -94,18 +94,27 @@ export default function Input({
 
         input::placeholder {
           color: var(--color-text-muted);
-          font-weight: 500;
+          font-weight: 400;
+        }
+
+        input:hover:not(:disabled):not(:read-only) {
+          border-color: var(--color-border);
         }
 
         input:focus {
           border-color: var(--color-brand);
           box-shadow: 0 0 0 3px
-            color-mix(in srgb, var(--color-brand) 14%, transparent);
+            color-mix(in srgb, var(--color-brand) 11%, transparent);
         }
 
         input:read-only {
-          background: var(--color-overlay);
+          background: color-mix(
+            in srgb,
+            var(--color-overlay) 72%,
+            var(--color-surface)
+          );
           color: var(--color-text-secondary);
+          border-color: var(--color-border-soft);
         }
 
         input:disabled {
@@ -122,13 +131,13 @@ export default function Input({
         input.error:focus {
           border-color: var(--color-danger);
           box-shadow: 0 0 0 3px
-            color-mix(in srgb, var(--color-danger) 12%, transparent);
+            color-mix(in srgb, var(--color-danger) 10%, transparent);
         }
 
         .errorText,
         .helperText {
           font-size: var(--text-xs);
-          font-weight: 700;
+          font-weight: 400;
           line-height: 1.4;
         }
 

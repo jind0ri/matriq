@@ -88,7 +88,7 @@ export default function Modal({
           align-items: center;
           justify-content: center;
           padding: 20px;
-          background: rgba(15, 23, 42, 0.34);
+          background: rgba(15, 23, 42, 0.28);
           backdrop-filter: blur(3px);
         }
 
@@ -97,7 +97,7 @@ export default function Modal({
           max-height: min(760px, 90vh);
           overflow: hidden;
           background: var(--color-surface);
-          border: 1px solid var(--color-border);
+          border: 1px solid var(--color-border-soft);
           border-radius: var(--radius-lg);
           box-shadow: var(--shadow-lg);
           display: flex;
@@ -123,7 +123,7 @@ export default function Modal({
           align-items: flex-start;
           gap: 16px;
           padding: 18px 20px;
-          border-bottom: 1px solid var(--color-border);
+          border-bottom: 1px solid var(--color-border-soft);
           background: var(--color-surface);
         }
 
@@ -134,47 +134,48 @@ export default function Modal({
         h2 {
           margin: 0;
           color: var(--color-text-primary);
-          font-size: var(--text-lg);
-          font-weight: 850;
+          font-size: 18px;
+          font-weight: 600;
           letter-spacing: -0.02em;
           line-height: 1.25;
         }
 
         p {
-          margin: 5px 0 0;
+          margin: 6px 0 0;
           color: var(--color-text-secondary);
-          font-size: var(--text-sm);
-          line-height: 1.55;
+          font-size: 12px;
+          font-weight: 400;
+          line-height: 1.5;
         }
 
         .closeButton {
           width: 32px;
           height: 32px;
-          border: 1px solid var(--color-border);
+          border: 1px solid var(--color-border-soft);
           border-radius: var(--radius-md);
           background: var(--color-surface);
           color: var(--color-text-secondary);
-          font-size: 20px;
+          font-size: 18px;
+          font-weight: 400;
           line-height: 1;
           display: inline-flex;
           align-items: center;
           justify-content: center;
           flex-shrink: 0;
           cursor: pointer;
+          box-shadow: none;
           transition:
             background-color var(--transition-base),
             border-color var(--transition-base),
-            color var(--transition-base),
-            transform var(--transition-base),
-            box-shadow var(--transition-base);
+            color var(--transition-base);
         }
 
         .closeButton:hover {
           background: var(--color-overlay);
-          border-color: var(--color-border-strong);
+          border-color: var(--color-border);
           color: var(--color-text-primary);
-          box-shadow: var(--shadow-xs);
-          transform: translateY(-1px);
+          box-shadow: none;
+          transform: none;
         }
 
         .closeButton:focus-visible {
@@ -193,8 +194,12 @@ export default function Modal({
           align-items: center;
           gap: 10px;
           padding: 14px 20px;
-          border-top: 1px solid var(--color-border);
-          background: var(--color-overlay);
+          border-top: 1px solid var(--color-border-soft);
+          background: color-mix(
+            in srgb,
+            var(--color-overlay) 58%,
+            var(--color-surface)
+          );
         }
 
         @keyframes modalIn {
