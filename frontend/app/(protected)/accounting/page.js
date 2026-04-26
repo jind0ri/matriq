@@ -435,7 +435,9 @@ export default function AccountingDashboard() {
                     >
                       <td>{item.sample_id}</td>
                       <td>
-                        {item.material_type || item.ai_predicted_label || "-"}
+                        {normalizeMaterialName(
+                          item.material_type || item.ai_predicted_label,
+                        )}
                       </td>
                       <td>{formatBranch(item.branch_id)}</td>
                       <td>
@@ -489,6 +491,7 @@ export default function AccountingDashboard() {
               label="Released Sample"
               name="selectedSampleId"
               value={selectedSampleId}
+              required
               onChange={(event) => setSelectedSampleId(event.target.value)}
             >
               {invoiceableSamples.map((sample) => (
@@ -503,6 +506,7 @@ export default function AccountingDashboard() {
               name="invoiceAmount"
               type="number"
               value={invoiceAmount}
+              required
               onChange={(event) => setInvoiceAmount(event.target.value)}
               helperText="Default laboratory invoice amount can be adjusted before saving."
             />
@@ -526,9 +530,10 @@ export default function AccountingDashboard() {
                 <div>
                   <span>Material</span>
                   <strong>
-                    {selectedSample.material_type ||
-                      selectedSample.ai_predicted_label ||
-                      "-"}
+                    {normalizeMaterialName(
+                      selectedSample.material_type ||
+                        selectedSample.ai_predicted_label,
+                    )}
                   </strong>
                 </div>
 
@@ -584,7 +589,7 @@ export default function AccountingDashboard() {
           margin: 0;
           color: var(--color-text-primary);
           font-size: 18px;
-          font-weight: 850;
+          font-weight: 600;
           letter-spacing: -0.02em;
         }
 
@@ -597,7 +602,7 @@ export default function AccountingDashboard() {
 
         .header p strong {
           color: var(--color-text-primary);
-          font-weight: 850;
+          font-weight: 500;
         }
 
         .headerActions {
@@ -614,7 +619,7 @@ export default function AccountingDashboard() {
           gap: 4px;
           border-radius: var(--radius-md);
           padding: 12px 14px;
-          font-size: var(--text-sm);
+          font-size: var(--text-xs);
           line-height: 1.5;
         }
 
@@ -632,13 +637,14 @@ export default function AccountingDashboard() {
 
         .adminNotice strong,
         .warningNotice strong {
-          font-size: var(--text-sm);
+          font-size: var(--text-xs);
+          font-weight: 600;
         }
 
         .errorText {
           color: var(--color-danger);
           font-size: var(--text-sm);
-          font-weight: 800;
+          font-weight: 500;
         }
 
         .statsRow {
@@ -654,53 +660,42 @@ export default function AccountingDashboard() {
           align-items: start;
         }
 
-        .textAction,
-        .rowAction {
-          border: none;
-          background: transparent;
-          color: var(--color-brand);
-          font-size: var(--text-xs);
-          font-weight: 900;
-          padding: 0;
-          cursor: pointer;
-          text-decoration: none;
-          white-space: nowrap;
-        }
-
-        .textAction:hover,
-        .rowAction:hover {
-          color: var(--color-brand-dark);
-          text-decoration: underline;
-          transform: none;
-          box-shadow: none;
-        }
-
-        .footerButton {
+        :global(.textAction),
+        :global(.rowAction),
+        :global(.footerButton) {
           display: inline-flex;
           align-items: center;
           justify-content: center;
+          min-height: 32px;
+          padding: 0 12px;
+          border: 1px solid var(--color-border-soft);
+          border-radius: var(--radius-md);
+          background: var(--color-surface);
+          color: var(--color-text-primary);
+          font-size: var(--text-xs);
+          font-weight: 500;
+          line-height: 1;
+          text-decoration: none;
+          white-space: nowrap;
+          box-shadow: none;
+          transition:
+            background-color var(--transition-base),
+            border-color var(--transition-base),
+            color var(--transition-base);
+        }
+
+        :global(.footerButton) {
           min-height: 34px;
           padding: 0 14px;
-          border: 1px solid var(--color-brand);
-          border-radius: var(--radius-md);
-          background: var(--color-brand);
-          color: #ffffff;
-          font-size: var(--text-xs);
-          font-weight: 900;
-          text-decoration: none;
-          line-height: 1;
         }
 
-        .footerButton:hover {
-          background: var(--color-brand-dark);
-          border-color: var(--color-brand-dark);
+        :global(.textAction:hover),
+        :global(.rowAction:hover),
+        :global(.footerButton:hover) {
+          background: var(--color-overlay);
+          border-color: var(--color-border);
+          color: var(--color-brand);
           text-decoration: none;
-        }
-
-        .mutedText {
-          color: var(--color-text-muted);
-          font-size: var(--text-xs);
-          font-weight: 800;
         }
 
         .invoiceForm {
@@ -715,14 +710,14 @@ export default function AccountingDashboard() {
           color: var(--color-danger);
           padding: 11px 12px;
           font-size: var(--text-xs);
-          font-weight: 800;
+          font-weight: 500;
           line-height: 1.45;
         }
 
         .invoicePreview {
           display: grid;
           gap: 9px;
-          border: 1px solid var(--color-border);
+          border: 1px solid var(--color-border-soft);
           border-radius: var(--radius-md);
           background: var(--color-overlay);
           padding: 13px;
@@ -738,7 +733,7 @@ export default function AccountingDashboard() {
         .invoicePreview span {
           color: var(--color-text-secondary);
           font-size: 10px;
-          font-weight: 850;
+          font-weight: 500;
           text-transform: uppercase;
           letter-spacing: 0.05em;
         }
@@ -746,7 +741,7 @@ export default function AccountingDashboard() {
         .invoicePreview strong {
           color: var(--color-text-primary);
           font-size: var(--text-xs);
-          font-weight: 850;
+          font-weight: 400;
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
@@ -822,7 +817,9 @@ function SampleBillingDetails({ record }) {
         <Detail label="Project Reference" value={record.project_reference} />
         <Detail
           label="Material"
-          value={record.material_type || record.ai_predicted_label}
+          value={normalizeMaterialName(
+            record.material_type || record.ai_predicted_label,
+          )}
         />
         <Detail label="Branch" value={formatBranch(record.branch_id)} />
         <Detail label="Lifecycle Status" value={record.current_state} />
@@ -854,7 +851,12 @@ function SampleBillingDetails({ record }) {
           <Detail label="Invoice Status" value={invoice?.status} />
           <Detail
             label="Created By"
-            value={invoice?.created_by_name || formatUser(invoice?.created_by)}
+            value={
+              invoice?.created_by_name ||
+              invoice?.created_by_display ||
+              invoice?.created_by_full_name ||
+              formatUser(invoice?.created_by)
+            }
           />
           <Detail label="Created At" value={formatDate(invoice?.created_at)} />
           <Detail label="Paid At" value={formatDate(invoice?.paid_at)} />
@@ -873,7 +875,10 @@ function SampleBillingDetails({ record }) {
             label="Payment Status"
             value={payment.payment_status || "Unpaid"}
           />
-          <Detail label="Amount Paid" value={formatCurrency(payment.amount_paid)} />
+          <Detail
+            label="Amount Paid"
+            value={formatCurrency(payment.amount_paid)}
+          />
           <Detail label="Balance" value={formatCurrency(payment.balance)} />
           <Detail
             label="Updated By"
@@ -884,7 +889,10 @@ function SampleBillingDetails({ record }) {
               formatUser(payment.payment_updated_by)
             }
           />
-          <Detail label="Updated At" value={formatDate(payment.payment_updated_at)} />
+          <Detail
+            label="Updated At"
+            value={formatDate(payment.payment_updated_at)}
+          />
           <Detail
             label="Release Cleared"
             value={payment.financially_cleared_for_release ? "Yes" : "No"}
@@ -954,7 +962,7 @@ function SampleBillingDetails({ record }) {
           display: grid;
           gap: 13px;
           padding: 14px;
-          border: 1px solid var(--color-border);
+          border: 1px solid var(--color-border-soft);
           border-radius: var(--radius-md);
           background: var(--color-surface);
         }
@@ -970,20 +978,20 @@ function SampleBillingDetails({ record }) {
           margin: 0;
           color: var(--color-text-primary);
           font-size: var(--text-sm);
-          font-weight: 900;
+          font-weight: 600;
         }
 
         .sectionTitle span {
           color: var(--color-text-muted);
           font-size: var(--text-xs);
-          font-weight: 800;
+          font-weight: 400;
         }
 
         .emptyHistory {
           margin: 0;
           color: var(--color-text-secondary);
           font-size: var(--text-xs);
-          font-weight: 700;
+          font-weight: 400;
         }
 
         .historyList {
@@ -1010,7 +1018,7 @@ function SampleBillingDetails({ record }) {
         .historyItem strong {
           color: var(--color-text-primary);
           font-size: var(--text-xs);
-          font-weight: 900;
+          font-weight: 500;
         }
 
         .historyItem span,
@@ -1051,7 +1059,7 @@ function Detail({ label, value, wide = false }) {
         span {
           color: var(--color-text-secondary);
           font-size: 10px;
-          font-weight: 850;
+          font-weight: 500;
           text-transform: uppercase;
           letter-spacing: 0.05em;
         }
@@ -1059,7 +1067,7 @@ function Detail({ label, value, wide = false }) {
         strong {
           color: var(--color-text-primary);
           font-size: var(--text-xs);
-          font-weight: 800;
+          font-weight: 400;
           line-height: 1.45;
           overflow-wrap: anywhere;
         }
@@ -1130,7 +1138,63 @@ function getBillingStatus(sample, invoice) {
 
 function getFinalResult(testData) {
   if (!testData) return null;
-  return testData.qa_final_result || testData.result || null;
+  return testData.qa_final_result || testData.final_result || testData.result || null;
+}
+
+function normalizeMaterialName(value) {
+  if (!value) return "-";
+
+  const normalized = String(value).trim().toLowerCase();
+
+  if (
+    normalized === "rsb" ||
+    normalized === "rebar" ||
+    normalized === "reinforcing steel" ||
+    normalized === "reinforcing steel bar" ||
+    normalized === "steel bar" ||
+    normalized === "metal" ||
+    normalized.includes("rsb") ||
+    normalized.includes("rebar") ||
+    normalized.includes("reinforcing") ||
+    normalized.includes("steel") ||
+    normalized.includes("metal")
+  ) {
+    return "Reinforcing Steel Bar";
+  }
+
+  if (
+    normalized === "soil aggregates" ||
+    normalized === "soil aggregate" ||
+    normalized === "soil_aggregates" ||
+    normalized === "soil-aggregates" ||
+    normalized === "aggregate" ||
+    normalized === "aggregates" ||
+    normalized.includes("soil") ||
+    normalized.includes("aggregate")
+  ) {
+    return "Soil Aggregates";
+  }
+
+  if (
+    normalized === "concrete" ||
+    normalized === "cement concrete" ||
+    normalized.includes("concrete") ||
+    normalized.includes("cement")
+  ) {
+    return "Concrete";
+  }
+
+  return formatLabel(value);
+}
+
+function formatLabel(value) {
+  if (!value) return "-";
+
+  return String(value)
+    .replaceAll("_", " ")
+    .replaceAll("-", " ")
+    .toLowerCase()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 function formatBranch(branchId) {

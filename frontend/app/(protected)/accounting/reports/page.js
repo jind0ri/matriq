@@ -20,13 +20,13 @@ const SUMMARY_COLUMNS = [
 ];
 
 const RECENT_INVOICE_COLUMNS = [
-  { key: "invoice_id", label: "Invoice ID" },
-  { key: "sample_id", label: "Sample ID" },
-  { key: "client_name", label: "Client" },
-  { key: "branch_id", label: "Branch" },
-  { key: "created_by", label: "Created By" },
-  { key: "amount", label: "Amount", align: "right" },
-  { key: "status", label: "Status" },
+  { key: "invoice_id", label: "Invoice ID", width: "125px" },
+  { key: "sample_id", label: "Sample ID", width: "125px" },
+  { key: "client_name", label: "Client", width: "155px" },
+  { key: "branch_id", label: "Branch", width: "115px" },
+  { key: "created_by", label: "Created By", width: "150px" },
+  { key: "amount", label: "Amount", align: "right", width: "115px" },
+  { key: "status", label: "Status", width: "120px" },
 ];
 
 export default function AccountingReportsPage() {
@@ -142,6 +142,14 @@ export default function AccountingReportsPage() {
         </div>
       </header>
 
+      <section className="notice">
+        <strong>Read-only report</strong>
+        <span>
+          This page summarizes invoice and payment activity. Payment and invoice
+          updates should be handled in Billing and Invoices.
+        </span>
+      </section>
+
       {loading && <Loader label="Loading accounting reports..." />}
 
       {!loading && error && (
@@ -205,25 +213,25 @@ export default function AccountingReportsPage() {
 
           {dashboard && (
             <section className="dashboardStrip">
-              <div>
-                <span>Unpaid Samples</span>
-                <strong>{dashboard.unpaid_samples ?? 0}</strong>
-              </div>
+              <ReportMetric
+                label="Unpaid Samples"
+                value={dashboard.unpaid_samples ?? 0}
+              />
 
-              <div>
-                <span>Downpayment</span>
-                <strong>{dashboard.downpayment_samples ?? 0}</strong>
-              </div>
+              <ReportMetric
+                label="Downpayment"
+                value={dashboard.downpayment_samples ?? 0}
+              />
 
-              <div>
-                <span>PO Submitted</span>
-                <strong>{dashboard.po_submitted_samples ?? 0}</strong>
-              </div>
+              <ReportMetric
+                label="PO Submitted"
+                value={dashboard.po_submitted_samples ?? 0}
+              />
 
-              <div>
-                <span>Fully Paid Samples</span>
-                <strong>{dashboard.fully_paid_samples ?? 0}</strong>
-              </div>
+              <ReportMetric
+                label="Fully Paid Samples"
+                value={dashboard.fully_paid_samples ?? 0}
+              />
             </section>
           )}
 
@@ -271,13 +279,19 @@ export default function AccountingReportsPage() {
                   emptyText="No invoices found."
                   density="comfortable"
                   variant="minimal"
+                  className="recentInvoiceTable"
                   renderRow={(item) => (
                     <tr key={item.invoice_id}>
                       <td>{item.invoice_id}</td>
                       <td>{item.sample_id}</td>
                       <td>{item.client_name || "-"}</td>
                       <td>{formatBranch(item.branch_id)}</td>
-                      <td>{item.created_by_name || formatUser(item.created_by)}</td>
+                      <td>
+                        {item.created_by_name ||
+                          item.created_by_display ||
+                          item.created_by_full_name ||
+                          formatUser(item.created_by)}
+                      </td>
                       <td className="right">{formatCurrency(item.amount)}</td>
                       <td>
                         <InvoiceStatusBadge status={item.status} />
@@ -310,7 +324,7 @@ export default function AccountingReportsPage() {
           margin: 0;
           color: var(--color-text-primary);
           font-size: 18px;
-          font-weight: 850;
+          font-weight: 600;
           letter-spacing: -0.02em;
         }
 
@@ -323,7 +337,7 @@ export default function AccountingReportsPage() {
 
         .header p strong {
           color: var(--color-text-primary);
-          font-weight: 850;
+          font-weight: 500;
         }
 
         .headerActions {
@@ -334,24 +348,68 @@ export default function AccountingReportsPage() {
           flex-wrap: wrap;
         }
 
-        .textLink {
-          color: var(--color-brand);
+        :global(.textLink) {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 118px;
+          min-width: 118px;
+          min-height: 34px;
+          padding: 0 14px;
+          border: 1px solid var(--color-border-soft);
+          border-radius: var(--radius-md) !important;
+          background: var(--color-surface);
+          color: var(--color-text-primary);
           font-size: var(--text-xs);
-          font-weight: 900;
+          font-weight: 500;
+          line-height: 1;
           text-decoration: none;
           white-space: nowrap;
+          box-shadow: none;
+          cursor: pointer;
+          transition:
+            background-color var(--transition-base),
+            border-color var(--transition-base),
+            color var(--transition-base);
         }
 
-        .textLink:hover {
-          color: var(--color-brand-dark);
-          text-decoration: underline;
-          transform: none;
+        :global(.textLink:hover) {
+          background: var(--color-overlay);
+          border-color: var(--color-border);
+          color: var(--color-brand);
+          text-decoration: none;
+        }
+
+        .headerActions :global(button),
+        .headerActions :global(a) {
+          width: 118px;
+          min-width: 118px;
+          min-height: 34px;
+          border-radius: var(--radius-md) !important;
+        }
+
+        .notice {
+          display: grid;
+          gap: 4px;
+          border-radius: var(--radius-md);
+          padding: 12px 14px;
+          background: var(--color-overlay);
+          color: var(--color-text-secondary);
+          border: 1px solid var(--color-border-soft);
+          font-size: var(--text-xs);
+          line-height: 1.5;
+        }
+
+        .notice strong {
+          color: var(--color-text-primary);
+          font-size: var(--text-xs);
+          font-weight: 600;
         }
 
         .errorText {
           color: var(--color-danger);
           font-size: var(--text-sm);
-          font-weight: 800;
+          font-weight: 500;
         }
 
         .statsRow {
@@ -365,30 +423,9 @@ export default function AccountingReportsPage() {
           grid-template-columns: repeat(4, minmax(0, 1fr));
           gap: 14px;
           padding: 14px;
-          border: 1px solid var(--color-border);
+          border: 1px solid var(--color-border-soft);
           border-radius: var(--radius-lg);
           background: var(--color-surface);
-        }
-
-        .dashboardStrip div {
-          display: grid;
-          gap: 5px;
-          min-width: 0;
-          text-align: center;
-        }
-
-        .dashboardStrip span {
-          color: var(--color-text-secondary);
-          font-size: 10px;
-          font-weight: 850;
-          text-transform: uppercase;
-          letter-spacing: 0.06em;
-        }
-
-        .dashboardStrip strong {
-          color: var(--color-text-primary);
-          font-size: 14px;
-          font-weight: 850;
         }
 
         .contentGrid {
@@ -402,10 +439,13 @@ export default function AccountingReportsPage() {
           text-align: right;
         }
 
+        :global(.recentInvoiceTable table) {
+          min-width: 940px;
+        }
+
         @media (max-width: 1100px) {
           .statsRow,
-          .dashboardStrip,
-          .contentGrid {
+          .dashboardStrip {
             grid-template-columns: repeat(2, minmax(0, 1fr));
           }
 
@@ -423,10 +463,53 @@ export default function AccountingReportsPage() {
             justify-content: flex-start;
           }
 
+          .headerActions :global(button),
+          .headerActions :global(a) {
+            width: 100%;
+            min-width: 0;
+          }
+
           .statsRow,
           .dashboardStrip {
             grid-template-columns: 1fr;
           }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function ReportMetric({ label, value }) {
+  return (
+    <div className="reportMetric">
+      <span>{label}</span>
+      <strong>{value}</strong>
+
+      <style jsx>{`
+        .reportMetric {
+          display: grid;
+          gap: 6px;
+          min-width: 0;
+          text-align: center;
+        }
+
+        span {
+          color: var(--color-text-secondary);
+          font-size: 10px;
+          font-weight: 500;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          line-height: 1.35;
+        }
+
+        strong {
+          color: var(--color-text-primary);
+          font-size: 13px;
+          font-weight: 500;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          line-height: 1.25;
         }
       `}</style>
     </div>
@@ -456,7 +539,14 @@ function formatBranch(branchId) {
 
 function formatUser(userId) {
   if (!userId) return "-";
-  return `User ${userId}`;
+
+  const value = String(userId);
+
+  if (Number.isNaN(Number(value))) {
+    return value;
+  }
+
+  return `User ${value}`;
 }
 
 function formatCurrency(value) {

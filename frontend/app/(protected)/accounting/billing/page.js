@@ -15,6 +15,7 @@ import Modal from "@/components/ui/Modal";
 import Select from "@/components/ui/Select";
 import StatCard from "@/components/ui/StatCard";
 import Table from "@/components/ui/Table";
+import Textarea from "@/components/ui/Textarea";
 
 const BASE_FEE = 2500;
 
@@ -26,14 +27,21 @@ const STATUS_FILTERS = {
   CANCELLED: "Cancelled",
 };
 
+const PAYMENT_STATUSES = {
+  DOWNPAYMENT: "Downpayment Paid",
+  PO: "PO Submitted",
+  FULLY_PAID: "Fully Paid",
+};
+
 const BILLING_COLUMNS = [
   { key: "sample_id", label: "Sample ID", width: "135px" },
   { key: "client_name", label: "Client", width: "135px" },
   { key: "material_type", label: "Material", width: "170px" },
   { key: "branch_id", label: "Branch", width: "115px" },
-  { key: "invoice_status", label: "Billing Status", width: "155px" },
+  { key: "payment_status", label: "Payment", width: "150px" },
+  { key: "invoice_status", label: "Billing", width: "140px" },
   { key: "amount", label: "Amount", align: "right", width: "115px" },
-  { key: "action", label: "Action", align: "right", width: "120px" },
+  { key: "action", label: "Action", align: "right", width: "190px" },
 ];
 
 export default function BillingPage() {
@@ -45,8 +53,22 @@ export default function BillingPage() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [creatingSampleId, setCreatingSampleId] = useState("");
+  const [updatingPayment, setUpdatingPayment] = useState(false);
+
   const [selectedRecord, setSelectedRecord] = useState(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
+
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [selectedPaymentRecord, setSelectedPaymentRecord] = useState(null);
+  const [paymentStatus, setPaymentStatus] = useState(
+    PAYMENT_STATUSES.DOWNPAYMENT,
+  );
+  const [amountPaid, setAmountPaid] = useState("");
+  const [balance, setBalance] = useState("");
+  const [billingNotes, setBillingNotes] = useState("");
+  const [confirmationNote, setConfirmationNote] = useState("");
+  const [paymentModalError, setPaymentModalError] = useState("");
+
   const [error, setError] = useState("");
 
   const isAdmin = user?.role === "Administrator";
@@ -122,10 +144,13 @@ export default function BillingPage() {
     return releasedSamples.map((sample) => {
       const invoice = invoiceBySampleId.get(sample.sample_id);
       const billingStatus = getBillingStatus(sample, invoice);
+      const payment = getPaymentMetadata(sample);
 
       return {
         ...sample,
         invoice,
+        payment,
+        payment_status: payment.payment_status || "Unpaid",
         billing_status: billingStatus,
         invoice_id: invoice?.invoice_id || null,
         invoice_amount: invoice?.amount || BASE_FEE,
@@ -137,12 +162,17 @@ export default function BillingPage() {
     const q = search.trim().toLowerCase();
 
     return billingRows.filter((item) => {
+      const material = normalizeMaterialName(
+        item.material_type || item.ai_predicted_label,
+      );
+
       const matchesSearch =
         !q ||
         item.sample_id?.toLowerCase().includes(q) ||
         item.client_name?.toLowerCase().includes(q) ||
         item.project_reference?.toLowerCase().includes(q) ||
-        item.material_type?.toLowerCase().includes(q) ||
+        material.toLowerCase().includes(q) ||
+        item.payment_status?.toLowerCase().includes(q) ||
         item.invoice_id?.toLowerCase().includes(q);
 
       const matchesStatus =
@@ -217,13 +247,98 @@ export default function BillingPage() {
     setSelectedRecord(null);
   }
 
+  function openPaymentModal(record) {
+    const payment = record.payment || {};
+
+    setSelectedPaymentRecord(record);
+    setPaymentStatus(
+      payment.payment_status && payment.payment_status !== "Unpaid"
+        ? payment.payment_status
+        : PAYMENT_STATUSES.DOWNPAYMENT,
+    );
+    setAmountPaid(payment.amount_paid ? String(payment.amount_paid) : "");
+    setBalance(payment.balance ? String(payment.balance) : "");
+    setBillingNotes(payment.billing_notes || "");
+    setConfirmationNote(payment.confirmation_note || "");
+    setPaymentModalError("");
+    setPaymentModalOpen(true);
+  }
+
+  function closePaymentModal() {
+    if (updatingPayment) return;
+
+    setPaymentModalOpen(false);
+    setSelectedPaymentRecord(null);
+    setPaymentStatus(PAYMENT_STATUSES.DOWNPAYMENT);
+    setAmountPaid("");
+    setBalance("");
+    setBillingNotes("");
+    setConfirmationNote("");
+    setPaymentModalError("");
+  }
+
+  async function handleUpdatePayment() {
+    if (!selectedPaymentRecord) return;
+
+    setPaymentModalError("");
+
+    const parsedAmountPaid = amountPaid === "" ? null : Number(amountPaid);
+    const parsedBalance = balance === "" ? null : Number(balance);
+
+    if (
+      amountPaid !== "" &&
+      (!Number.isFinite(parsedAmountPaid) || parsedAmountPaid < 0)
+    ) {
+      setPaymentModalError("Amount paid must be a valid non-negative number.");
+      return;
+    }
+
+    if (
+      balance !== "" &&
+      (!Number.isFinite(parsedBalance) || parsedBalance < 0)
+    ) {
+      setPaymentModalError("Balance must be a valid non-negative number.");
+      return;
+    }
+
+    if (
+      paymentStatus === PAYMENT_STATUSES.FULLY_PAID &&
+      confirmationNote.trim().length < 8
+    ) {
+      setPaymentModalError(
+        "Confirmation note is required when marking a sample as Fully Paid.",
+      );
+      return;
+    }
+
+    setUpdatingPayment(true);
+
+    try {
+      await apiClient.updateSamplePayment(selectedPaymentRecord.sample_id, {
+        payment_status: paymentStatus,
+        amount_paid: parsedAmountPaid,
+        balance: parsedBalance,
+        billing_notes: billingNotes.trim(),
+        confirmation_note: confirmationNote.trim(),
+      });
+
+      closePaymentModal();
+      closeDetails();
+      await loadData();
+    } catch (err) {
+      setPaymentModalError(err.message || "Failed to update payment status.");
+    } finally {
+      setUpdatingPayment(false);
+    }
+  }
+
   return (
     <div className="page">
       <header className="header">
         <div>
           <h1>{isAdmin ? "Billing Oversight" : "Billing Queue"}</h1>
           <p>
-            Review released samples and invoice readiness for{" "}
+            Review released samples and payment readiness for{" "}
             <strong>{branchLabel}</strong>.
           </p>
         </div>
@@ -243,9 +358,8 @@ export default function BillingPage() {
         <section className="adminNotice">
           <strong>Administrator Billing View</strong>
           <span>
-            You are viewing all branch billing records. Invoice payment changes
-            should still be handled carefully because they update financial
-            release metadata.
+            You are viewing all branch billing records. Payment corrections on
+            released or archived records may require administrator access.
           </span>
         </section>
       )}
@@ -314,9 +428,9 @@ export default function BillingPage() {
           <section className="notice">
             <strong>Billing rule</strong>
             <span>
-              Click a row to view billing details. Released samples can be
-              invoiced. Marking an invoice as paid from the invoices page will
-              also update the linked sample payment metadata to Fully Paid.
+              Use Billing to update sample payment readiness such as
+              Downpayment Paid, PO Submitted, or Fully Paid. Use Invoices to
+              mark invoice records as Paid or Cancelled.
             </span>
           </section>
 
@@ -325,7 +439,7 @@ export default function BillingPage() {
               name="billingSearch"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search sample, client, project, material, or invoice..."
+              placeholder="Search sample, client, project, material, payment, or invoice..."
             />
 
             <Select
@@ -343,7 +457,7 @@ export default function BillingPage() {
 
           <Card
             title="Billing Records"
-            subtitle="Released samples with their invoice state. Click a row to view details."
+            subtitle="Released samples with payment and invoice state. Click a row to view details."
           >
             {filteredRows.length === 0 ? (
               <EmptyState
@@ -374,9 +488,14 @@ export default function BillingPage() {
                     <td>{item.sample_id}</td>
                     <td>{item.client_name || "-"}</td>
                     <td>
-                      {item.material_type || item.ai_predicted_label || "-"}
+                      {normalizeMaterialName(
+                        item.material_type || item.ai_predicted_label,
+                      )}
                     </td>
                     <td>{formatBranch(item.branch_id)}</td>
+                    <td>
+                      <PaymentStatusBadge status={item.payment_status} />
+                    </td>
                     <td>
                       <BillingStatusBadge status={item.billing_status} />
                     </td>
@@ -391,6 +510,7 @@ export default function BillingPage() {
                         item={item}
                         creatingSampleId={creatingSampleId}
                         onCreateInvoice={handleCreateInvoice}
+                        onUpdatePayment={openPaymentModal}
                       />
                     </td>
                   </tr>
@@ -404,18 +524,142 @@ export default function BillingPage() {
       <Modal
         open={detailsOpen}
         title="Billing Details"
-        description="Sample, invoice, and payment context for accounting review."
+        description="Sample, payment, and invoice context for accounting review."
         onClose={closeDetails}
         size="lg"
         footer={
-          selectedRecord?.invoice?.invoice_id ? (
-            <Link href="/accounting/invoices" className="footerButton">
-              Open Invoices
-            </Link>
+          selectedRecord ? (
+            <div className="modalFooterActions">
+              <Button
+                variant="secondary"
+                size="sm"
+                className="equalFooterButton"
+                onClick={() => openPaymentModal(selectedRecord)}
+              >
+                Update Payment
+              </Button>
+
+              {selectedRecord?.invoice?.invoice_id && (
+                <Link href="/accounting/invoices" className="footerButton">
+                  Open Invoices
+                </Link>
+              )}
+            </div>
           ) : null
         }
       >
         {selectedRecord && <BillingDetails record={selectedRecord} />}
+      </Modal>
+
+      <Modal
+        open={paymentModalOpen}
+        title="Update Payment"
+        description="Update sample-level payment status used for testing and release clearance."
+        onClose={closePaymentModal}
+        size="md"
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              onClick={closePaymentModal}
+              disabled={updatingPayment}
+            >
+              Cancel
+            </Button>
+
+            <Button
+              variant="primary"
+              onClick={handleUpdatePayment}
+              disabled={updatingPayment}
+            >
+              {updatingPayment ? "Updating..." : "Save Payment"}
+            </Button>
+          </>
+        }
+      >
+        {selectedPaymentRecord && (
+          <div className="paymentForm">
+            {paymentModalError && (
+              <div className="modalError">{paymentModalError}</div>
+            )}
+
+            <div className="paymentContext">
+              <div>
+                <span>Sample ID</span>
+                <strong>{selectedPaymentRecord.sample_id}</strong>
+              </div>
+
+              <div>
+                <span>Client</span>
+                <strong>{selectedPaymentRecord.client_name || "-"}</strong>
+              </div>
+
+              <div>
+                <span>Invoice</span>
+                <strong>
+                  {selectedPaymentRecord.invoice?.invoice_id || "No invoice"}
+                </strong>
+              </div>
+            </div>
+
+            <Select
+              label="Payment Status"
+              name="paymentStatus"
+              value={paymentStatus}
+              required
+              onChange={(event) => setPaymentStatus(event.target.value)}
+            >
+              <option value={PAYMENT_STATUSES.DOWNPAYMENT}>
+                Downpayment Paid
+              </option>
+              <option value={PAYMENT_STATUSES.PO}>PO Submitted</option>
+              <option value={PAYMENT_STATUSES.FULLY_PAID}>Fully Paid</option>
+            </Select>
+
+            <div className="paymentGrid">
+              <Input
+                label="Amount Paid"
+                name="amountPaid"
+                type="number"
+                value={amountPaid}
+                onChange={(event) => setAmountPaid(event.target.value)}
+                placeholder="e.g. 1250"
+              />
+
+              <Input
+                label="Balance"
+                name="balance"
+                type="number"
+                value={balance}
+                onChange={(event) => setBalance(event.target.value)}
+                placeholder="e.g. 1250"
+              />
+            </div>
+
+            <Textarea
+              label="Billing Notes"
+              name="billingNotes"
+              value={billingNotes}
+              onChange={(event) => setBillingNotes(event.target.value)}
+              placeholder="e.g. 50% downpayment received."
+              rows={3}
+            />
+
+            <Textarea
+              label="Confirmation Note"
+              name="confirmationNote"
+              value={confirmationNote}
+              required={paymentStatus === PAYMENT_STATUSES.FULLY_PAID}
+              onChange={(event) => setConfirmationNote(event.target.value)}
+              placeholder={
+                paymentStatus === PAYMENT_STATUSES.FULLY_PAID
+                  ? "Required when marking as fully paid."
+                  : "Optional payment confirmation note."
+              }
+              rows={3}
+            />
+          </div>
+        )}
       </Modal>
 
       <style jsx>{`
@@ -437,7 +681,7 @@ export default function BillingPage() {
           margin: 0;
           color: var(--color-text-primary);
           font-size: 18px;
-          font-weight: 850;
+          font-weight: 600;
           letter-spacing: -0.02em;
         }
 
@@ -450,7 +694,7 @@ export default function BillingPage() {
 
         .header p strong {
           color: var(--color-text-primary);
-          font-weight: 850;
+          font-weight: 500;
         }
 
         .headerActions {
@@ -461,54 +705,85 @@ export default function BillingPage() {
           flex-wrap: wrap;
         }
 
-        .textLink,
-        .rowAction {
-          border: none;
-          background: transparent;
-          color: var(--color-brand);
-          font-size: var(--text-xs);
-          font-weight: 900;
-          padding: 0;
-          cursor: pointer;
-          text-decoration: none;
-          white-space: nowrap;
-        }
-
-        .textLink:hover,
-        .rowAction:hover {
-          color: var(--color-brand-dark);
-          text-decoration: underline;
-          transform: none;
-          box-shadow: none;
-        }
-
-        .footerButton {
+        :global(.textLink),
+        :global(.footerButton),
+        :global(.equalFooterButton) {
           display: inline-flex;
           align-items: center;
           justify-content: center;
+          width: 128px;
+          min-width: 128px;
           min-height: 34px;
           padding: 0 14px;
-          border: 1px solid var(--color-border);
-          border-radius: var(--radius-md);
-          background: var(--color-brand);
-          color: #ffffff;
+          border: 1px solid var(--color-border-soft);
+          border-radius: var(--radius-md) !important;
+          background: var(--color-surface);
+          color: var(--color-text-primary);
           font-size: var(--text-xs);
-          font-weight: 900;
-          text-decoration: none;
+          font-weight: 500;
           line-height: 1;
+          text-decoration: none;
+          white-space: nowrap;
+          box-shadow: none;
+          cursor: pointer;
           transition:
             background-color var(--transition-base),
             border-color var(--transition-base),
-            transform var(--transition-base),
-            box-shadow var(--transition-base);
+            color var(--transition-base);
         }
 
-        .footerButton:hover {
-          background: var(--color-brand-dark);
-          border-color: var(--color-brand-dark);
+        :global(.textLink:hover),
+        :global(.footerButton:hover),
+        :global(.equalFooterButton:hover) {
+          background: var(--color-overlay);
+          border-color: var(--color-border);
+          color: var(--color-brand);
           text-decoration: none;
-          transform: translateY(-1px);
-          box-shadow: var(--shadow-sm);
+        }
+
+        .headerActions :global(button),
+        .headerActions :global(a) {
+          width: 118px;
+          min-width: 118px;
+          min-height: 34px;
+          border-radius: var(--radius-md) !important;
+        }
+
+        :global(.rowAction) {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-height: 30px;
+          padding: 0 10px;
+          border: 1px solid var(--color-border-soft);
+          border-radius: var(--radius-md);
+          background: var(--color-surface);
+          color: var(--color-text-primary);
+          font-size: var(--text-xs);
+          font-weight: 500;
+          line-height: 1;
+          text-decoration: none;
+          white-space: nowrap;
+          box-shadow: none;
+          cursor: pointer;
+          transition:
+            background-color var(--transition-base),
+            border-color var(--transition-base),
+            color var(--transition-base);
+        }
+
+        :global(.rowAction:hover) {
+          background: var(--color-overlay);
+          border-color: var(--color-border);
+          color: var(--color-brand);
+          text-decoration: none;
+        }
+
+        :global(.rowAction:disabled) {
+          opacity: 0.55;
+          cursor: not-allowed;
+          background: var(--color-overlay);
+          color: var(--color-text-muted);
         }
 
         .adminNotice,
@@ -517,7 +792,7 @@ export default function BillingPage() {
           gap: 4px;
           border-radius: var(--radius-md);
           padding: 12px 14px;
-          font-size: var(--text-sm);
+          font-size: var(--text-xs);
           line-height: 1.5;
         }
 
@@ -530,19 +805,20 @@ export default function BillingPage() {
         .notice {
           background: var(--color-overlay);
           color: var(--color-text-secondary);
-          border: 1px solid var(--color-border);
+          border: 1px solid var(--color-border-soft);
         }
 
         .adminNotice strong,
         .notice strong {
           color: inherit;
-          font-size: var(--text-sm);
+          font-size: var(--text-xs);
+          font-weight: 600;
         }
 
         .errorText {
           color: var(--color-danger);
           font-size: var(--text-sm);
-          font-weight: 800;
+          font-weight: 500;
         }
 
         .statsRow {
@@ -561,7 +837,78 @@ export default function BillingPage() {
         .mutedText {
           color: var(--color-text-muted);
           font-size: var(--text-xs);
-          font-weight: 800;
+          font-weight: 400;
+          white-space: nowrap;
+        }
+
+        .modalFooterActions {
+          display: flex;
+          justify-content: flex-end;
+          align-items: center;
+          gap: 10px;
+          width: 100%;
+        }
+
+        .modalFooterActions :global(button),
+        .modalFooterActions :global(a) {
+          width: 128px;
+          min-width: 128px;
+          min-height: 34px;
+          border-radius: var(--radius-md) !important;
+        }
+
+        .paymentForm {
+          display: grid;
+          gap: 14px;
+        }
+
+        .paymentGrid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 12px;
+        }
+
+        .modalError {
+          border: 1px solid var(--color-danger-border);
+          border-radius: var(--radius-md);
+          background: var(--color-danger-bg);
+          color: var(--color-danger);
+          padding: 11px 12px;
+          font-size: var(--text-xs);
+          font-weight: 500;
+          line-height: 1.45;
+        }
+
+        .paymentContext {
+          display: grid;
+          gap: 9px;
+          border: 1px solid var(--color-border-soft);
+          border-radius: var(--radius-md);
+          background: var(--color-overlay);
+          padding: 13px;
+        }
+
+        .paymentContext div {
+          display: grid;
+          grid-template-columns: 90px minmax(0, 1fr);
+          gap: 12px;
+          align-items: center;
+        }
+
+        .paymentContext span {
+          color: var(--color-text-secondary);
+          font-size: 10px;
+          font-weight: 500;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+
+        .paymentContext strong {
+          color: var(--color-text-primary);
+          font-size: var(--text-xs);
+          font-weight: 400;
+          overflow: hidden;
+          text-overflow: ellipsis;
           white-space: nowrap;
         }
 
@@ -570,14 +917,12 @@ export default function BillingPage() {
         }
 
         :global(.billingTable table) {
-          min-width: 980px;
+          min-width: 1120px;
         }
 
         :global(.billingTable .clickableRow) {
           cursor: pointer;
-          transition:
-            background-color var(--transition-base),
-            box-shadow var(--transition-base);
+          transition: background-color var(--transition-base);
         }
 
         :global(.billingTable .clickableRow:hover) {
@@ -616,8 +961,22 @@ export default function BillingPage() {
             justify-content: flex-start;
           }
 
-          .toolbar {
+          .toolbar,
+          .paymentGrid {
             grid-template-columns: 1fr;
+          }
+
+          .modalFooterActions {
+            flex-direction: column;
+            align-items: stretch;
+          }
+
+          .headerActions :global(button),
+          .headerActions :global(a),
+          .modalFooterActions :global(button),
+          .modalFooterActions :global(a) {
+            width: 100%;
+            min-width: 0;
           }
         }
 
@@ -625,44 +984,70 @@ export default function BillingPage() {
           .statsRow {
             grid-template-columns: 1fr;
           }
+
+          .paymentContext div {
+            grid-template-columns: 1fr;
+            gap: 3px;
+          }
         }
       `}</style>
     </div>
   );
 }
 
-function BillingAction({ item, creatingSampleId, onCreateInvoice }) {
-  if (item.billing_status === STATUS_FILTERS.READY) {
-    return (
+function BillingAction({
+  item,
+  creatingSampleId,
+  onCreateInvoice,
+  onUpdatePayment,
+}) {
+  return (
+    <div className="actionGroup">
       <button
         type="button"
         className="rowAction"
-        disabled={creatingSampleId === item.sample_id}
-        onClick={() => onCreateInvoice(item)}
+        onClick={() => onUpdatePayment(item)}
       >
-        {creatingSampleId === item.sample_id ? "Creating..." : "Create"}
+        Payment
       </button>
-    );
-  }
 
-  if (item.invoice?.invoice_id) {
-    return (
-      <Link
-        href="/accounting/invoices"
-        className="rowAction"
-        title={`Open invoice ${item.invoice.invoice_id}`}
-      >
-        Invoice
-      </Link>
-    );
-  }
+      {item.billing_status === STATUS_FILTERS.READY ? (
+        <button
+          type="button"
+          className="rowAction"
+          disabled={creatingSampleId === item.sample_id}
+          onClick={() => onCreateInvoice(item)}
+        >
+          {creatingSampleId === item.sample_id ? "Creating..." : "Invoice"}
+        </button>
+      ) : item.invoice?.invoice_id ? (
+        <Link
+          href="/accounting/invoices"
+          className="rowAction"
+          title={`Open invoice ${item.invoice.invoice_id}`}
+        >
+          Invoice
+        </Link>
+      ) : (
+        <span className="mutedText">No Invoice</span>
+      )}
 
-  return <span className="mutedText">No Action</span>;
+      <style jsx>{`
+        .actionGroup {
+          display: inline-flex;
+          justify-content: flex-end;
+          align-items: center;
+          gap: 8px;
+          white-space: nowrap;
+        }
+      `}</style>
+    </div>
+  );
 }
 
 function BillingDetails({ record }) {
   const metadata = record.device_metadata || {};
-  const payment = metadata.payment || {};
+  const payment = record.payment || metadata.payment || {};
   const invoice = record.invoice || null;
   const history = Array.isArray(payment.payment_history)
     ? payment.payment_history
@@ -676,10 +1061,13 @@ function BillingDetails({ record }) {
         <Detail label="Project Reference" value={record.project_reference} />
         <Detail
           label="Material"
-          value={record.material_type || record.ai_predicted_label}
+          value={normalizeMaterialName(
+            record.material_type || record.ai_predicted_label,
+          )}
         />
         <Detail label="Branch" value={formatBranch(record.branch_id)} />
         <Detail label="Lifecycle Status" value={record.current_state} />
+        <Detail label="Payment Status" value={payment.payment_status} />
         <Detail label="Billing Status" value={record.billing_status} />
         <Detail
           label="Test Result"
@@ -708,7 +1096,12 @@ function BillingDetails({ record }) {
           <Detail label="Invoice Status" value={invoice?.status} />
           <Detail
             label="Created By"
-            value={invoice?.created_by_name || formatUser(invoice?.created_by)}
+            value={
+              invoice?.created_by_name ||
+              invoice?.created_by_display ||
+              invoice?.created_by_full_name ||
+              formatUser(invoice?.created_by)
+            }
           />
           <Detail label="Created At" value={formatDate(invoice?.created_at)} />
           <Detail label="Paid At" value={formatDate(invoice?.paid_at)} />
@@ -727,7 +1120,10 @@ function BillingDetails({ record }) {
             label="Payment Status"
             value={payment.payment_status || "Unpaid"}
           />
-          <Detail label="Amount Paid" value={formatCurrency(payment.amount_paid)} />
+          <Detail
+            label="Amount Paid"
+            value={formatCurrency(payment.amount_paid)}
+          />
           <Detail label="Balance" value={formatCurrency(payment.balance)} />
           <Detail
             label="Updated By"
@@ -739,7 +1135,14 @@ function BillingDetails({ record }) {
               formatUser(payment.payment_updated_by)
             }
           />
-          <Detail label="Updated At" value={formatDate(payment.payment_updated_at)} />
+          <Detail
+            label="Updated At"
+            value={formatDate(payment.payment_updated_at)}
+          />
+          <Detail
+            label="Testing Cleared"
+            value={payment.financially_cleared_for_testing ? "Yes" : "No"}
+          />
           <Detail
             label="Release Cleared"
             value={payment.financially_cleared_for_release ? "Yes" : "No"}
@@ -810,7 +1213,7 @@ function BillingDetails({ record }) {
           display: grid;
           gap: 13px;
           padding: 14px;
-          border: 1px solid var(--color-border);
+          border: 1px solid var(--color-border-soft);
           border-radius: var(--radius-md);
           background: var(--color-surface);
         }
@@ -826,20 +1229,20 @@ function BillingDetails({ record }) {
           margin: 0;
           color: var(--color-text-primary);
           font-size: var(--text-sm);
-          font-weight: 900;
+          font-weight: 600;
         }
 
         .sectionTitle span {
           color: var(--color-text-muted);
           font-size: var(--text-xs);
-          font-weight: 800;
+          font-weight: 400;
         }
 
         .emptyHistory {
           margin: 0;
           color: var(--color-text-secondary);
           font-size: var(--text-xs);
-          font-weight: 700;
+          font-weight: 400;
         }
 
         .historyList {
@@ -866,7 +1269,7 @@ function BillingDetails({ record }) {
         .historyItem strong {
           color: var(--color-text-primary);
           font-size: var(--text-xs);
-          font-weight: 900;
+          font-weight: 500;
         }
 
         .historyItem span,
@@ -907,7 +1310,7 @@ function Detail({ label, value, wide = false }) {
         span {
           color: var(--color-text-secondary);
           font-size: 10px;
-          font-weight: 850;
+          font-weight: 500;
           text-transform: uppercase;
           letter-spacing: 0.05em;
         }
@@ -915,7 +1318,7 @@ function Detail({ label, value, wide = false }) {
         strong {
           color: var(--color-text-primary);
           font-size: var(--text-xs);
-          font-weight: 800;
+          font-weight: 400;
           line-height: 1.45;
           overflow-wrap: anywhere;
         }
@@ -984,9 +1387,70 @@ function getBillingStatus(sample, invoice) {
   return STATUS_FILTERS.READY;
 }
 
+function getPaymentMetadata(sample) {
+  const metadata = sample.device_metadata || {};
+  return metadata.payment || {};
+}
+
 function getFinalResult(testData) {
   if (!testData) return null;
-  return testData.qa_final_result || testData.result || null;
+  return testData.qa_final_result || testData.final_result || testData.result || null;
+}
+
+function normalizeMaterialName(value) {
+  if (!value) return "-";
+
+  const normalized = String(value).trim().toLowerCase();
+
+  if (
+    normalized === "rsb" ||
+    normalized === "rebar" ||
+    normalized === "reinforcing steel" ||
+    normalized === "reinforcing steel bar" ||
+    normalized === "steel bar" ||
+    normalized === "metal" ||
+    normalized.includes("rsb") ||
+    normalized.includes("rebar") ||
+    normalized.includes("reinforcing") ||
+    normalized.includes("steel") ||
+    normalized.includes("metal")
+  ) {
+    return "Reinforcing Steel Bar";
+  }
+
+  if (
+    normalized === "soil aggregates" ||
+    normalized === "soil aggregate" ||
+    normalized === "soil_aggregates" ||
+    normalized === "soil-aggregates" ||
+    normalized === "aggregate" ||
+    normalized === "aggregates" ||
+    normalized.includes("soil") ||
+    normalized.includes("aggregate")
+  ) {
+    return "Soil Aggregates";
+  }
+
+  if (
+    normalized === "concrete" ||
+    normalized === "cement concrete" ||
+    normalized.includes("concrete") ||
+    normalized.includes("cement")
+  ) {
+    return "Concrete";
+  }
+
+  return formatLabel(value);
+}
+
+function formatLabel(value) {
+  if (!value) return "-";
+
+  return String(value)
+    .replaceAll("_", " ")
+    .replaceAll("-", " ")
+    .toLowerCase()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 function formatBranch(branchId) {

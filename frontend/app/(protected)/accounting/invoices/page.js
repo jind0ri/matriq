@@ -197,35 +197,18 @@ export default function InvoicesPage() {
       {!loading && !error && (
         <>
           <section className="summary">
-            <div>
-              <span>Active Invoices</span>
-              <strong>{activeInvoices.length}</strong>
-            </div>
-
-            <div>
-              <span>Pending</span>
-              <strong>{pendingInvoices.length}</strong>
-            </div>
-
-            <div>
-              <span>Paid</span>
-              <strong>{paidInvoices.length}</strong>
-            </div>
-
-            <div>
-              <span>Cancelled</span>
-              <strong>{cancelledInvoices.length}</strong>
-            </div>
-
-            <div>
-              <span>Outstanding</span>
-              <strong>{formatCurrency(outstandingAmount)}</strong>
-            </div>
-
-            <div>
-              <span>Collected</span>
-              <strong>{formatCurrency(collectedAmount)}</strong>
-            </div>
+            <SummaryItem label="Active Invoices" value={activeInvoices.length} />
+            <SummaryItem label="Pending" value={pendingInvoices.length} />
+            <SummaryItem label="Paid" value={paidInvoices.length} />
+            <SummaryItem label="Cancelled" value={cancelledInvoices.length} />
+            <SummaryItem
+              label="Outstanding"
+              value={formatCurrency(outstandingAmount)}
+            />
+            <SummaryItem
+              label="Collected"
+              value={formatCurrency(collectedAmount)}
+            />
           </section>
 
           <Card
@@ -261,7 +244,11 @@ export default function InvoicesPage() {
                     <td>{item.invoice_id}</td>
                     <td>{item.sample_id}</td>
                     <td>{item.client_name || "-"}</td>
-                    <td>{item.material_type || "-"}</td>
+                    <td>
+                      {normalizeMaterialName(
+                        item.material_type || item.ai_predicted_label,
+                      )}
+                    </td>
                     <td className="right">{formatCurrency(item.amount)}</td>
                     <td>
                       <InvoiceStatusBadge status={item.status} />
@@ -432,7 +419,7 @@ export default function InvoicesPage() {
           margin: 0;
           color: var(--color-text-primary);
           font-size: 18px;
-          font-weight: 850;
+          font-weight: 600;
           letter-spacing: -0.02em;
         }
 
@@ -452,75 +439,66 @@ export default function InvoicesPage() {
           border-bottom: 1px solid var(--color-border-soft);
         }
 
-        .summary div {
-          display: grid;
-          gap: 6px;
-          min-width: 0;
-          text-align: center;
-        }
-
-        .summary span {
-          color: var(--color-text-secondary);
-          font-size: 10px;
-          font-weight: 850;
-          text-transform: uppercase;
-          letter-spacing: 0.06em;
-        }
-
-        .summary strong {
-          color: var(--color-text-primary);
-          font-size: 14px;
-          font-weight: 850;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-        }
-
         .errorText {
           color: var(--color-danger);
           font-size: var(--text-sm);
-          font-weight: 800;
+          font-weight: 500;
         }
 
         .rowActions {
           display: inline-flex;
           align-items: center;
           justify-content: flex-end;
-          gap: 10px;
+          gap: 8px;
           white-space: nowrap;
         }
 
         .rowAction {
-          border: none;
-          background: transparent;
-          color: var(--color-brand);
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-height: 30px;
+          padding: 0 10px;
+          border: 1px solid var(--color-border-soft);
+          border-radius: var(--radius-md);
+          background: var(--color-surface);
+          color: var(--color-text-primary);
           font-size: var(--text-xs);
-          font-weight: 900;
-          padding: 0;
+          font-weight: 500;
+          line-height: 1;
           cursor: pointer;
           white-space: nowrap;
+          box-shadow: none;
+          transition:
+            background-color var(--transition-base),
+            border-color var(--transition-base),
+            color var(--transition-base);
+        }
+
+        .rowAction:hover {
+          background: var(--color-overlay);
+          border-color: var(--color-border);
+          color: var(--color-brand);
+          text-decoration: none;
         }
 
         .rowAction.danger {
           color: var(--color-danger);
-        }
-
-        .rowAction:hover {
-          color: var(--color-brand-dark);
-          text-decoration: underline;
-          transform: none;
-          box-shadow: none;
+          border-color: var(--color-danger-border);
+          background: var(--color-surface);
         }
 
         .rowAction.danger:hover {
+          background: var(--color-danger-bg);
+          border-color: var(--color-danger-border);
           color: var(--color-danger);
-          text-decoration: underline;
+          text-decoration: none;
         }
 
         .mutedText {
           color: var(--color-text-muted);
           font-size: var(--text-xs);
-          font-weight: 800;
+          font-weight: 400;
         }
 
         .modalBody {
@@ -535,14 +513,14 @@ export default function InvoicesPage() {
           color: var(--color-danger);
           padding: 11px 12px;
           font-size: var(--text-xs);
-          font-weight: 800;
+          font-weight: 500;
           line-height: 1.45;
         }
 
         .invoiceDetails {
           display: grid;
           gap: 9px;
-          border: 1px solid var(--color-border);
+          border: 1px solid var(--color-border-soft);
           border-radius: var(--radius-md);
           background: var(--color-overlay);
           padding: 13px;
@@ -558,7 +536,7 @@ export default function InvoicesPage() {
         .invoiceDetails span {
           color: var(--color-text-secondary);
           font-size: 10px;
-          font-weight: 850;
+          font-weight: 500;
           text-transform: uppercase;
           letter-spacing: 0.05em;
         }
@@ -566,7 +544,7 @@ export default function InvoicesPage() {
         .invoiceDetails strong {
           color: var(--color-text-primary);
           font-size: var(--text-xs);
-          font-weight: 850;
+          font-weight: 400;
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
@@ -645,6 +623,42 @@ export default function InvoicesPage() {
   );
 }
 
+function SummaryItem({ label, value }) {
+  return (
+    <div className="summaryItem">
+      <span>{label}</span>
+      <strong>{value}</strong>
+
+      <style jsx>{`
+        .summaryItem {
+          display: grid;
+          gap: 6px;
+          min-width: 0;
+          text-align: center;
+        }
+
+        span {
+          color: var(--color-text-secondary);
+          font-size: 10px;
+          font-weight: 500;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+
+        strong {
+          color: var(--color-text-primary);
+          font-size: 13px;
+          font-weight: 500;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          line-height: 1.25;
+        }
+      `}</style>
+    </div>
+  );
+}
+
 function InvoiceDetails({ invoice }) {
   return (
     <div className="details">
@@ -652,13 +666,23 @@ function InvoiceDetails({ invoice }) {
         <Detail label="Invoice ID" value={invoice.invoice_id} />
         <Detail label="Sample ID" value={invoice.sample_id} />
         <Detail label="Client" value={invoice.client_name} />
-        <Detail label="Material" value={invoice.material_type} />
+        <Detail
+          label="Material"
+          value={normalizeMaterialName(
+            invoice.material_type || invoice.ai_predicted_label,
+          )}
+        />
         <Detail label="Branch" value={formatBranch(invoice.branch_id)} />
         <Detail label="Amount" value={formatCurrency(invoice.amount)} />
         <Detail label="Status" value={invoice.status} />
         <Detail
           label="Created By"
-          value={invoice.created_by_name || formatUser(invoice.created_by)}
+          value={
+            invoice.created_by_name ||
+            invoice.created_by_display ||
+            invoice.created_by_full_name ||
+            formatUser(invoice.created_by)
+          }
         />
         <Detail label="Created At" value={formatDate(invoice.created_at)} />
         <Detail label="Updated At" value={formatDate(invoice.updated_at)} />
@@ -695,7 +719,7 @@ function InvoiceDetails({ invoice }) {
           display: grid;
           gap: 8px;
           padding: 14px;
-          border: 1px solid var(--color-border);
+          border: 1px solid var(--color-border-soft);
           border-radius: var(--radius-md);
           background: var(--color-surface);
         }
@@ -711,7 +735,7 @@ function InvoiceDetails({ invoice }) {
           margin: 0;
           color: var(--color-text-primary);
           font-size: var(--text-sm);
-          font-weight: 900;
+          font-weight: 600;
         }
 
         p {
@@ -751,7 +775,7 @@ function Detail({ label, value, wide = false }) {
         span {
           color: var(--color-text-secondary);
           font-size: 10px;
-          font-weight: 850;
+          font-weight: 500;
           text-transform: uppercase;
           letter-spacing: 0.05em;
         }
@@ -759,7 +783,7 @@ function Detail({ label, value, wide = false }) {
         strong {
           color: var(--color-text-primary);
           font-size: var(--text-xs);
-          font-weight: 800;
+          font-weight: 400;
           line-height: 1.45;
           overflow-wrap: anywhere;
         }
@@ -781,6 +805,62 @@ function InvoiceStatusBadge({ status }) {
       {status || "Pending"}
     </Badge>
   );
+}
+
+function normalizeMaterialName(value) {
+  if (!value) return "-";
+
+  const normalized = String(value).trim().toLowerCase();
+
+  if (
+    normalized === "rsb" ||
+    normalized === "rebar" ||
+    normalized === "reinforcing steel" ||
+    normalized === "reinforcing steel bar" ||
+    normalized === "steel bar" ||
+    normalized === "metal" ||
+    normalized.includes("rsb") ||
+    normalized.includes("rebar") ||
+    normalized.includes("reinforcing") ||
+    normalized.includes("steel") ||
+    normalized.includes("metal")
+  ) {
+    return "Reinforcing Steel Bar";
+  }
+
+  if (
+    normalized === "soil aggregates" ||
+    normalized === "soil aggregate" ||
+    normalized === "soil_aggregates" ||
+    normalized === "soil-aggregates" ||
+    normalized === "aggregate" ||
+    normalized === "aggregates" ||
+    normalized.includes("soil") ||
+    normalized.includes("aggregate")
+  ) {
+    return "Soil Aggregates";
+  }
+
+  if (
+    normalized === "concrete" ||
+    normalized === "cement concrete" ||
+    normalized.includes("concrete") ||
+    normalized.includes("cement")
+  ) {
+    return "Concrete";
+  }
+
+  return formatLabel(value);
+}
+
+function formatLabel(value) {
+  if (!value) return "-";
+
+  return String(value)
+    .replaceAll("_", " ")
+    .replaceAll("-", " ")
+    .toLowerCase()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 function formatBranch(branchId) {

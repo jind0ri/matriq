@@ -46,27 +46,27 @@ export default function MetricStrip({
         span {
           color: var(--color-text-secondary);
           font-size: 10px;
-          font-weight: 850;
+          font-weight: 500;
           text-transform: uppercase;
-          letter-spacing: 0.06em;
+          letter-spacing: 0.05em;
           line-height: 1.35;
         }
 
         strong {
           color: var(--color-text-primary);
-          font-size: 14px;
-          font-weight: 850;
+          font-size: 13px;
+          font-weight: 500;
           max-width: 100%;
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
-          line-height: 1.2;
+          line-height: 1.25;
         }
 
         small {
           color: var(--color-text-muted);
           font-size: 10px;
-          font-weight: 700;
+          font-weight: 400;
           line-height: 1.35;
         }
 

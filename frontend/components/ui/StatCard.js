@@ -24,23 +24,27 @@ export default function StatCard({
       <style jsx>{`
         .statCard {
           background: var(--color-surface);
-          border: 1px solid var(--color-border);
+          border: 1px solid var(--color-border-soft);
           border-radius: var(--radius-lg);
-          padding: 18px;
-          box-shadow: var(--shadow-xs);
+          padding: 17px;
+          box-shadow: none;
           display: grid;
-          gap: 8px;
+          gap: 9px;
           min-width: 0;
           transition:
-            transform var(--transition-base),
-            border-color var(--transition-base),
-            box-shadow var(--transition-base);
+            background-color var(--transition-base),
+            border-color var(--transition-base);
         }
 
         .statCard:hover {
-          transform: translateY(-1px);
-          border-color: var(--color-border-strong);
-          box-shadow: var(--shadow-sm);
+          background: color-mix(
+            in srgb,
+            var(--color-overlay) 30%,
+            var(--color-surface)
+          );
+          border-color: var(--color-border);
+          transform: none;
+          box-shadow: none;
         }
 
         .topLine {
@@ -52,45 +56,47 @@ export default function StatCard({
 
         span {
           color: var(--color-text-secondary);
-          font-size: var(--text-xs);
-          font-weight: 900;
+          font-size: 10px;
+          font-weight: 500;
           text-transform: uppercase;
-          letter-spacing: 0.06em;
+          letter-spacing: 0.05em;
+          line-height: 1.35;
         }
 
         small {
           border-radius: var(--radius-full);
           padding: 4px 7px;
           background: var(--color-overlay);
-          border: 1px solid var(--color-border);
+          border: 1px solid var(--color-border-soft);
           color: var(--color-text-secondary);
           font-size: 10px;
-          font-weight: 900;
+          font-weight: 400;
           white-space: nowrap;
         }
 
         strong {
           color: var(--color-text-primary);
-          font-size: var(--text-2xl);
-          font-weight: 900;
+          font-size: 22px;
+          font-weight: 600;
           line-height: 1;
-          letter-spacing: -0.04em;
+          letter-spacing: -0.03em;
         }
 
         p {
           margin: 0;
           color: var(--color-text-secondary);
-          font-size: var(--text-sm);
+          font-size: var(--text-xs);
+          font-weight: 400;
           line-height: 1.45;
         }
 
         .brand {
-          border-color: color-mix(in srgb, var(--color-brand) 35%, white);
+          border-color: color-mix(in srgb, var(--color-brand) 24%, white);
         }
 
         .brand small {
           background: var(--color-brand-light);
-          border-color: color-mix(in srgb, var(--color-brand) 35%, white);
+          border-color: color-mix(in srgb, var(--color-brand) 24%, white);
           color: var(--color-brand-dark);
         }
 
@@ -135,7 +141,7 @@ export default function StatCard({
         }
 
         .neutral {
-          border-color: var(--color-border);
+          border-color: var(--color-border-soft);
         }
       `}</style>
     </>
