@@ -46,13 +46,18 @@ export default function Header({
       <style jsx>{`
         .header {
           height: 76px;
-          background: #f7f7f4;
-          border-bottom: 1px solid #e8e8e8;
+          background: var(--color-surface);
+          border-bottom: 1px solid var(--color-border-soft);
           display: flex;
           align-items: center;
           justify-content: space-between;
           padding: 0 20px;
           gap: 20px;
+          color: var(--color-text-primary);
+          transition:
+            background-color var(--transition-base),
+            border-color var(--transition-base),
+            color var(--transition-base);
         }
 
         .left {
@@ -63,19 +68,29 @@ export default function Header({
         }
 
         .menuButton {
-          border: none;
+          width: 36px;
+          height: 36px;
+          border: 1px solid transparent;
+          border-radius: var(--radius-md);
           background: transparent;
-          color: #3f3f3f;
+          color: var(--color-text-primary);
           display: flex;
           align-items: center;
           justify-content: center;
           padding: 0;
           cursor: pointer;
           flex-shrink: 0;
+          transition:
+            background-color var(--transition-base),
+            border-color var(--transition-base),
+            color var(--transition-base),
+            opacity var(--transition-base);
         }
 
         .menuButton:hover {
-          opacity: 0.75;
+          background: var(--color-overlay);
+          border-color: var(--color-border-soft);
+          opacity: 1;
         }
 
         .locationBlock {
@@ -85,15 +100,18 @@ export default function Header({
         }
 
         .locationBlock span {
-          font-size: 11px;
-          color: #8f8f8f;
           margin-bottom: 2px;
+          color: var(--color-text-muted);
+          font-size: 11px;
+          font-weight: 400;
+          line-height: 1.25;
         }
 
         .locationBlock strong {
+          color: var(--color-text-primary);
           font-size: 14px;
-          color: #333333;
-          font-weight: 700;
+          font-weight: 600;
+          line-height: 1.3;
           white-space: nowrap;
         }
 
@@ -106,39 +124,53 @@ export default function Header({
 
         .syncBadge {
           height: 38px;
-          border-radius: 999px;
-          border: 1px solid #8ac08d;
+          border-radius: var(--radius-full);
+          border: 1px solid var(--color-success-border);
           padding: 0 14px;
           display: inline-flex;
           align-items: center;
           gap: 10px;
-          color: #138c2d;
+          color: var(--color-success);
           font-size: 12px;
           font-weight: 500;
-          background: transparent;
+          background: var(--color-success-bg);
+          white-space: nowrap;
         }
 
         .dot {
           width: 14px;
           height: 14px;
-          border-radius: 999px;
-          background: #0d9b27;
+          border-radius: var(--radius-full);
+          background: var(--color-success);
           display: inline-block;
+          flex-shrink: 0;
+          box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-success) 14%, transparent);
         }
 
         .logoutIcon {
-          border: none;
+          width: 34px;
+          height: 34px;
+          border: 1px solid transparent;
+          border-radius: var(--radius-md);
           background: transparent;
-          color: #8a8a8a;
+          color: var(--color-text-muted);
           display: flex;
           align-items: center;
           justify-content: center;
           padding: 0;
           cursor: pointer;
+          transition:
+            background-color var(--transition-base),
+            border-color var(--transition-base),
+            color var(--transition-base),
+            opacity var(--transition-base);
         }
 
         .logoutIcon:hover {
-          opacity: 0.75;
+          background: var(--color-overlay);
+          border-color: var(--color-border-soft);
+          color: var(--color-danger);
+          opacity: 1;
         }
 
         @media (max-width: 768px) {
@@ -147,12 +179,30 @@ export default function Header({
           }
 
           .syncBadge {
+            height: 34px;
             padding: 0 10px;
             font-size: 11px;
           }
 
+          .dot {
+            width: 11px;
+            height: 11px;
+          }
+
           .locationBlock strong {
             font-size: 13px;
+          }
+        }
+
+        @media (max-width: 520px) {
+          .syncBadge span:last-child {
+            display: none;
+          }
+
+          .syncBadge {
+            width: 34px;
+            justify-content: center;
+            padding: 0;
           }
         }
 

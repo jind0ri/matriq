@@ -34,6 +34,9 @@ const MATERIAL_ORDER = ["Reinforcing Steel Bar", "Soil Aggregates", "Concrete"];
 
 export default function TechnicalDashboardPage() {
   const user = getStoredUser();
+  const role = user?.role || "Technical User";
+  const isAdmin = role === "Administrator";
+  const userBranchId = Number(user?.branch_id);
 
   const [dashboard, setDashboard] = useState({
     registered: 0,
@@ -44,7 +47,7 @@ export default function TechnicalDashboardPage() {
   });
 
   const [samples, setSamples] = useState([]);
-  const [branchFilter, setBranchFilter] = useState("All");
+  const [branchFilter, setBranchFilter] = useState(isAdmin ? "All" : "My");
   const [selectedSample, setSelectedSample] = useState(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -82,18 +85,47 @@ export default function TechnicalDashboardPage() {
     loadDashboard();
   }, []);
 
-  const role = user?.role || "Technical User";
-  const isAdmin = role === "Administrator";
+  useEffect(() => {
+    if (!isAdmin && branchFilter !== "All" && branchFilter !== "My") {
+      const resolved = resolveBranchFilter(branchFilter, userBranchId);
+      const isOwnBranch = Number(resolved) === Number(userBranchId);
+
+      if (isOwnBranch) {
+        setBranchFilter("My");
+      }
+    }
+  }, [branchFilter, isAdmin, userBranchId]);
+
+  const branchOptions = useMemo(() => {
+    if (isAdmin) {
+      return [
+        { label: "All Branches", value: "All" },
+        { label: "Marikina", value: "1" },
+        { label: "Pateros", value: "2" },
+      ];
+    }
+
+    const otherBranch =
+      Number(userBranchId) === 1
+        ? { label: "Pateros", value: "2" }
+        : { label: "Marikina", value: "1" };
+
+    return [
+      { label: "All Branches", value: "All" },
+      { label: "My Branch", value: "My" },
+      otherBranch,
+    ];
+  }, [isAdmin, userBranchId]);
 
   const visibleSamples = useMemo(() => {
-    if (branchFilter === "All") return samples;
+    const resolvedBranch = resolveBranchFilter(branchFilter, userBranchId);
 
-    return samples.filter((sample) => {
-      if (branchFilter === "Marikina") return Number(sample.branch_id) === 1;
-      if (branchFilter === "Pateros") return Number(sample.branch_id) === 2;
-      return true;
-    });
-  }, [samples, branchFilter]);
+    if (resolvedBranch === "All") return samples;
+
+    return samples.filter(
+      (sample) => Number(sample.branch_id) === Number(resolvedBranch),
+    );
+  }, [samples, branchFilter, userBranchId]);
 
   const sampleById = useMemo(() => {
     const map = new Map();
@@ -145,16 +177,18 @@ export default function TechnicalDashboardPage() {
   }, [visibleSamples]);
 
   const recentSamples = useMemo(() => {
-    const source =
+    const dashboardSamples =
       Array.isArray(dashboard.recent_samples) &&
       dashboard.recent_samples.length > 0
         ? dashboard.recent_samples
-        : visibleSamples;
+            .map((sample) => sampleById.get(sample.sample_id) || sample)
+            .filter((sample) => isSampleInBranchView(sample, branchFilter, userBranchId))
+        : [];
 
-    return [...source].slice(0, 5).map((sample) => {
-      return sampleById.get(sample.sample_id) || sample;
-    });
-  }, [dashboard.recent_samples, visibleSamples, sampleById]);
+    const source = dashboardSamples.length > 0 ? dashboardSamples : visibleSamples;
+
+    return [...source].slice(0, 5);
+  }, [dashboard.recent_samples, visibleSamples, sampleById, branchFilter, userBranchId]);
 
   const topMetrics = getTopMetrics({
     role,
@@ -167,6 +201,14 @@ export default function TechnicalDashboardPage() {
     1,
     ...LIFECYCLE_STATES.map((state) => Number(lifecycleCounts[state]) || 0),
   );
+
+  const branchViewLabel = getBranchViewLabel(branchFilter, userBranchId);
+  const isCloudMonitoring = !isAdmin && branchFilter === "All";
+  const isOtherBranchView =
+    !isAdmin &&
+    branchFilter !== "All" &&
+    branchFilter !== "My" &&
+    Number(resolveBranchFilter(branchFilter, userBranchId)) !== Number(userBranchId);
 
   function openDetails(sample) {
     setSelectedSample(sample);
@@ -184,11 +226,7 @@ export default function TechnicalDashboardPage() {
         <div>
           <h1>{getDashboardTitle(role)}</h1>
           <p>
-            Operational overview for{" "}
-            <strong>
-              {branchFilter === "All" ? "all branches" : branchFilter}
-            </strong>
-            .
+            Operational overview for <strong>{branchViewLabel}</strong>.
           </p>
         </div>
 
@@ -198,9 +236,11 @@ export default function TechnicalDashboardPage() {
             value={branchFilter}
             onChange={(event) => setBranchFilter(event.target.value)}
           >
-            <option value="All">All Branches</option>
-            <option value="Marikina">Marikina</option>
-            <option value="Pateros">Pateros</option>
+            {branchOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
           </Select>
 
           <Button onClick={loadDashboard} variant="secondary" size="sm">
@@ -209,12 +249,21 @@ export default function TechnicalDashboardPage() {
         </div>
       </header>
 
-      {isAdmin && (
+      {(isAdmin || isCloudMonitoring || isOtherBranchView) && (
         <section className="notice">
-          <strong>Administrator Oversight Mode</strong>
+          <strong>
+            {isAdmin ? "Administrator Oversight Mode" : "Cloud-Synced Monitoring"}
+          </strong>
           <span>
-            Actions remain assigned to operational roles. This page is for
-            monitoring only.
+            {isAdmin
+              ? "You can view all branch records from the centralized system. This dashboard remains monitoring-only."
+              : isCloudMonitoring
+                ? `You are viewing all cloud-synced branch records. Operational actions remain locked to your assigned branch: ${formatBranch(
+                    userBranchId,
+                  )}.`
+                : `You are viewing ${branchViewLabel} records for monitoring. Operational actions remain locked to your assigned branch: ${formatBranch(
+                    userBranchId,
+                  )}.`}
           </span>
         </section>
       )}
@@ -423,18 +472,19 @@ export default function TechnicalDashboardPage() {
 
         .notice {
           display: grid;
-          gap: 3px;
-          padding: 11px 13px;
+          gap: 4px;
+          padding: 12px 14px;
           border-radius: var(--radius-md);
           background: var(--color-info-bg);
           border: 1px solid var(--color-info-border);
           color: var(--color-info);
-          font-size: 12px;
-          line-height: 1.45;
+          font-size: var(--text-xs);
+          line-height: 1.5;
         }
 
         .notice strong {
-          font-size: 12px;
+          color: var(--color-info);
+          font-size: var(--text-xs);
           font-weight: 600;
         }
 
@@ -891,7 +941,7 @@ function SampleDetails({ sample }) {
           display: grid;
           gap: 13px;
           padding: 14px;
-          border: 1px solid var(--color-border);
+          border: 1px solid var(--color-border-soft);
           border-radius: var(--radius-md);
           background: var(--color-surface);
         }
@@ -1090,6 +1140,26 @@ function getTopMetrics({ role, lifecycleCounts, dashboard, totalSamples }) {
     { label: "Completed", value: lifecycleCounts.Released || 0 },
     { label: "Overdue", value: 0 },
   ];
+}
+
+function resolveBranchFilter(value, userBranchId) {
+  if (value === "All") return "All";
+  if (value === "My") return Number(userBranchId);
+  return Number(value);
+}
+
+function isSampleInBranchView(sample, branchFilter, userBranchId) {
+  const resolvedBranch = resolveBranchFilter(branchFilter, userBranchId);
+
+  if (resolvedBranch === "All") return true;
+
+  return Number(sample?.branch_id) === Number(resolvedBranch);
+}
+
+function getBranchViewLabel(branchFilter, userBranchId) {
+  if (branchFilter === "All") return "all branches";
+  if (branchFilter === "My") return `${formatBranch(userBranchId)} branch`;
+  return `${formatBranch(branchFilter)} branch`;
 }
 
 function normalizeLifecycleState(status) {

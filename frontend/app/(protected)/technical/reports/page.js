@@ -11,7 +11,7 @@ import Input from "@/components/ui/Input";
 import Loader from "@/components/ui/Loader";
 import Select from "@/components/ui/Select";
 import Table from "@/components/ui/Table";
-import { apiClient } from "@/services/apiClient";
+import { apiClient, getStoredUser } from "@/services/apiClient";
 
 const REPORT_COLUMNS = [
   { key: "sample", label: "Sample", width: "150px" },
@@ -24,11 +24,47 @@ const REPORT_COLUMNS = [
 ];
 
 export default function ReportsPage() {
+  const user = getStoredUser();
+  const role = user?.role || "Lab Technician";
+  const isAdmin = role === "Administrator";
+  const userBranchId = Number(user?.branch_id);
+
   const [samples, setSamples] = useState([]);
   const [search, setSearch] = useState("");
+  const [branchFilter, setBranchFilter] = useState(isAdmin ? "All" : "My");
   const [resultFilter, setResultFilter] = useState("All");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  const branchOptions = useMemo(() => {
+    if (isAdmin) {
+      return [
+        { label: "All Branches", value: "All" },
+        { label: "Marikina", value: "1" },
+        { label: "Pateros", value: "2" },
+      ];
+    }
+
+    const otherBranch =
+      Number(userBranchId) === 1
+        ? { label: "Pateros", value: "2" }
+        : { label: "Marikina", value: "1" };
+
+    return [
+      { label: "All Branches", value: "All" },
+      { label: "My Branch", value: "My" },
+      otherBranch,
+    ];
+  }, [isAdmin, userBranchId]);
+
+  const branchViewLabel = getBranchViewLabel(branchFilter, userBranchId);
+  const isCloudMonitoring = !isAdmin && branchFilter === "All";
+  const isOtherBranchView =
+    !isAdmin &&
+    branchFilter !== "All" &&
+    branchFilter !== "My" &&
+    Number(resolveBranchFilter(branchFilter, userBranchId)) !==
+      Number(userBranchId);
 
   async function loadReports() {
     setLoading(true);
@@ -48,8 +84,20 @@ export default function ReportsPage() {
     loadReports();
   }, []);
 
+  useEffect(() => {
+    if (!isAdmin && branchFilter !== "All" && branchFilter !== "My") {
+      const resolved = resolveBranchFilter(branchFilter, userBranchId);
+      const isOwnBranch = Number(resolved) === Number(userBranchId);
+
+      if (isOwnBranch) {
+        setBranchFilter("My");
+      }
+    }
+  }, [branchFilter, isAdmin, userBranchId]);
+
   const releasedReports = useMemo(() => {
     const q = search.trim().toLowerCase();
+    const resolvedBranch = resolveBranchFilter(branchFilter, userBranchId);
 
     return samples
       .filter((item) => item.current_state === "Released")
@@ -60,6 +108,10 @@ export default function ReportsPage() {
         const material = normalizeMaterialName(
           item.material_type || item.ai_predicted_label,
         );
+
+        const matchesBranch =
+          resolvedBranch === "All" ||
+          Number(item.branch_id) === Number(resolvedBranch);
 
         const matchesResult =
           resultFilter === "All" || finalResult === resultFilter;
@@ -73,15 +125,13 @@ export default function ReportsPage() {
           testData.test_type?.toLowerCase().includes(q) ||
           testData.values?.test_name?.toLowerCase().includes(q);
 
-        return matchesResult && matchesSearch;
+        return matchesBranch && matchesResult && matchesSearch;
       });
-  }, [samples, search, resultFilter]);
+  }, [samples, search, resultFilter, branchFilter, userBranchId]);
 
   const stats = useMemo(() => {
-    return samples.reduce(
+    return releasedReports.reduce(
       (acc, item) => {
-        if (item.current_state !== "Released") return acc;
-
         acc.total += 1;
 
         const testData = item.device_metadata?.test_data || {};
@@ -102,7 +152,7 @@ export default function ReportsPage() {
         noResult: 0,
       },
     );
-  }, [samples]);
+  }, [releasedReports]);
 
   return (
     <div className="page">
@@ -110,21 +160,46 @@ export default function ReportsPage() {
         <div>
           <h1>Official Reports</h1>
           <p>
-            Released laboratory reports finalized through QA authorization.
+            Released laboratory reports finalized through QA authorization for{" "}
+            <strong>{branchViewLabel}</strong>.
           </p>
         </div>
 
-        <Button variant="secondary" size="sm" onClick={loadReports}>
-          Refresh
-        </Button>
+        <div className="headerControls">
+          <Select
+            name="branchFilter"
+            value={branchFilter}
+            onChange={(event) => setBranchFilter(event.target.value)}
+          >
+            {branchOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </Select>
+
+          <Button variant="secondary" size="sm" onClick={loadReports}>
+            Refresh
+          </Button>
+        </div>
       </header>
 
       <section className="notice">
-        <strong>Report scope</strong>
+        <strong>
+          {isAdmin
+            ? "Administrator Report Scope"
+            : isCloudMonitoring || isOtherBranchView
+              ? "Cloud-Synced Monitoring"
+              : "Report Scope"}
+        </strong>
         <span>
-          Released reports document actual laboratory outcomes. A failed result
-          can still be released because release confirms report authorization,
-          not material acceptance.
+          {isAdmin
+            ? "You can view released reports across all branches from the centralized system."
+            : isCloudMonitoring
+              ? `You are viewing all cloud-synced released reports. This page is read-only; operational actions remain branch-aware in Workflow.`
+              : isOtherBranchView
+                ? `You are viewing ${branchViewLabel} released reports for monitoring. This page is read-only.`
+                : "Released reports document actual laboratory outcomes. A failed result can still be released because release confirms report authorization, not material acceptance."}
         </span>
       </section>
 
@@ -264,6 +339,13 @@ export default function ReportsPage() {
           gap: 18px;
         }
 
+        .headerControls {
+          display: grid;
+          grid-template-columns: 180px auto;
+          gap: 10px;
+          align-items: start;
+        }
+
         h1 {
           margin: 0;
           color: var(--color-text-primary);
@@ -277,6 +359,11 @@ export default function ReportsPage() {
           color: var(--color-text-secondary);
           font-size: 11px;
           line-height: 1.45;
+        }
+
+        .header p strong {
+          color: var(--color-text-primary);
+          font-weight: 500;
         }
 
         .notice {
@@ -375,6 +462,15 @@ export default function ReportsPage() {
         }
 
         @media (max-width: 900px) {
+          .header {
+            flex-direction: column;
+          }
+
+          .headerControls {
+            width: 100%;
+            grid-template-columns: 1fr;
+          }
+
           .stats {
             grid-template-columns: repeat(2, minmax(0, 1fr));
           }
@@ -385,10 +481,6 @@ export default function ReportsPage() {
         }
 
         @media (max-width: 640px) {
-          .header {
-            flex-direction: column;
-          }
-
           .stats {
             grid-template-columns: 1fr;
           }
@@ -446,6 +538,18 @@ function ResultBadge({ result }) {
       {normalized}
     </Badge>
   );
+}
+
+function resolveBranchFilter(value, userBranchId) {
+  if (value === "All") return "All";
+  if (value === "My") return Number(userBranchId);
+  return Number(value);
+}
+
+function getBranchViewLabel(branchFilter, userBranchId) {
+  if (branchFilter === "All") return "all branches";
+  if (branchFilter === "My") return `${formatBranch(userBranchId)} branch`;
+  return `${formatBranch(branchFilter)} branch`;
 }
 
 function normalizeMaterialName(value) {

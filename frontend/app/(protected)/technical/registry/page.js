@@ -25,9 +25,13 @@ const TABLE_COLUMNS = [
 
 export default function RegistryPage() {
   const user = getStoredUser();
+  const role = user?.role || "Lab Technician";
+  const isAdmin = role === "Administrator";
+  const userBranchId = Number(user?.branch_id);
 
   const [items, setItems] = useState([]);
   const [viewMode, setViewMode] = useState("list");
+  const [branchFilter, setBranchFilter] = useState(isAdmin ? "All" : "My");
   const [statusFilter, setStatusFilter] = useState("All");
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -35,6 +39,36 @@ export default function RegistryPage() {
 
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
   const [selectedDetailsSample, setSelectedDetailsSample] = useState(null);
+
+  const branchOptions = useMemo(() => {
+    if (isAdmin) {
+      return [
+        { label: "All Branches", value: "All" },
+        { label: "Marikina", value: "1" },
+        { label: "Pateros", value: "2" },
+      ];
+    }
+
+    const otherBranch =
+      Number(userBranchId) === 1
+        ? { label: "Pateros", value: "2" }
+        : { label: "Marikina", value: "1" };
+
+    return [
+      { label: "All Branches", value: "All" },
+      { label: "My Branch", value: "My" },
+      otherBranch,
+    ];
+  }, [isAdmin, userBranchId]);
+
+  const branchViewLabel = getBranchViewLabel(branchFilter, userBranchId);
+  const isCloudMonitoring = !isAdmin && branchFilter === "All";
+  const isOtherBranchView =
+    !isAdmin &&
+    branchFilter !== "All" &&
+    branchFilter !== "My" &&
+    Number(resolveBranchFilter(branchFilter, userBranchId)) !==
+      Number(userBranchId);
 
   function getMetadata(item) {
     return item?.device_metadata || {};
@@ -108,7 +142,7 @@ export default function RegistryPage() {
   }
 
   function filterByRole(data) {
-    if (user?.role === "Lab Technician") {
+    if (role === "Lab Technician") {
       return data.filter((item) => {
         const metadata = getMetadata(item);
         const payment = metadata.payment || {};
@@ -125,7 +159,7 @@ export default function RegistryPage() {
       });
     }
 
-    if (user?.role === "Senior Technician") {
+    if (role === "Senior Technician") {
       return data.filter(
         (item) =>
           item.decision === "Manual-Review" &&
@@ -134,7 +168,7 @@ export default function RegistryPage() {
       );
     }
 
-    if (user?.role === "QA Engineer") {
+    if (role === "QA Engineer") {
       return data.filter((item) => {
         const metadata = getMetadata(item);
         const payment = metadata.payment || {};
@@ -188,13 +222,29 @@ export default function RegistryPage() {
     loadSamples();
   }, []);
 
+  useEffect(() => {
+    if (!isAdmin && branchFilter !== "All" && branchFilter !== "My") {
+      const resolved = resolveBranchFilter(branchFilter, userBranchId);
+      const isOwnBranch = Number(resolved) === Number(userBranchId);
+
+      if (isOwnBranch) {
+        setBranchFilter("My");
+      }
+    }
+  }, [branchFilter, isAdmin, userBranchId]);
+
   const visibleItems = useMemo(() => {
     const q = search.trim().toLowerCase();
+    const resolvedBranch = resolveBranchFilter(branchFilter, userBranchId);
 
     return items.filter((item) => {
       const material = normalizeMaterialName(
         item.material_type || item.ai_predicted_label,
       );
+
+      const matchesBranch =
+        resolvedBranch === "All" ||
+        Number(item.branch_id) === Number(resolvedBranch);
 
       const matchesSearch =
         !q ||
@@ -209,9 +259,9 @@ export default function RegistryPage() {
       const matchesStatus =
         statusFilter === "All" || item.current_state === statusFilter;
 
-      return matchesSearch && matchesStatus;
+      return matchesBranch && matchesSearch && matchesStatus;
     });
-  }, [items, search, statusFilter]);
+  }, [items, search, statusFilter, branchFilter, userBranchId]);
 
   const summary = useMemo(() => {
     return visibleItems.reduce(
@@ -244,7 +294,7 @@ export default function RegistryPage() {
           <h1>Sample Registry</h1>
           <p className="subtitle">
             Search, filter, and review sample records across the testing
-            lifecycle.
+            lifecycle for <strong>{branchViewLabel}</strong>.
           </p>
         </div>
 
@@ -252,6 +302,25 @@ export default function RegistryPage() {
           Refresh
         </Button>
       </header>
+
+      {(isAdmin || isCloudMonitoring || isOtherBranchView) && (
+        <section className="notice">
+          <strong>
+            {isAdmin ? "Administrator Registry View" : "Cloud-Synced Monitoring"}
+          </strong>
+          <span>
+            {isAdmin
+              ? "You can view all branch registry records from the centralized system."
+              : isCloudMonitoring
+                ? `You are viewing all cloud-synced branch records. Operational actions remain locked to your assigned branch: ${formatBranch(
+                    userBranchId,
+                  )}.`
+                : `You are viewing ${branchViewLabel} records for monitoring. Operational actions remain locked to your assigned branch: ${formatBranch(
+                    userBranchId,
+                  )}.`}
+          </span>
+        </section>
+      )}
 
       {loading && <Loader label="Loading registry..." />}
 
@@ -299,24 +368,36 @@ export default function RegistryPage() {
             />
 
             <Select
+              name="branchFilter"
+              value={branchFilter}
+              onChange={(event) => setBranchFilter(event.target.value)}
+            >
+              {branchOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </Select>
+
+            <Select
               name="statusFilter"
               value={statusFilter}
               onChange={(event) => setStatusFilter(event.target.value)}
             >
               <option value="All">All Queues</option>
 
-              {user?.role === "Lab Technician" && (
+              {role === "Lab Technician" && (
                 <>
                   <option value="Registered">Ready for Testing</option>
                   <option value="In Testing">In Testing</option>
                 </>
               )}
 
-              {user?.role === "Senior Technician" && (
+              {role === "Senior Technician" && (
                 <option value="For Review">Manual Review</option>
               )}
 
-              {user?.role === "QA Engineer" && (
+              {role === "QA Engineer" && (
                 <>
                   <option value="Registered">QA Pre-Test</option>
                   <option value="For Review">QA Release</option>
@@ -324,7 +405,7 @@ export default function RegistryPage() {
                 </>
               )}
 
-              {user?.role === "Administrator" && (
+              {role === "Administrator" && (
                 <>
                   <option value="Registered">Registered</option>
                   <option value="In Testing">In Testing</option>
@@ -573,6 +654,29 @@ export default function RegistryPage() {
           line-height: 1.45;
         }
 
+        .subtitle strong {
+          color: var(--color-text-primary);
+          font-weight: 500;
+        }
+
+        .notice {
+          display: grid;
+          gap: 4px;
+          padding: 12px 14px;
+          border-radius: var(--radius-md);
+          background: var(--color-info-bg);
+          border: 1px solid var(--color-info-border);
+          color: var(--color-info);
+          font-size: var(--text-xs);
+          line-height: 1.5;
+        }
+
+        .notice strong {
+          color: var(--color-info);
+          font-size: var(--text-xs);
+          font-weight: 600;
+        }
+
         .errorText {
           color: var(--color-danger);
           font-size: var(--text-sm);
@@ -611,7 +715,7 @@ export default function RegistryPage() {
 
         .toolbar {
           display: grid;
-          grid-template-columns: minmax(0, 1fr) 220px auto;
+          grid-template-columns: minmax(0, 1fr) 180px 220px auto;
           gap: 12px;
           align-items: end;
         }
@@ -648,7 +752,7 @@ export default function RegistryPage() {
 
         .iconToggle.active {
           background: var(--color-brand-light);
-          border-color: color-mix(in srgb, var(--color-brand) 28%, white);
+          border-color: color-mix(in srgb, var(--color-brand) 28%, transparent);
           color: var(--color-brand-dark);
         }
 
@@ -804,17 +908,6 @@ export default function RegistryPage() {
           background: var(--color-border-soft);
         }
 
-        @media (max-width: 640px) {
-          .grid {
-            grid-template-columns: 1fr;
-          }
-
-          .sampleMetaGrid,
-          .sampleMetaGrid.bottom {
-            grid-template-columns: 1fr;
-          }
-        }
-
         .sampleCard h3 {
           margin: 0;
           color: var(--color-text-primary);
@@ -876,6 +969,16 @@ export default function RegistryPage() {
           background: var(--color-overlay);
         }
 
+        @media (max-width: 1180px) {
+          .toolbar {
+            grid-template-columns: minmax(0, 1fr) 180px 220px;
+          }
+
+          .viewToggle {
+            justify-content: flex-start;
+          }
+        }
+
         @media (max-width: 1080px) {
           .summary {
             grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -897,6 +1000,17 @@ export default function RegistryPage() {
 
           .summary {
             grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+        }
+
+        @media (max-width: 640px) {
+          .grid {
+            grid-template-columns: 1fr;
+          }
+
+          .sampleMetaGrid,
+          .sampleMetaGrid.bottom {
+            grid-template-columns: 1fr;
           }
         }
 
@@ -1149,6 +1263,18 @@ function getSpecification(testData) {
     testData.compliance_status ||
     null
   );
+}
+
+function resolveBranchFilter(value, userBranchId) {
+  if (value === "All") return "All";
+  if (value === "My") return Number(userBranchId);
+  return Number(value);
+}
+
+function getBranchViewLabel(branchFilter, userBranchId) {
+  if (branchFilter === "All") return "all branches";
+  if (branchFilter === "My") return `${formatBranch(userBranchId)} branch`;
+  return `${formatBranch(branchFilter)} branch`;
 }
 
 function normalizeMaterialName(value) {

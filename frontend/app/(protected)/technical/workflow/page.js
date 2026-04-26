@@ -189,6 +189,12 @@ const TEST_REQUIRED_FIELDS = {
 export default function WorkflowPage() {
   const user = getStoredUser();
 
+  const isSeniorTech = user?.role === "Senior Technician";
+  const isQa = user?.role === "QA Engineer";
+  const isLabTech = user?.role === "Lab Technician";
+  const isAdmin = user?.role === "Administrator";
+  const userBranchId = Number(user?.branch_id);
+
   const [dashboard, setDashboard] = useState(null);
   const [reviews, setReviews] = useState([]);
   const [qaPreTesting, setQaPreTesting] = useState([]);
@@ -197,6 +203,8 @@ export default function WorkflowPage() {
     ready_for_testing: [],
     in_testing: [],
   });
+
+  const [branchFilter, setBranchFilter] = useState(isAdmin ? "All" : "My");
 
   const [overrideDrafts, setOverrideDrafts] = useState({});
   const [selectedSample, setSelectedSample] = useState(null);
@@ -210,19 +218,14 @@ export default function WorkflowPage() {
   const [loading, setLoading] = useState(true);
   const [workingId, setWorkingId] = useState("");
 
-  const isSeniorTech = user?.role === "Senior Technician";
-  const isQa = user?.role === "QA Engineer";
-  const isLabTech = user?.role === "Lab Technician";
-  const isAdmin = user?.role === "Administrator";
-
   const canViewLabTechQueue = isLabTech || isAdmin;
-  const canActAsLabTech = isLabTech;
+  const canActAsLabTech = isLabTech || isAdmin;
 
   const canViewSeniorQueue = isSeniorTech || isAdmin;
-  const canActAsSeniorTech = isSeniorTech;
+  const canActAsSeniorTech = isSeniorTech || isAdmin;
 
   const canViewQaQueue = isQa || isAdmin;
-  const canActAsQa = isQa;
+  const canActAsQa = isQa || isAdmin;
 
   const selectedMaterial = normalizeMaterialName(
     selectedSample?.material_type || selectedSample?.ai_predicted_label,
@@ -234,14 +237,135 @@ export default function WorkflowPage() {
 
   const missingRequiredFields = getMissingRequiredFields(form.testType, form);
 
-  const stats = useMemo(() => {
+  const branchOptions = useMemo(() => {
+    if (isAdmin) {
+      return [
+        { label: "All Branches", value: "All" },
+        { label: "Marikina", value: "1" },
+        { label: "Pateros", value: "2" },
+      ];
+    }
+
+    const otherBranch =
+      Number(userBranchId) === 1
+        ? { label: "Pateros", value: "2" }
+        : { label: "Marikina", value: "1" };
+
     return [
-      { label: "Registered", value: dashboard?.registered ?? 0 },
-      { label: "Manual Review", value: dashboard?.manual_review ?? 0 },
-      { label: "Mandatory Override", value: dashboard?.mandatory_override ?? 0 },
-      { label: "Completed Reviews", value: dashboard?.completed_reviews ?? 0 },
+      { label: "All Branches", value: "All" },
+      { label: "My Branch", value: "My" },
+      otherBranch,
     ];
-  }, [dashboard]);
+  }, [isAdmin, userBranchId]);
+
+  const branchViewLabel = getBranchViewLabel(branchFilter, userBranchId);
+  const isCloudMonitoring = !isAdmin && branchFilter === "All";
+  const isOtherBranchView =
+    !isAdmin &&
+    branchFilter !== "All" &&
+    branchFilter !== "My" &&
+    Number(resolveBranchFilter(branchFilter, userBranchId)) !==
+      Number(userBranchId);
+
+  const visibleReadyForTesting = useMemo(() => {
+    return filterItemsByBranchView(
+      labTechQueue.ready_for_testing || [],
+      branchFilter,
+      userBranchId,
+    );
+  }, [labTechQueue.ready_for_testing, branchFilter, userBranchId]);
+
+  const visibleInTesting = useMemo(() => {
+    return filterItemsByBranchView(
+      labTechQueue.in_testing || [],
+      branchFilter,
+      userBranchId,
+    );
+  }, [labTechQueue.in_testing, branchFilter, userBranchId]);
+
+  const visibleReviews = useMemo(() => {
+    return filterItemsByBranchView(reviews, branchFilter, userBranchId);
+  }, [reviews, branchFilter, userBranchId]);
+
+  const visibleQaPreTesting = useMemo(() => {
+    return filterItemsByBranchView(qaPreTesting, branchFilter, userBranchId);
+  }, [qaPreTesting, branchFilter, userBranchId]);
+
+  const visibleQaRelease = useMemo(() => {
+    return filterItemsByBranchView(qaRelease, branchFilter, userBranchId);
+  }, [qaRelease, branchFilter, userBranchId]);
+
+  const stats = useMemo(() => {
+    if (isLabTech) {
+      return [
+        { label: "Ready", value: visibleReadyForTesting.length },
+        { label: "In Testing", value: visibleInTesting.length },
+        {
+          label: "Total Queue",
+          value: visibleReadyForTesting.length + visibleInTesting.length,
+        },
+        { label: "Branch View", value: branchViewLabel },
+      ];
+    }
+
+    if (isSeniorTech) {
+      return [
+        { label: "AI Review", value: visibleReviews.length },
+        {
+          label: "Manual Review",
+          value: dashboard?.manual_review ?? visibleReviews.length,
+        },
+        {
+          label: "Mandatory Override",
+          value: dashboard?.mandatory_override ?? 0,
+        },
+        { label: "Branch View", value: branchViewLabel },
+      ];
+    }
+
+    if (isQa) {
+      return [
+        { label: "Pre-Testing", value: visibleQaPreTesting.length },
+        { label: "QA Release", value: visibleQaRelease.length },
+        {
+          label: "Total Queue",
+          value: visibleQaPreTesting.length + visibleQaRelease.length,
+        },
+        { label: "Branch View", value: branchViewLabel },
+      ];
+    }
+
+    return [
+      { label: "Ready", value: visibleReadyForTesting.length },
+      { label: "AI Review", value: visibleReviews.length },
+      { label: "QA Queue", value: visibleQaPreTesting.length + visibleQaRelease.length },
+      { label: "Branch View", value: branchViewLabel },
+    ];
+  }, [
+    isLabTech,
+    isSeniorTech,
+    isQa,
+    visibleReadyForTesting.length,
+    visibleInTesting.length,
+    visibleReviews.length,
+    visibleQaPreTesting.length,
+    visibleQaRelease.length,
+    branchViewLabel,
+    dashboard,
+  ]);
+
+  function canActOnItem(item) {
+    if (isAdmin) return true;
+    return Number(item?.branch_id) === userBranchId;
+  }
+
+  function getBranchLockNote(item, actionLabel = "action") {
+    if (canActOnItem(item)) return null;
+
+    return `Read-only · ${formatBranch(item?.branch_id)} record. Your assigned branch is ${formatBranch(
+      userBranchId,
+    )}, so ${actionLabel} is locked.`;
+  }
 
   function getMetadata(item) {
     return item?.device_metadata || {};
@@ -358,7 +482,7 @@ export default function WorkflowPage() {
     }
   }
 
-  async function handleValidation(sampleId, decision) {
+  async function handleValidation(item, decision) {
     if (!canActAsSeniorTech) {
       setActionError(
         "Only Senior Technicians can approve or reject AI classification review cases.",
@@ -366,39 +490,54 @@ export default function WorkflowPage() {
       return;
     }
 
-    await runAction(sampleId, async () => {
+    if (!canActOnItem(item)) {
+      setActionError(getBranchLockNote(item, "AI classification review"));
+      return;
+    }
+
+    await runAction(item.sample_id, async () => {
       await apiClient.validate({
-        sample_id: sampleId,
-        corrected_label: "Concrete",
+        sample_id: item.sample_id,
+        corrected_label: normalizeMaterialName(item.predicted_label),
         justification: "Validated by Senior Technician",
         decision,
       });
     });
   }
 
-  async function handleQaPreTesting(sampleId) {
+  async function handleQaPreTesting(item) {
     if (!canActAsQa) {
       setActionError("Only QA Engineers can approve samples for testing.");
       return;
     }
 
-    await runAction(sampleId, async () => {
-      await apiClient.qaApprovePreTesting(sampleId);
+    if (!canActOnItem(item)) {
+      setActionError(getBranchLockNote(item, "QA pre-testing approval"));
+      return;
+    }
+
+    await runAction(item.sample_id, async () => {
+      await apiClient.qaApprovePreTesting(item.sample_id);
     });
   }
 
-  async function handleQaRelease(sampleId) {
+  async function handleQaRelease(item) {
     if (!canActAsQa) {
       setActionError("Only QA Engineers can release official reports.");
       return;
     }
 
-    await runAction(sampleId, async () => {
-      await apiClient.qaApproveRelease(sampleId);
+    if (!canActOnItem(item)) {
+      setActionError(getBranchLockNote(item, "official report release"));
+      return;
+    }
+
+    await runAction(item.sample_id, async () => {
+      await apiClient.qaApproveRelease(item.sample_id);
     });
   }
 
-  async function handleQaResultOverride(sampleId) {
+  async function handleQaResultOverride(item) {
     if (!canActAsQa) {
       setActionError(
         "Only QA Engineers can review or override the final report result.",
@@ -406,7 +545,12 @@ export default function WorkflowPage() {
       return;
     }
 
-    const draft = getOverrideDraft(sampleId);
+    if (!canActOnItem(item)) {
+      setActionError(getBranchLockNote(item, "QA result review"));
+      return;
+    }
+
+    const draft = getOverrideDraft(item.sample_id);
 
     if (!draft.result) {
       setActionError("Please select the QA final result.");
@@ -420,15 +564,15 @@ export default function WorkflowPage() {
       return;
     }
 
-    await runAction(sampleId, async () => {
-      await apiClient.qaOverrideTestResult(sampleId, {
+    await runAction(item.sample_id, async () => {
+      await apiClient.qaOverrideTestResult(item.sample_id, {
         result: draft.result,
         reason: draft.reason,
       });
 
       setOverrideDrafts((current) => ({
         ...current,
-        [sampleId]: {
+        [item.sample_id]: {
           result: "",
           reason: "",
         },
@@ -436,14 +580,19 @@ export default function WorkflowPage() {
     });
   }
 
-  async function handleStartTesting(sampleId) {
+  async function handleStartTesting(item) {
     if (!canActAsLabTech) {
       setActionError("Only Lab Technicians can start laboratory testing.");
       return;
     }
 
-    await runAction(sampleId, async () => {
-      await apiClient.updateSampleStatus(sampleId, {
+    if (!canActOnItem(item)) {
+      setActionError(getBranchLockNote(item, "start testing"));
+      return;
+    }
+
+    await runAction(item.sample_id, async () => {
+      await apiClient.updateSampleStatus(item.sample_id, {
         status: "In Testing",
       });
     });
@@ -452,6 +601,11 @@ export default function WorkflowPage() {
   function openTestModal(item) {
     if (!canActAsLabTech) {
       setActionError("Only Lab Technicians can enter laboratory test data.");
+      return;
+    }
+
+    if (!canActOnItem(item)) {
+      setActionError(getBranchLockNote(item, "test data entry"));
       return;
     }
 
@@ -478,6 +632,11 @@ export default function WorkflowPage() {
 
     if (!form.testType) {
       setFormError("Please select the test performed.");
+      return;
+    }
+
+    if (!canActOnItem(selectedSample)) {
+      setFormError(getBranchLockNote(selectedSample, "test data entry"));
       return;
     }
 
@@ -586,6 +745,17 @@ export default function WorkflowPage() {
     loadData();
   }, []);
 
+  useEffect(() => {
+    if (!isAdmin && branchFilter !== "All" && branchFilter !== "My") {
+      const resolved = resolveBranchFilter(branchFilter, userBranchId);
+      const isOwnBranch = Number(resolved) === Number(userBranchId);
+
+      if (isOwnBranch) {
+        setBranchFilter("My");
+      }
+    }
+  }, [branchFilter, isAdmin, userBranchId]);
+
   return (
     <div className="page">
       <header className="header">
@@ -593,25 +763,49 @@ export default function WorkflowPage() {
           <h1>Workflow Monitor</h1>
           <p>
             Role-based task queues for sample testing, QA review, and official
-            report release.
+            report release for <strong>{branchViewLabel}</strong>.
           </p>
         </div>
 
-        <Button variant="secondary" size="sm" onClick={loadData}>
-          Refresh
-        </Button>
+        <div className="headerControls">
+          <Select
+            name="branchFilter"
+            value={branchFilter}
+            onChange={(event) => setBranchFilter(event.target.value)}
+          >
+            {branchOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </Select>
+
+          <Button variant="secondary" size="sm" onClick={loadData}>
+            Refresh
+          </Button>
+        </div>
       </header>
 
-      {isAdmin && (
-        <section className="notice">
-          <strong>Administrator Oversight Mode</strong>
-          <span>
-            You can view all workflow queues for monitoring. Routine actions
-            remain assigned to Lab Technician, Senior Technician, and QA
-            Engineer roles.
-          </span>
-        </section>
-      )}
+      <section className="notice">
+        <strong>
+          {isAdmin ? "Administrator Oversight Mode" : "Cloud-Synced Monitoring"}
+        </strong>
+        <span>
+          {isAdmin
+            ? "You can view and act on all workflow queues across branches."
+            : isCloudMonitoring
+              ? `You are viewing all cloud-synced branch records. Actions remain locked to your assigned branch: ${formatBranch(
+                  userBranchId,
+                )}.`
+              : isOtherBranchView
+                ? `You are viewing ${branchViewLabel} records for monitoring. Actions remain locked to your assigned branch: ${formatBranch(
+                    userBranchId,
+                  )}.`
+                : `You are viewing your assigned branch: ${formatBranch(
+                    userBranchId,
+                  )}.`}
+        </span>
+      </section>
 
       {loading && <Loader label="Loading workflow data..." />}
 
@@ -634,16 +828,16 @@ export default function WorkflowPage() {
                 subtitle="Samples cleared by Accounting and QA for laboratory testing."
                 emptyText="No samples ready for testing."
               >
-                {labTechQueue.ready_for_testing.map((item) => (
+                {visibleReadyForTesting.map((item) => (
                   <SampleQueueCard
                     key={item.sample_id}
                     item={item}
                     badge={<Badge variant="info">Ready</Badge>}
                     actions={
-                      canActAsLabTech ? (
+                      canActAsLabTech && canActOnItem(item) ? (
                         <Button
                           size="sm"
-                          onClick={() => handleStartTesting(item.sample_id)}
+                          onClick={() => handleStartTesting(item)}
                           disabled={workingId === item.sample_id}
                         >
                           {workingId === item.sample_id
@@ -651,7 +845,13 @@ export default function WorkflowPage() {
                             : "Start Testing"}
                         </Button>
                       ) : (
-                        <OversightNote text="Lab Technician action required to start laboratory testing." />
+                        <OversightNote
+                          text={
+                            canActAsLabTech
+                              ? getBranchLockNote(item, "start testing")
+                              : "Lab Technician action required to start laboratory testing."
+                          }
+                        />
                       )
                     }
                   />
@@ -663,13 +863,13 @@ export default function WorkflowPage() {
                 subtitle="Samples currently undergoing laboratory testing and ready for test data entry."
                 emptyText="No samples currently in testing."
               >
-                {labTechQueue.in_testing.map((item) => (
+                {visibleInTesting.map((item) => (
                   <SampleQueueCard
                     key={item.sample_id}
                     item={item}
                     badge={<Badge variant="warning">In Testing</Badge>}
                     actions={
-                      canActAsLabTech ? (
+                      canActAsLabTech && canActOnItem(item) ? (
                         <Button
                           size="sm"
                           onClick={() => openTestModal(item)}
@@ -678,7 +878,13 @@ export default function WorkflowPage() {
                           Enter Data
                         </Button>
                       ) : (
-                        <OversightNote text="Lab Technician action required for laboratory test data entry." />
+                        <OversightNote
+                          text={
+                            canActAsLabTech
+                              ? getBranchLockNote(item, "test data entry")
+                              : "Lab Technician action required for laboratory test data entry."
+                          }
+                        />
                       )
                     }
                   />
@@ -693,7 +899,7 @@ export default function WorkflowPage() {
               subtitle="Low-confidence AI classifications requiring Senior Technician manual review."
               emptyText="No AI classification review cases."
             >
-              {reviews.map((item) => (
+              {visibleReviews.map((item) => (
                 <Card key={item.sample_id}>
                   <div className="cardTop">
                     <div>
@@ -715,6 +921,7 @@ export default function WorkflowPage() {
                   <div className="infoGrid">
                     <Info label="Client" value={item.client_name} />
                     <Info label="Project" value={item.project_id} />
+                    <Info label="Branch" value={formatBranch(item.branch_id)} />
                     <Info
                       label="Predicted"
                       value={normalizeMaterialName(item.predicted_label)}
@@ -729,14 +936,12 @@ export default function WorkflowPage() {
                     />
                   </div>
 
-                  {canActAsSeniorTech ? (
+                  {canActAsSeniorTech && canActOnItem(item) ? (
                     <div className="actions">
                       <Button
                         size="sm"
                         variant="success"
-                        onClick={() =>
-                          handleValidation(item.sample_id, "approve")
-                        }
+                        onClick={() => handleValidation(item, "approve")}
                         disabled={workingId === item.sample_id}
                       >
                         Approve Classification
@@ -745,14 +950,20 @@ export default function WorkflowPage() {
                       <Button
                         size="sm"
                         variant="danger"
-                        onClick={() => handleValidation(item.sample_id, "reject")}
+                        onClick={() => handleValidation(item, "reject")}
                         disabled={workingId === item.sample_id}
                       >
                         Reject Classification
                       </Button>
                     </div>
                   ) : (
-                    <OversightNote text="Senior Technician action required for AI classification review." />
+                    <OversightNote
+                      text={
+                        canActAsSeniorTech
+                          ? getBranchLockNote(item, "AI classification review")
+                          : "Senior Technician action required for AI classification review."
+                      }
+                    />
                   )}
                 </Card>
               ))}
@@ -766,7 +977,7 @@ export default function WorkflowPage() {
                 subtitle="Registered samples waiting for QA approval before testing."
                 emptyText="No samples waiting for QA pre-testing review."
               >
-                {qaPreTesting.map((item) => {
+                {visibleQaPreTesting.map((item) => {
                   const payment = getPayment(item);
 
                   return (
@@ -781,10 +992,10 @@ export default function WorkflowPage() {
                         />
                       }
                       actions={
-                        canActAsQa ? (
+                        canActAsQa && canActOnItem(item) ? (
                           <Button
                             size="sm"
-                            onClick={() => handleQaPreTesting(item.sample_id)}
+                            onClick={() => handleQaPreTesting(item)}
                             disabled={workingId === item.sample_id}
                           >
                             {workingId === item.sample_id
@@ -792,7 +1003,16 @@ export default function WorkflowPage() {
                               : "Approve for Testing"}
                           </Button>
                         ) : (
-                          <OversightNote text="QA Engineer action required for pre-testing approval." />
+                          <OversightNote
+                            text={
+                              canActAsQa
+                                ? getBranchLockNote(
+                                    item,
+                                    "QA pre-testing approval",
+                                  )
+                                : "QA Engineer action required for pre-testing approval."
+                            }
+                          />
                         )
                       }
                     />
@@ -812,14 +1032,14 @@ export default function WorkflowPage() {
                   </div>
                 </div>
 
-                {qaRelease.length === 0 ? (
+                {visibleQaRelease.length === 0 ? (
                   <EmptyState
                     title="No samples waiting for QA release"
                     description="Released reports will appear here once samples are ready for QA authorization."
                   />
                 ) : (
                   <div className="releaseList">
-                    {qaRelease.map((item) => {
+                    {visibleQaRelease.map((item) => {
                       const payment = getPayment(item);
                       const testData = getTestData(item);
                       const testValues = getTestValues(item);
@@ -843,7 +1063,8 @@ export default function WorkflowPage() {
                               <h3>{item.sample_id}</h3>
                               <p>
                                 {item.client_name || "No client"} ·{" "}
-                                {item.project_reference || "No project"}
+                                {item.project_reference || "No project"} ·{" "}
+                                {formatBranch(item.branch_id)}
                               </p>
                             </div>
 
@@ -865,6 +1086,10 @@ export default function WorkflowPage() {
                                 <ReportInfo
                                   label="Project"
                                   value={item.project_reference}
+                                />
+                                <ReportInfo
+                                  label="Branch"
+                                  value={formatBranch(item.branch_id)}
                                 />
                                 <ReportInfo
                                   label="Material"
@@ -1002,7 +1227,7 @@ export default function WorkflowPage() {
                               )}
                           </div>
 
-                          {canActAsQa ? (
+                          {canActAsQa && canActOnItem(item) ? (
                             <>
                               <div className="overrideBox">
                                 <div>
@@ -1056,7 +1281,7 @@ export default function WorkflowPage() {
                                     size="sm"
                                     variant="secondary"
                                     onClick={() =>
-                                      handleQaResultOverride(item.sample_id)
+                                      handleQaResultOverride(item)
                                     }
                                     disabled={workingId === item.sample_id}
                                   >
@@ -1076,9 +1301,7 @@ export default function WorkflowPage() {
 
                                 <Button
                                   size="sm"
-                                  onClick={() =>
-                                    handleQaRelease(item.sample_id)
-                                  }
+                                  onClick={() => handleQaRelease(item)}
                                   disabled={workingId === item.sample_id}
                                 >
                                   {workingId === item.sample_id
@@ -1090,10 +1313,18 @@ export default function WorkflowPage() {
                           ) : (
                             <div className="releaseFooter">
                               <div>
-                                <strong>Administrator Oversight</strong>
+                                <strong>
+                                  {canActAsQa
+                                    ? "Read-only Branch Monitoring"
+                                    : "Administrator Oversight"}
+                                </strong>
                                 <p>
-                                  QA Engineer action is required to review,
-                                  override, or release this official report.
+                                  {canActAsQa
+                                    ? getBranchLockNote(
+                                        item,
+                                        "QA result review and report release",
+                                      )
+                                    : "QA Engineer action is required to review, override, or release this official report."}
                                 </p>
                               </div>
                             </div>
@@ -1197,6 +1428,13 @@ export default function WorkflowPage() {
           gap: 18px;
         }
 
+        .headerControls {
+          display: grid;
+          grid-template-columns: 180px auto;
+          gap: 10px;
+          align-items: start;
+        }
+
         h1 {
           margin: 0;
           color: var(--color-text-primary);
@@ -1210,6 +1448,11 @@ export default function WorkflowPage() {
           color: var(--color-text-secondary);
           font-size: 11px;
           line-height: 1.45;
+        }
+
+        .header p strong {
+          color: var(--color-text-primary);
+          font-weight: 500;
         }
 
         .notice {
@@ -1578,6 +1821,11 @@ export default function WorkflowPage() {
             align-items: flex-start;
           }
 
+          .headerControls {
+            width: 100%;
+            grid-template-columns: 1fr;
+          }
+
           .stats,
           .infoGrid,
           .reportGrid,
@@ -1675,6 +1923,7 @@ function SampleQueueCard({ item, badge, extra, actions }) {
               label="Material"
               value={normalizeMaterialName(item.material_type)}
             />
+            <Info label="Branch" value={formatBranch(item.branch_id)} />
             {extra}
           </div>
         </div>
@@ -1687,7 +1936,7 @@ function SampleQueueCard({ item, badge, extra, actions }) {
       <style jsx>{`
         .queueLayout {
           display: grid;
-          grid-template-columns: minmax(0, 1fr) 180px;
+          grid-template-columns: minmax(0, 1fr) 190px;
           gap: 20px;
           align-items: center;
         }
@@ -1727,7 +1976,7 @@ function SampleQueueCard({ item, badge, extra, actions }) {
 
         .infoGrid {
           display: grid;
-          grid-template-columns: repeat(3, minmax(0, 1fr));
+          grid-template-columns: repeat(4, minmax(0, 1fr));
           gap: 16px;
           align-items: start;
         }
@@ -1746,7 +1995,7 @@ function SampleQueueCard({ item, badge, extra, actions }) {
           visibility: hidden;
         }
 
-        @media (max-width: 900px) {
+        @media (max-width: 1000px) {
           .queueLayout {
             grid-template-columns: 1fr;
             gap: 16px;
@@ -1814,6 +2063,7 @@ function OversightNote({ text }) {
 
       <style jsx>{`
         .oversightNote {
+          width: 100%;
           padding: 11px 12px;
           border-radius: var(--radius-md);
           background: var(--color-overlay);
@@ -2446,6 +2696,28 @@ function getSpecificationStatus(result) {
   return "Pending Test Result";
 }
 
+function resolveBranchFilter(value, userBranchId) {
+  if (value === "All") return "All";
+  if (value === "My") return Number(userBranchId);
+  return Number(value);
+}
+
+function filterItemsByBranchView(items, branchFilter, userBranchId) {
+  const resolvedBranch = resolveBranchFilter(branchFilter, userBranchId);
+
+  if (resolvedBranch === "All") return Array.isArray(items) ? items : [];
+
+  return (Array.isArray(items) ? items : []).filter(
+    (item) => Number(item?.branch_id) === Number(resolvedBranch),
+  );
+}
+
+function getBranchViewLabel(branchFilter, userBranchId) {
+  if (branchFilter === "All") return "all branches";
+  if (branchFilter === "My") return `${formatBranch(userBranchId)} branch`;
+  return `${formatBranch(branchFilter)} branch`;
+}
+
 function normalizeMaterialName(value) {
   if (!value) return "-";
 
@@ -2503,4 +2775,10 @@ function formatDate(value) {
   } catch {
     return value;
   }
+}
+
+function formatBranch(branchId) {
+  if (Number(branchId) === 1) return "Marikina";
+  if (Number(branchId) === 2) return "Pateros";
+  return branchId ? `Branch ${branchId}` : "-";
 }

@@ -6,6 +6,8 @@
    ============================================================ */
 
 :root {
+  color-scheme: light;
+
   /* Brand, muted and professional */
   --color-brand: hsl(249, 44%, 36%);
   --color-brand-light: hsl(248, 30%, 95%);
@@ -94,6 +96,65 @@
   --foreground: var(--color-text-primary);
 }
 
+html[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Brand */
+  --color-brand: hsl(249, 56%, 72%);
+  --color-brand-light: hsl(249, 36%, 18%);
+  --color-brand-dark: hsl(249, 68%, 82%);
+
+  /* Semantic colors */
+  --color-success: hsl(145, 48%, 70%);
+  --color-success-bg: hsl(145, 34%, 15%);
+  --color-success-border: hsl(145, 28%, 30%);
+
+  --color-danger: hsl(0, 58%, 72%);
+  --color-danger-bg: hsl(0, 34%, 15%);
+  --color-danger-border: hsl(0, 30%, 32%);
+
+  --color-warning: hsl(38, 70%, 70%);
+  --color-warning-bg: hsl(38, 34%, 15%);
+  --color-warning-border: hsl(38, 30%, 32%);
+
+  --color-info: hsl(214, 64%, 74%);
+  --color-info-bg: hsl(214, 34%, 15%);
+  --color-info-border: hsl(214, 30%, 32%);
+
+  /* Surfaces */
+  --color-canvas: hsl(224, 28%, 9%);
+  --color-surface: hsl(224, 24%, 13%);
+  --color-overlay: hsl(224, 20%, 17%);
+  --color-sidebar: hsl(250, 72%, 7%);
+  --color-sidebar-muted: hsl(250, 54%, 11%);
+
+  /* Text */
+  --color-text-primary: hsl(220, 24%, 93%);
+  --color-text-secondary: hsl(220, 14%, 70%);
+  --color-text-muted: hsl(220, 10%, 54%);
+  --color-text-inverse: hsl(224, 28%, 9%);
+
+  /* Borders */
+  --color-border: hsl(224, 14%, 32%);
+  --color-border-soft: hsl(224, 14%, 24%);
+  --color-border-strong: hsl(224, 14%, 42%);
+
+  /* Shadows */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.22);
+  --shadow-sm:
+    0 2px 8px rgba(0, 0, 0, 0.26),
+    0 1px 2px rgba(0, 0, 0, 0.18);
+  --shadow-md:
+    0 6px 16px rgba(0, 0, 0, 0.3),
+    0 2px 5px rgba(0, 0, 0, 0.2);
+  --shadow-lg:
+    0 12px 28px rgba(0, 0, 0, 0.34),
+    0 4px 10px rgba(0, 0, 0, 0.22);
+
+  --background: var(--color-canvas);
+  --foreground: var(--color-text-primary);
+}
+
 /* ============================================================
    BASE RESET
    ============================================================ */
@@ -178,6 +239,13 @@ select,
 textarea,
 button {
   font: inherit;
+}
+
+input,
+select,
+textarea {
+  color: var(--color-text-primary);
+  background: var(--color-surface);
 }
 
 input::placeholder,
@@ -291,15 +359,15 @@ textarea::placeholder {
 }
 
 .status-pill-neutral {
-  background: hsl(220, 14%, 94%);
-  color: hsl(220, 12%, 35%);
-  border: 1px solid hsl(220, 12%, 74%);
+  background: var(--color-overlay);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border);
 }
 
 .status-pill-brand {
   background: var(--color-brand-light);
   color: var(--color-brand-dark);
-  border: 1px solid color-mix(in srgb, var(--color-brand) 28%, white);
+  border: 1px solid color-mix(in srgb, var(--color-brand) 28%, transparent);
 }
 
 .status-pill-info {
@@ -345,6 +413,82 @@ th {
 td {
   color: var(--color-text-primary);
   font-size: var(--text-sm);
+}
+
+/* ============================================================
+   DARK MODE OVERRIDES FOR COMMON HARDCODED SURFACES
+   ============================================================ */
+
+html[data-theme="dark"] pre {
+  background: hsl(224, 26%, 8%) !important;
+  color: hsl(220, 24%, 90%) !important;
+}
+
+html[data-theme="dark"] input,
+html[data-theme="dark"] select,
+html[data-theme="dark"] textarea {
+  color-scheme: dark;
+}
+
+html[data-theme="dark"] input[type="date"],
+html[data-theme="dark"] input[type="time"],
+html[data-theme="dark"] input[type="datetime-local"] {
+  color-scheme: dark;
+}
+
+/* ============================================================
+   DARK MODE APP SHELL FIX - SAFE VERSION
+   Keeps app shell dark without breaking cards/tables/components.
+   ============================================================ */
+
+html[data-theme="dark"],
+html[data-theme="dark"] body,
+html[data-theme="dark"] body > div {
+  background: var(--color-canvas) !important;
+  color: var(--color-text-primary) !important;
+}
+
+html[data-theme="dark"] main {
+  background: var(--color-canvas) !important;
+  color: var(--color-text-primary) !important;
+}
+
+html[data-theme="dark"] .page {
+  background: transparent;
+  color: var(--color-text-primary);
+}
+
+html[data-theme="dark"] h1,
+html[data-theme="dark"] h2,
+html[data-theme="dark"] h3,
+html[data-theme="dark"] h4 {
+  color: var(--color-text-primary);
+}
+
+html[data-theme="dark"] p {
+  color: var(--color-text-secondary);
+}
+
+html[data-theme="dark"] input,
+html[data-theme="dark"] select,
+html[data-theme="dark"] textarea {
+  background: var(--color-surface) !important;
+  color: var(--color-text-primary) !important;
+  border-color: var(--color-border-soft) !important;
+}
+
+html[data-theme="dark"] input::placeholder,
+html[data-theme="dark"] textarea::placeholder {
+  color: var(--color-text-muted) !important;
+}
+
+html[data-theme="dark"] table {
+  background: transparent;
+}
+
+html[data-theme="dark"] th,
+html[data-theme="dark"] td {
+  border-color: var(--color-border-soft);
 }
 
 /* ============================================================

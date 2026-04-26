@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -16,6 +16,8 @@ import {
   SignOut,
   UserCircle,
   ShieldCheck,
+  Moon,
+  Sun,
 } from "phosphor-react";
 
 const NAV_CONFIG = {
@@ -72,17 +74,55 @@ function formatRole(role) {
   return (role || "User").toUpperCase();
 }
 
+function getInitialTheme() {
+  if (typeof window === "undefined") return "light";
+
+  const savedTheme = localStorage.getItem("matriq-theme");
+
+  if (savedTheme === "dark" || savedTheme === "light") {
+    return savedTheme;
+  }
+
+  const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)")?.matches;
+
+  return prefersDark ? "dark" : "light";
+}
+
+function applyTheme(theme) {
+  if (typeof document === "undefined") return;
+
+  document.documentElement.dataset.theme = theme;
+  document.documentElement.style.colorScheme = theme;
+}
+
 export default function Sidebar({ user, isOpen, onClose }) {
   const pathname = usePathname();
   const router = useRouter();
 
   const [hovered, setHovered] = useState(null);
+  const [theme, setTheme] = useState("light");
 
   const role = user?.role || "Lab Technician";
   const navItems = NAV_CONFIG[role] || NAV_CONFIG["Lab Technician"];
+  const isDark = theme === "dark";
+
+  useEffect(() => {
+    const initialTheme = getInitialTheme();
+
+    setTheme(initialTheme);
+    applyTheme(initialTheme);
+  }, []);
 
   function closeSidebar() {
     if (typeof onClose === "function") onClose();
+  }
+
+  function handleThemeToggle() {
+    const nextTheme = isDark ? "light" : "dark";
+
+    setTheme(nextTheme);
+    localStorage.setItem("matriq-theme", nextTheme);
+    applyTheme(nextTheme);
   }
 
   function handleLogout() {
@@ -144,6 +184,30 @@ export default function Sidebar({ user, isOpen, onClose }) {
         </div>
 
         <div className="bottom">
+          <button
+            type="button"
+            className="themeToggle"
+            onClick={handleThemeToggle}
+            aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+          >
+            <span className="themeIcon">
+              {isDark ? (
+                <Moon size={18} weight="fill" />
+              ) : (
+                <Sun size={18} weight="fill" />
+              )}
+            </span>
+
+            <span className="themeText">
+              <strong>Appearance</strong>
+              <small>{isDark ? "Dark Mode" : "Light Mode"}</small>
+            </span>
+
+            <span className={isDark ? "switch active" : "switch"}>
+              <i />
+            </span>
+          </button>
+
           <div className="userCard">
             <div className="avatarWrap">
               <UserCircle size={26} weight="regular" />
@@ -180,7 +244,7 @@ export default function Sidebar({ user, isOpen, onClose }) {
           left: 0;
           width: 292px;
           height: 100vh;
-          background: #080026;
+          background: var(--color-sidebar);
           color: #ebebeb;
           display: flex;
           flex-direction: column;
@@ -292,7 +356,88 @@ export default function Sidebar({ user, isOpen, onClose }) {
           display: flex;
           flex-direction: column;
           gap: 14px;
-          background: #0a002f;
+          background: var(--color-sidebar-muted);
+        }
+
+        .themeToggle {
+          width: 100%;
+          min-height: 52px;
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          border-radius: 14px;
+          background: rgba(255, 255, 255, 0.06);
+          color: #ebebeb;
+          display: grid;
+          grid-template-columns: 34px minmax(0, 1fr) 42px;
+          gap: 10px;
+          align-items: center;
+          padding: 8px 10px;
+          text-align: left;
+        }
+
+        .themeToggle:hover {
+          background: rgba(255, 255, 255, 0.1);
+          border-color: rgba(255, 255, 255, 0.16);
+        }
+
+        .themeIcon {
+          width: 34px;
+          height: 34px;
+          border-radius: 11px;
+          background: rgba(255, 187, 0, 0.14);
+          color: #ffbb00;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .themeText {
+          display: grid;
+          gap: 2px;
+          min-width: 0;
+        }
+
+        .themeText strong {
+          color: #ffffff;
+          font-size: 12px;
+          font-weight: 600;
+          line-height: 1.2;
+        }
+
+        .themeText small {
+          color: rgba(235, 235, 235, 0.72);
+          font-size: 11px;
+          font-weight: 500;
+          line-height: 1.2;
+        }
+
+        .switch {
+          width: 38px;
+          height: 22px;
+          border-radius: 999px;
+          background: rgba(255, 255, 255, 0.16);
+          border: 1px solid rgba(255, 255, 255, 0.14);
+          padding: 2px;
+          display: flex;
+          align-items: center;
+          justify-content: flex-start;
+        }
+
+        .switch i {
+          width: 16px;
+          height: 16px;
+          border-radius: 999px;
+          background: rgba(255, 255, 255, 0.92);
+          transition: transform 0.2s ease;
+        }
+
+        .switch.active {
+          background: rgba(255, 187, 0, 0.25);
+          border-color: rgba(255, 187, 0, 0.34);
+        }
+
+        .switch.active i {
+          transform: translateX(16px);
+          background: #ffbb00;
         }
 
         .userCard {
@@ -324,6 +469,9 @@ export default function Sidebar({ user, isOpen, onClose }) {
           color: #ffffff;
           font-size: 14px;
           font-weight: 700;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
         }
 
         .userMeta span {
