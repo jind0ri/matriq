@@ -170,12 +170,14 @@ export default function Select({
 
         .selectBox {
           position: relative;
-          min-width: 150px;
+          width: 100%;
+          min-width: 0;
         }
 
         .selectTrigger {
           width: 100%;
-          min-height: 36px;
+          min-width: 150px;
+          min-height: 34px;
           padding: 0 12px;
           border: 1px solid var(--color-border);
           border-radius: var(--radius-md);
@@ -223,6 +225,7 @@ export default function Select({
         }
 
         .selectTrigger span {
+          min-width: 0;
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
@@ -247,7 +250,7 @@ export default function Select({
           left: 0;
           z-index: 50;
           width: 100%;
-          min-width: 170px;
+          min-width: 100%;
           max-height: 240px;
           overflow: auto;
           padding: 6px;

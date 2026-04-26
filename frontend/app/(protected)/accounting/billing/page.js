@@ -47,8 +47,12 @@ const BILLING_COLUMNS = [
 export default function BillingPage() {
   const user = getStoredUser();
 
+  const isAdmin = user?.role === "Administrator";
+  const userBranchId = Number(user?.branch_id);
+
   const [samples, setSamples] = useState([]);
   const [invoices, setInvoices] = useState([]);
+  const [branchFilter, setBranchFilter] = useState(isAdmin ? "All" : "My");
   const [statusFilter, setStatusFilter] = useState(STATUS_FILTERS.ALL);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -71,8 +75,48 @@ export default function BillingPage() {
 
   const [error, setError] = useState("");
 
-  const isAdmin = user?.role === "Administrator";
-  const userBranchId = user?.branch_id;
+  const branchOptions = useMemo(() => {
+    if (isAdmin) {
+      return [
+        { label: "All Branches", value: "All" },
+        { label: "Marikina", value: "1" },
+        { label: "Pateros", value: "2" },
+      ];
+    }
+
+    const otherBranch =
+      Number(userBranchId) === 1
+        ? { label: "Pateros", value: "2" }
+        : { label: "Marikina", value: "1" };
+
+    return [
+      { label: "All Branches", value: "All" },
+      { label: "My Branch", value: "My" },
+      otherBranch,
+    ];
+  }, [isAdmin, userBranchId]);
+
+  const branchLabel = getBranchViewLabel(branchFilter, userBranchId);
+  const isCloudMonitoring = !isAdmin && branchFilter === "All";
+  const isOtherBranchView =
+    !isAdmin &&
+    branchFilter !== "All" &&
+    branchFilter !== "My" &&
+    Number(resolveBranchFilter(branchFilter, userBranchId)) !==
+      Number(userBranchId);
+
+  function canActOnItem(item) {
+    if (isAdmin) return true;
+    return Number(item?.branch_id) === Number(userBranchId);
+  }
+
+  function getBranchLockNote(item, actionLabel = "action") {
+    if (canActOnItem(item)) return null;
+
+    return `Read-only · ${formatBranch(item?.branch_id)} record. Your assigned branch is ${formatBranch(
+      userBranchId,
+    )}, so ${actionLabel} is locked.`;
+  }
 
   async function loadData() {
     setLoading(true);
@@ -97,21 +141,24 @@ export default function BillingPage() {
     loadData();
   }, []);
 
-  const visibleSamples = useMemo(() => {
-    if (isAdmin) return samples;
+  useEffect(() => {
+    if (!isAdmin && branchFilter !== "All" && branchFilter !== "My") {
+      const resolved = resolveBranchFilter(branchFilter, userBranchId);
+      const isOwnBranch = Number(resolved) === Number(userBranchId);
 
-    return samples.filter(
-      (sample) => Number(sample.branch_id) === Number(userBranchId),
-    );
-  }, [samples, isAdmin, userBranchId]);
+      if (isOwnBranch) {
+        setBranchFilter("My");
+      }
+    }
+  }, [branchFilter, isAdmin, userBranchId]);
+
+  const visibleSamples = useMemo(() => {
+    return filterItemsByBranchView(samples, branchFilter, userBranchId);
+  }, [samples, branchFilter, userBranchId]);
 
   const visibleInvoices = useMemo(() => {
-    if (isAdmin) return invoices;
-
-    return invoices.filter(
-      (invoice) => Number(invoice.branch_id) === Number(userBranchId),
-    );
-  }, [invoices, isAdmin, userBranchId]);
+    return filterItemsByBranchView(invoices, branchFilter, userBranchId);
+  }, [invoices, branchFilter, userBranchId]);
 
   const invoiceBySampleId = useMemo(() => {
     const map = new Map();
@@ -216,9 +263,12 @@ export default function BillingPage() {
       .reduce((sum, invoice) => sum + Number(invoice.amount || 0), 0);
   }, [visibleInvoices]);
 
-  const branchLabel = isAdmin ? "All Branches" : formatBranch(userBranchId);
-
   async function handleCreateInvoice(sample) {
+    if (!canActOnItem(sample)) {
+      setError(getBranchLockNote(sample, "invoice creation"));
+      return;
+    }
+
     setCreatingSampleId(sample.sample_id);
     setError("");
 
@@ -248,6 +298,11 @@ export default function BillingPage() {
   }
 
   function openPaymentModal(record) {
+    if (!canActOnItem(record)) {
+      setError(getBranchLockNote(record, "payment update"));
+      return;
+    }
+
     const payment = record.payment || {};
 
     setSelectedPaymentRecord(record);
@@ -281,6 +336,13 @@ export default function BillingPage() {
     if (!selectedPaymentRecord) return;
 
     setPaymentModalError("");
+
+    if (!canActOnItem(selectedPaymentRecord)) {
+      setPaymentModalError(
+        getBranchLockNote(selectedPaymentRecord, "payment update"),
+      );
+      return;
+    }
 
     const parsedAmountPaid = amountPaid === "" ? null : Number(amountPaid);
     const parsedBalance = balance === "" ? null : Number(balance);
@@ -344,6 +406,19 @@ export default function BillingPage() {
         </div>
 
         <div className="headerActions">
+          <Select
+            className="branchSelect"
+            name="branchFilter"
+            value={branchFilter}
+            onChange={(event) => setBranchFilter(event.target.value)}
+          >
+            {branchOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </Select>
+
           <Link href="/accounting/invoices" className="textLink">
             View Invoices
           </Link>
@@ -354,12 +429,21 @@ export default function BillingPage() {
         </div>
       </header>
 
-      {isAdmin && (
+      {(isAdmin || isCloudMonitoring || isOtherBranchView) && (
         <section className="adminNotice">
-          <strong>Administrator Billing View</strong>
+          <strong>
+            {isAdmin ? "Administrator Billing View" : "Cloud-Synced Monitoring"}
+          </strong>
           <span>
-            You are viewing all branch billing records. Payment corrections on
-            released or archived records may require administrator access.
+            {isAdmin
+              ? "You can view and manage billing records from all branches."
+              : isCloudMonitoring
+                ? `You are viewing all cloud-synced billing records. Payment and invoice actions remain locked to your assigned branch: ${formatBranch(
+                    userBranchId,
+                  )}.`
+                : `You are viewing ${branchLabel} billing records for monitoring. Payment and invoice actions remain locked to your assigned branch: ${formatBranch(
+                    userBranchId,
+                  )}.`}
           </span>
         </section>
       )}
@@ -428,9 +512,9 @@ export default function BillingPage() {
           <section className="notice">
             <strong>Billing rule</strong>
             <span>
-              Use Billing to update sample payment readiness such as
-              Downpayment Paid, PO Submitted, or Fully Paid. Use Invoices to
-              mark invoice records as Paid or Cancelled.
+              Use Billing to update sample payment readiness such as Downpayment
+              Paid, PO Submitted, or Fully Paid. Use Invoices to mark invoice
+              records as Paid or Cancelled.
             </span>
           </section>
 
@@ -508,6 +592,7 @@ export default function BillingPage() {
                     >
                       <BillingAction
                         item={item}
+                        canAct={canActOnItem(item)}
                         creatingSampleId={creatingSampleId}
                         onCreateInvoice={handleCreateInvoice}
                         onUpdatePayment={openPaymentModal}
@@ -530,14 +615,20 @@ export default function BillingPage() {
         footer={
           selectedRecord ? (
             <div className="modalFooterActions">
-              <Button
-                variant="secondary"
-                size="sm"
-                className="equalFooterButton"
-                onClick={() => openPaymentModal(selectedRecord)}
-              >
-                Update Payment
-              </Button>
+              {canActOnItem(selectedRecord) ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="equalFooterButton"
+                  onClick={() => openPaymentModal(selectedRecord)}
+                >
+                  Update Payment
+                </Button>
+              ) : (
+                <span className="readOnlyFooter">
+                  {getBranchLockNote(selectedRecord, "payment update")}
+                </span>
+              )}
 
               {selectedRecord?.invoice?.invoice_id && (
                 <Link href="/accounting/invoices" className="footerButton">
@@ -592,6 +683,11 @@ export default function BillingPage() {
               <div>
                 <span>Client</span>
                 <strong>{selectedPaymentRecord.client_name || "-"}</strong>
+              </div>
+
+              <div>
+                <span>Branch</span>
+                <strong>{formatBranch(selectedPaymentRecord.branch_id)}</strong>
               </div>
 
               <div>
@@ -699,10 +795,24 @@ export default function BillingPage() {
 
         .headerActions {
           display: flex;
-          align-items: center;
+          align-items: flex-start;
           justify-content: flex-end;
-          gap: 10px;
+          gap: 8px;
           flex-wrap: wrap;
+        }
+
+        .headerActions :global(.branchSelect) {
+          width: 150px;
+          min-width: 150px;
+          flex: 0 0 150px;
+        }
+
+        .headerActions > :global(button),
+        .headerActions > :global(a) {
+          width: auto;
+          min-width: 0;
+          min-height: 34px;
+          border-radius: var(--radius-md) !important;
         }
 
         :global(.textLink),
@@ -739,14 +849,6 @@ export default function BillingPage() {
           border-color: var(--color-border);
           color: var(--color-brand);
           text-decoration: none;
-        }
-
-        .headerActions :global(button),
-        .headerActions :global(a) {
-          width: 118px;
-          min-width: 118px;
-          min-height: 34px;
-          border-radius: var(--radius-md) !important;
         }
 
         :global(.rowAction) {
@@ -857,6 +959,14 @@ export default function BillingPage() {
           border-radius: var(--radius-md) !important;
         }
 
+        .readOnlyFooter {
+          max-width: 360px;
+          color: var(--color-text-secondary);
+          font-size: var(--text-xs);
+          line-height: 1.45;
+          text-align: left;
+        }
+
         .paymentForm {
           display: grid;
           gap: 14px;
@@ -952,13 +1062,22 @@ export default function BillingPage() {
           }
         }
 
-        @media (max-width: 760px) {
+        @media (max-width: 880px) {
           .header {
             flex-direction: column;
           }
 
           .headerActions {
+            width: 100%;
             justify-content: flex-start;
+          }
+
+          .headerActions :global(.branchSelect),
+          .headerActions > :global(button),
+          .headerActions > :global(a) {
+            width: 100%;
+            min-width: 0;
+            flex: 1 1 100%;
           }
 
           .toolbar,
@@ -971,8 +1090,6 @@ export default function BillingPage() {
             align-items: stretch;
           }
 
-          .headerActions :global(button),
-          .headerActions :global(a),
           .modalFooterActions :global(button),
           .modalFooterActions :global(a) {
             width: 100%;
@@ -997,10 +1114,37 @@ export default function BillingPage() {
 
 function BillingAction({
   item,
+  canAct,
   creatingSampleId,
   onCreateInvoice,
   onUpdatePayment,
 }) {
+  if (!canAct) {
+    return (
+      <span className="readOnlyAction">
+        Read-only
+
+        <style jsx>{`
+          .readOnlyAction {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 30px;
+            padding: 0 10px;
+            border: 1px solid var(--color-border-soft);
+            border-radius: var(--radius-md);
+            background: var(--color-overlay);
+            color: var(--color-text-muted);
+            font-size: var(--text-xs);
+            font-weight: 500;
+            line-height: 1;
+            white-space: nowrap;
+          }
+        `}</style>
+      </span>
+    );
+  }
+
   return (
     <div className="actionGroup">
       <button
@@ -1170,7 +1314,10 @@ function BillingDetails({ record }) {
               .slice()
               .reverse()
               .map((entry, index) => (
-                <div className="historyItem" key={`${entry.updated_at}-${index}`}>
+                <div
+                  className="historyItem"
+                  key={`${entry.updated_at}-${index}`}
+                >
                   <div>
                     <strong>
                       {entry.from_status || "-"} → {entry.to_status || "-"}
@@ -1394,7 +1541,31 @@ function getPaymentMetadata(sample) {
 
 function getFinalResult(testData) {
   if (!testData) return null;
-  return testData.qa_final_result || testData.final_result || testData.result || null;
+  return (
+    testData.qa_final_result || testData.final_result || testData.result || null
+  );
+}
+
+function resolveBranchFilter(value, userBranchId) {
+  if (value === "All") return "All";
+  if (value === "My") return Number(userBranchId);
+  return Number(value);
+}
+
+function filterItemsByBranchView(items, branchFilter, userBranchId) {
+  const resolvedBranch = resolveBranchFilter(branchFilter, userBranchId);
+
+  if (resolvedBranch === "All") return Array.isArray(items) ? items : [];
+
+  return (Array.isArray(items) ? items : []).filter(
+    (item) => Number(item?.branch_id) === Number(resolvedBranch),
+  );
+}
+
+function getBranchViewLabel(branchFilter, userBranchId) {
+  if (branchFilter === "All") return "all branches";
+  if (branchFilter === "My") return `${formatBranch(userBranchId)} branch`;
+  return `${formatBranch(branchFilter)} branch`;
 }
 
 function normalizeMaterialName(value) {

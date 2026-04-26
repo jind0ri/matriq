@@ -10,6 +10,7 @@ import Card from "@/components/ui/Card";
 import EmptyState from "@/components/ui/EmptyState";
 import Loader from "@/components/ui/Loader";
 import MetricStrip from "@/components/ui/MetricStrip";
+import Select from "@/components/ui/Select";
 import StatCard from "@/components/ui/StatCard";
 import Table from "@/components/ui/Table";
 
@@ -32,13 +33,44 @@ const RECENT_INVOICE_COLUMNS = [
 export default function AccountingReportsPage() {
   const user = getStoredUser();
 
+  const isAdmin = user?.role === "Administrator";
+  const userBranchId = Number(user?.branch_id);
+
   const [dashboard, setDashboard] = useState(null);
   const [invoices, setInvoices] = useState([]);
+  const [branchFilter, setBranchFilter] = useState(isAdmin ? "All" : "My");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const isAdmin = user?.role === "Administrator";
-  const branchLabel = isAdmin ? "All Branches" : formatBranch(user?.branch_id);
+  const branchOptions = useMemo(() => {
+    if (isAdmin) {
+      return [
+        { label: "All Branches", value: "All" },
+        { label: "Marikina", value: "1" },
+        { label: "Pateros", value: "2" },
+      ];
+    }
+
+    const otherBranch =
+      Number(userBranchId) === 1
+        ? { label: "Pateros", value: "2" }
+        : { label: "Marikina", value: "1" };
+
+    return [
+      { label: "All Branches", value: "All" },
+      { label: "My Branch", value: "My" },
+      otherBranch,
+    ];
+  }, [isAdmin, userBranchId]);
+
+  const branchLabel = getBranchViewLabel(branchFilter, userBranchId);
+  const isCloudMonitoring = !isAdmin && branchFilter === "All";
+  const isOtherBranchView =
+    !isAdmin &&
+    branchFilter !== "All" &&
+    branchFilter !== "My" &&
+    Number(resolveBranchFilter(branchFilter, userBranchId)) !==
+      Number(userBranchId);
 
   async function loadData() {
     setLoading(true);
@@ -63,17 +95,32 @@ export default function AccountingReportsPage() {
     loadData();
   }, []);
 
+  useEffect(() => {
+    if (!isAdmin && branchFilter !== "All" && branchFilter !== "My") {
+      const resolved = resolveBranchFilter(branchFilter, userBranchId);
+      const isOwnBranch = Number(resolved) === Number(userBranchId);
+
+      if (isOwnBranch) {
+        setBranchFilter("My");
+      }
+    }
+  }, [branchFilter, isAdmin, userBranchId]);
+
+  const visibleInvoices = useMemo(() => {
+    return filterItemsByBranchView(invoices, branchFilter, userBranchId);
+  }, [invoices, branchFilter, userBranchId]);
+
   const paidInvoices = useMemo(() => {
-    return invoices.filter((item) => item.status === "Paid");
-  }, [invoices]);
+    return visibleInvoices.filter((item) => item.status === "Paid");
+  }, [visibleInvoices]);
 
   const pendingInvoices = useMemo(() => {
-    return invoices.filter((item) => item.status === "Pending");
-  }, [invoices]);
+    return visibleInvoices.filter((item) => item.status === "Pending");
+  }, [visibleInvoices]);
 
   const cancelledInvoices = useMemo(() => {
-    return invoices.filter((item) => item.status === "Cancelled");
-  }, [invoices]);
+    return visibleInvoices.filter((item) => item.status === "Cancelled");
+  }, [visibleInvoices]);
 
   const totalRevenue = useMemo(() => {
     return paidInvoices.reduce(
@@ -97,8 +144,11 @@ export default function AccountingReportsPage() {
   }, [cancelledInvoices]);
 
   const totalInvoiceValue = useMemo(() => {
-    return invoices.reduce((sum, item) => sum + Number(item.amount || 0), 0);
-  }, [invoices]);
+    return visibleInvoices.reduce(
+      (sum, item) => sum + Number(item.amount || 0),
+      0,
+    );
+  }, [visibleInvoices]);
 
   const summaryRows = [
     {
@@ -118,7 +168,7 @@ export default function AccountingReportsPage() {
     },
   ];
 
-  const recentInvoices = invoices.slice(0, 8);
+  const recentInvoices = visibleInvoices.slice(0, 8);
 
   return (
     <div className="page">
@@ -132,6 +182,19 @@ export default function AccountingReportsPage() {
         </div>
 
         <div className="headerActions">
+          <Select
+            className="branchSelect"
+            name="branchFilter"
+            value={branchFilter}
+            onChange={(event) => setBranchFilter(event.target.value)}
+          >
+            {branchOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </Select>
+
           <Link href="/accounting/invoices" className="textLink">
             View Invoices
           </Link>
@@ -143,10 +206,21 @@ export default function AccountingReportsPage() {
       </header>
 
       <section className="notice">
-        <strong>Read-only report</strong>
+        <strong>
+          {isAdmin
+            ? "Administrator Report View"
+            : isCloudMonitoring || isOtherBranchView
+              ? "Cloud-Synced Monitoring"
+              : "Read-only report"}
+        </strong>
         <span>
-          This page summarizes invoice and payment activity. Payment and invoice
-          updates should be handled in Billing and Invoices.
+          {isAdmin
+            ? "This page summarizes accounting activity across the selected branch scope. Payment and invoice updates should be handled in Billing and Invoices."
+            : isCloudMonitoring
+              ? "You are viewing all cloud-synced accounting reports. This page is read-only; payment and invoice actions remain branch-aware in Billing and Invoices."
+              : isOtherBranchView
+                ? `You are viewing ${branchLabel} accounting reports for monitoring. This page is read-only.`
+                : "This page summarizes invoice and payment activity. Payment and invoice updates should be handled in Billing and Invoices."}
         </span>
       </section>
 
@@ -194,7 +268,7 @@ export default function AccountingReportsPage() {
             items={[
               {
                 label: "Total Invoices",
-                value: invoices.length,
+                value: visibleInvoices.length,
               },
               {
                 label: "Cancelled",
@@ -342,10 +416,24 @@ export default function AccountingReportsPage() {
 
         .headerActions {
           display: flex;
-          align-items: center;
+          align-items: flex-start;
           justify-content: flex-end;
-          gap: 10px;
+          gap: 8px;
           flex-wrap: wrap;
+        }
+
+        .headerActions :global(.branchSelect) {
+          width: 150px;
+          min-width: 150px;
+          flex: 0 0 150px;
+        }
+
+        .headerActions > :global(button),
+        .headerActions > :global(a) {
+          width: auto;
+          min-width: 0;
+          min-height: 34px;
+          border-radius: var(--radius-md) !important;
         }
 
         :global(.textLink) {
@@ -378,14 +466,6 @@ export default function AccountingReportsPage() {
           border-color: var(--color-border);
           color: var(--color-brand);
           text-decoration: none;
-        }
-
-        .headerActions :global(button),
-        .headerActions :global(a) {
-          width: 118px;
-          min-width: 118px;
-          min-height: 34px;
-          border-radius: var(--radius-md) !important;
         }
 
         .notice {
@@ -454,19 +534,22 @@ export default function AccountingReportsPage() {
           }
         }
 
-        @media (max-width: 720px) {
+        @media (max-width: 820px) {
           .header {
             flex-direction: column;
           }
 
           .headerActions {
+            width: 100%;
             justify-content: flex-start;
           }
 
-          .headerActions :global(button),
-          .headerActions :global(a) {
+          .headerActions :global(.branchSelect),
+          .headerActions > :global(button),
+          .headerActions > :global(a) {
             width: 100%;
             min-width: 0;
+            flex: 1 1 100%;
           }
 
           .statsRow,
@@ -529,6 +612,28 @@ function InvoiceStatusBadge({ status }) {
       {status || "Pending"}
     </Badge>
   );
+}
+
+function resolveBranchFilter(value, userBranchId) {
+  if (value === "All") return "All";
+  if (value === "My") return Number(userBranchId);
+  return Number(value);
+}
+
+function filterItemsByBranchView(items, branchFilter, userBranchId) {
+  const resolvedBranch = resolveBranchFilter(branchFilter, userBranchId);
+
+  if (resolvedBranch === "All") return Array.isArray(items) ? items : [];
+
+  return (Array.isArray(items) ? items : []).filter(
+    (item) => Number(item?.branch_id) === Number(resolvedBranch),
+  );
+}
+
+function getBranchViewLabel(branchFilter, userBranchId) {
+  if (branchFilter === "All") return "all branches";
+  if (branchFilter === "My") return `${formatBranch(userBranchId)} branch`;
+  return `${formatBranch(branchFilter)} branch`;
 }
 
 function formatBranch(branchId) {

@@ -38,8 +38,13 @@ const SAMPLE_COLUMNS = [
 export default function AccountingDashboard() {
   const user = getStoredUser();
 
+  const isAdmin = user?.role === "Administrator";
+  const userBranchId = Number(user?.branch_id);
+
   const [samples, setSamples] = useState([]);
   const [invoices, setInvoices] = useState([]);
+  const [branchFilter, setBranchFilter] = useState(isAdmin ? "All" : "My");
+
   const [loading, setLoading] = useState(true);
   const [creatingInvoice, setCreatingInvoice] = useState(false);
   const [invoiceModalOpen, setInvoiceModalOpen] = useState(false);
@@ -51,8 +56,35 @@ export default function AccountingDashboard() {
   const [error, setError] = useState("");
   const [modalError, setModalError] = useState("");
 
-  const isAdmin = user?.role === "Administrator";
-  const userBranchId = user?.branch_id;
+  const branchOptions = useMemo(() => {
+    if (isAdmin) {
+      return [
+        { label: "All Branches", value: "All" },
+        { label: "Marikina", value: "1" },
+        { label: "Pateros", value: "2" },
+      ];
+    }
+
+    const otherBranch =
+      Number(userBranchId) === 1
+        ? { label: "Pateros", value: "2" }
+        : { label: "Marikina", value: "1" };
+
+    return [
+      { label: "All Branches", value: "All" },
+      { label: "My Branch", value: "My" },
+      otherBranch,
+    ];
+  }, [isAdmin, userBranchId]);
+
+  const branchLabel = getBranchViewLabel(branchFilter, userBranchId);
+  const isCloudMonitoring = !isAdmin && branchFilter === "All";
+  const isOtherBranchView =
+    !isAdmin &&
+    branchFilter !== "All" &&
+    branchFilter !== "My" &&
+    Number(resolveBranchFilter(branchFilter, userBranchId)) !==
+      Number(userBranchId);
 
   async function loadData() {
     setLoading(true);
@@ -77,21 +109,40 @@ export default function AccountingDashboard() {
     loadData();
   }, []);
 
-  const visibleSamples = useMemo(() => {
-    if (isAdmin) return samples;
+  useEffect(() => {
+    if (!isAdmin && branchFilter !== "All" && branchFilter !== "My") {
+      const resolved = resolveBranchFilter(branchFilter, userBranchId);
+      const isOwnBranch = Number(resolved) === Number(userBranchId);
 
-    return samples.filter(
-      (item) => Number(item.branch_id) === Number(userBranchId),
-    );
-  }, [samples, isAdmin, userBranchId]);
+      if (isOwnBranch) {
+        setBranchFilter("My");
+      }
+    }
+  }, [branchFilter, isAdmin, userBranchId]);
+
+  const visibleSamples = useMemo(() => {
+    return filterItemsByBranchView(samples, branchFilter, userBranchId);
+  }, [samples, branchFilter, userBranchId]);
 
   const visibleInvoices = useMemo(() => {
-    if (isAdmin) return invoices;
+    return filterItemsByBranchView(invoices, branchFilter, userBranchId);
+  }, [invoices, branchFilter, userBranchId]);
 
-    return invoices.filter(
+  const actionAllowedSamples = useMemo(() => {
+    if (isAdmin) return visibleSamples;
+
+    return visibleSamples.filter(
       (item) => Number(item.branch_id) === Number(userBranchId),
     );
-  }, [invoices, isAdmin, userBranchId]);
+  }, [visibleSamples, isAdmin, userBranchId]);
+
+  const actionAllowedInvoices = useMemo(() => {
+    if (isAdmin) return visibleInvoices;
+
+    return visibleInvoices.filter(
+      (item) => Number(item.branch_id) === Number(userBranchId),
+    );
+  }, [visibleInvoices, isAdmin, userBranchId]);
 
   const invoiceBySampleId = useMemo(() => {
     const map = new Map();
@@ -119,21 +170,28 @@ export default function AccountingDashboard() {
     );
   }, [visibleSamples]);
 
+  const actionAllowedReleasedSamples = useMemo(() => {
+    return actionAllowedSamples.filter(
+      (item) =>
+        item.current_state === "Released" || item.current_state === "Archived",
+    );
+  }, [actionAllowedSamples]);
+
   const activeInvoiceSampleIds = useMemo(() => {
     return new Set(
-      visibleInvoices
+      actionAllowedInvoices
         .filter((invoice) => invoice.status !== "Cancelled")
         .map((invoice) => invoice.sample_id),
     );
-  }, [visibleInvoices]);
+  }, [actionAllowedInvoices]);
 
   const invoiceableSamples = useMemo(() => {
-    return visibleSamples.filter(
+    return actionAllowedReleasedSamples.filter(
       (item) =>
         item.current_state === "Released" &&
         !activeInvoiceSampleIds.has(item.sample_id),
     );
-  }, [visibleSamples, activeInvoiceSampleIds]);
+  }, [actionAllowedReleasedSamples, activeInvoiceSampleIds]);
 
   const pendingInvoices = useMemo(() => {
     return visibleInvoices.filter((invoice) => invoice.status === "Pending");
@@ -181,8 +239,6 @@ export default function AccountingDashboard() {
     );
   }, [invoiceableSamples, selectedSampleId]);
 
-  const branchLabel = isAdmin ? "All Branches" : formatBranch(userBranchId);
-
   function openCreateInvoiceModal() {
     const firstSample = invoiceableSamples[0];
 
@@ -215,6 +271,15 @@ export default function AccountingDashboard() {
 
     if (!selectedSampleId) {
       setModalError("Please select a released sample.");
+      return;
+    }
+
+    if (!isAdmin && Number(selectedSample?.branch_id) !== Number(userBranchId)) {
+      setModalError(
+        `Invoice creation is locked to your assigned branch: ${formatBranch(
+          userBranchId,
+        )}.`,
+      );
       return;
     }
 
@@ -258,6 +323,19 @@ export default function AccountingDashboard() {
         </div>
 
         <div className="headerActions">
+          <Select
+            className="branchSelect"
+            name="branchFilter"
+            value={branchFilter}
+            onChange={(event) => setBranchFilter(event.target.value)}
+          >
+            {branchOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </Select>
+
           <Button variant="secondary" size="sm" onClick={loadData}>
             Refresh
           </Button>
@@ -269,7 +347,9 @@ export default function AccountingDashboard() {
             disabled={invoiceableSamples.length === 0}
             title={
               invoiceableSamples.length === 0
-                ? "No released samples available for invoicing."
+                ? isAdmin
+                  ? "No released samples available for invoicing."
+                  : "No released samples from your assigned branch are available for invoicing."
                 : "Create invoice"
             }
           >
@@ -288,10 +368,22 @@ export default function AccountingDashboard() {
         </section>
       )}
 
-      {isAdmin && (
+      {(isAdmin || isCloudMonitoring || isOtherBranchView) && (
         <section className="adminNotice">
-          <strong>Administrator View</strong>
-          <span>You are viewing accounting records from all branches.</span>
+          <strong>
+            {isAdmin ? "Administrator View" : "Cloud-Synced Monitoring"}
+          </strong>
+          <span>
+            {isAdmin
+              ? "You can view and manage accounting records from all branches."
+              : isCloudMonitoring
+                ? `You are viewing all cloud-synced accounting records. Invoice creation remains locked to your assigned branch: ${formatBranch(
+                    userBranchId,
+                  )}.`
+                : `You are viewing ${branchLabel} accounting records for monitoring. Invoice creation remains locked to your assigned branch: ${formatBranch(
+                    userBranchId,
+                  )}.`}
+          </span>
         </section>
       )}
 
@@ -410,7 +502,7 @@ export default function AccountingDashboard() {
               {billableSamples.length === 0 ? (
                 <EmptyState
                   title="No released samples yet"
-                  description="Samples for this branch will appear here after QA release."
+                  description="Samples for this branch view will appear here after QA release."
                 />
               ) : (
                 <Table
@@ -455,7 +547,13 @@ export default function AccountingDashboard() {
       <Modal
         open={invoiceModalOpen}
         title="Create Invoice"
-        description="Create a stored invoice for a released sample."
+        description={
+          isAdmin
+            ? "Create a stored invoice for a released sample."
+            : `Create a stored invoice for a released ${formatBranch(
+                userBranchId,
+              )} sample.`
+        }
         onClose={closeCreateInvoiceModal}
         size="md"
         footer={
@@ -481,7 +579,11 @@ export default function AccountingDashboard() {
         {invoiceableSamples.length === 0 ? (
           <EmptyState
             title="No samples ready for invoice"
-            description="Only released samples without an active invoice can be invoiced."
+            description={
+              isAdmin
+                ? "Only released samples without an active invoice can be invoiced."
+                : "Only released samples from your assigned branch without an active invoice can be invoiced."
+            }
           />
         ) : (
           <div className="invoiceForm">
@@ -496,7 +598,8 @@ export default function AccountingDashboard() {
             >
               {invoiceableSamples.map((sample) => (
                 <option key={sample.sample_id} value={sample.sample_id}>
-                  {sample.sample_id} — {sample.client_name || "No client"}
+                  {sample.sample_id} — {sample.client_name || "No client"} —{" "}
+                  {formatBranch(sample.branch_id)}
                 </option>
               ))}
             </Select>
@@ -607,10 +710,24 @@ export default function AccountingDashboard() {
 
         .headerActions {
           display: flex;
-          align-items: center;
+          align-items: flex-start;
           justify-content: flex-end;
           gap: 8px;
           flex-wrap: wrap;
+        }
+
+        .headerActions :global(.branchSelect) {
+          width: 150px;
+          min-width: 150px;
+          flex: 0 0 150px;
+        }
+
+        .headerActions > :global(button),
+        .headerActions > :global(a) {
+          width: auto;
+          min-width: 0;
+          min-height: 34px;
+          border-radius: var(--radius-md) !important;
         }
 
         .adminNotice,
@@ -776,13 +893,22 @@ export default function AccountingDashboard() {
           }
         }
 
-        @media (max-width: 720px) {
+        @media (max-width: 820px) {
           .header {
             flex-direction: column;
           }
 
           .headerActions {
+            width: 100%;
             justify-content: flex-start;
+          }
+
+          .headerActions :global(.branchSelect),
+          .headerActions > :global(button),
+          .headerActions > :global(a) {
+            width: 100%;
+            min-width: 0;
+            flex: 1 1 100%;
           }
         }
 
@@ -1139,6 +1265,28 @@ function getBillingStatus(sample, invoice) {
 function getFinalResult(testData) {
   if (!testData) return null;
   return testData.qa_final_result || testData.final_result || testData.result || null;
+}
+
+function resolveBranchFilter(value, userBranchId) {
+  if (value === "All") return "All";
+  if (value === "My") return Number(userBranchId);
+  return Number(value);
+}
+
+function filterItemsByBranchView(items, branchFilter, userBranchId) {
+  const resolvedBranch = resolveBranchFilter(branchFilter, userBranchId);
+
+  if (resolvedBranch === "All") return Array.isArray(items) ? items : [];
+
+  return (Array.isArray(items) ? items : []).filter(
+    (item) => Number(item?.branch_id) === Number(resolvedBranch),
+  );
+}
+
+function getBranchViewLabel(branchFilter, userBranchId) {
+  if (branchFilter === "All") return "all branches";
+  if (branchFilter === "My") return `${formatBranch(userBranchId)} branch`;
+  return `${formatBranch(branchFilter)} branch`;
 }
 
 function normalizeMaterialName(value) {

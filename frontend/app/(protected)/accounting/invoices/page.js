@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { apiClient } from "@/services/apiClient";
+import { apiClient, getStoredUser } from "@/services/apiClient";
 
 import Badge from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
@@ -9,6 +9,7 @@ import Card from "@/components/ui/Card";
 import EmptyState from "@/components/ui/EmptyState";
 import Loader from "@/components/ui/Loader";
 import Modal from "@/components/ui/Modal";
+import Select from "@/components/ui/Select";
 import Table from "@/components/ui/Table";
 import Textarea from "@/components/ui/Textarea";
 
@@ -26,7 +27,12 @@ const ACTION_MARK_PAID = "mark_paid";
 const ACTION_CANCEL = "cancel";
 
 export default function InvoicesPage() {
+  const user = getStoredUser();
+  const isAdmin = user?.role === "Administrator";
+  const userBranchId = Number(user?.branch_id);
+
   const [invoices, setInvoices] = useState([]);
+  const [branchFilter, setBranchFilter] = useState(isAdmin ? "All" : "My");
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
   const [error, setError] = useState("");
@@ -38,6 +44,49 @@ export default function InvoicesPage() {
   const [selectedAction, setSelectedAction] = useState(null);
   const [actionNote, setActionNote] = useState("");
   const [modalError, setModalError] = useState("");
+
+  const branchOptions = useMemo(() => {
+    if (isAdmin) {
+      return [
+        { label: "All Branches", value: "All" },
+        { label: "Marikina", value: "1" },
+        { label: "Pateros", value: "2" },
+      ];
+    }
+
+    const otherBranch =
+      Number(userBranchId) === 1
+        ? { label: "Pateros", value: "2" }
+        : { label: "Marikina", value: "1" };
+
+    return [
+      { label: "All Branches", value: "All" },
+      { label: "My Branch", value: "My" },
+      otherBranch,
+    ];
+  }, [isAdmin, userBranchId]);
+
+  const branchLabel = getBranchViewLabel(branchFilter, userBranchId);
+  const isCloudMonitoring = !isAdmin && branchFilter === "All";
+  const isOtherBranchView =
+    !isAdmin &&
+    branchFilter !== "All" &&
+    branchFilter !== "My" &&
+    Number(resolveBranchFilter(branchFilter, userBranchId)) !==
+      Number(userBranchId);
+
+  function canActOnInvoice(invoice) {
+    if (isAdmin) return true;
+    return Number(invoice?.branch_id) === Number(userBranchId);
+  }
+
+  function getBranchLockNote(invoice, actionLabel = "invoice update") {
+    if (canActOnInvoice(invoice)) return null;
+
+    return `Read-only · ${formatBranch(invoice?.branch_id)} invoice. Your assigned branch is ${formatBranch(
+      userBranchId,
+    )}, so ${actionLabel} is locked.`;
+  }
 
   async function loadData() {
     setLoading(true);
@@ -57,21 +106,36 @@ export default function InvoicesPage() {
     loadData();
   }, []);
 
+  useEffect(() => {
+    if (!isAdmin && branchFilter !== "All" && branchFilter !== "My") {
+      const resolved = resolveBranchFilter(branchFilter, userBranchId);
+      const isOwnBranch = Number(resolved) === Number(userBranchId);
+
+      if (isOwnBranch) {
+        setBranchFilter("My");
+      }
+    }
+  }, [branchFilter, isAdmin, userBranchId]);
+
+  const visibleInvoices = useMemo(() => {
+    return filterItemsByBranchView(invoices, branchFilter, userBranchId);
+  }, [invoices, branchFilter, userBranchId]);
+
   const activeInvoices = useMemo(() => {
-    return invoices.filter((invoice) => invoice.status !== "Cancelled");
-  }, [invoices]);
+    return visibleInvoices.filter((invoice) => invoice.status !== "Cancelled");
+  }, [visibleInvoices]);
 
   const pendingInvoices = useMemo(() => {
-    return invoices.filter((invoice) => invoice.status === "Pending");
-  }, [invoices]);
+    return visibleInvoices.filter((invoice) => invoice.status === "Pending");
+  }, [visibleInvoices]);
 
   const paidInvoices = useMemo(() => {
-    return invoices.filter((invoice) => invoice.status === "Paid");
-  }, [invoices]);
+    return visibleInvoices.filter((invoice) => invoice.status === "Paid");
+  }, [visibleInvoices]);
 
   const cancelledInvoices = useMemo(() => {
-    return invoices.filter((invoice) => invoice.status === "Cancelled");
-  }, [invoices]);
+    return visibleInvoices.filter((invoice) => invoice.status === "Cancelled");
+  }, [visibleInvoices]);
 
   const outstandingAmount = useMemo(() => {
     return pendingInvoices.reduce(
@@ -98,6 +162,11 @@ export default function InvoicesPage() {
   }
 
   function openActionModal(invoice, action) {
+    if (!canActOnInvoice(invoice)) {
+      setError(getBranchLockNote(invoice, "invoice status update"));
+      return;
+    }
+
     setSelectedInvoice(invoice);
     setSelectedAction(action);
     setModalError("");
@@ -125,6 +194,13 @@ export default function InvoicesPage() {
 
   async function handleConfirmAction() {
     if (!selectedInvoice || !selectedAction) return;
+
+    if (!canActOnInvoice(selectedInvoice)) {
+      setModalError(
+        getBranchLockNote(selectedInvoice, "invoice status update"),
+      );
+      return;
+    }
 
     setUpdating(true);
     setModalError("");
@@ -176,15 +252,49 @@ export default function InvoicesPage() {
         <div>
           <h1>Invoices</h1>
           <p>
-            Review generated invoices and update payment status. Click a row to
-            view invoice details.
+            Review generated invoices and update payment status for{" "}
+            <strong>{branchLabel}</strong>. Click a row to view invoice details.
           </p>
         </div>
 
-        <Button variant="secondary" size="sm" onClick={loadData}>
-          Refresh
-        </Button>
+        <div className="headerActions">
+          <Select
+            className="branchSelect"
+            name="branchFilter"
+            value={branchFilter}
+            onChange={(event) => setBranchFilter(event.target.value)}
+          >
+            {branchOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </Select>
+
+          <Button variant="secondary" size="sm" onClick={loadData}>
+            Refresh
+          </Button>
+        </div>
       </header>
+
+      {(isAdmin || isCloudMonitoring || isOtherBranchView) && (
+        <section className="adminNotice">
+          <strong>
+            {isAdmin ? "Administrator Invoice View" : "Cloud-Synced Monitoring"}
+          </strong>
+          <span>
+            {isAdmin
+              ? "You can view and update invoice records across all branches."
+              : isCloudMonitoring
+                ? `You are viewing all cloud-synced invoice records. Paid and cancel actions remain locked to your assigned branch: ${formatBranch(
+                    userBranchId,
+                  )}.`
+                : `You are viewing ${branchLabel} invoice records for monitoring. Paid and cancel actions remain locked to your assigned branch: ${formatBranch(
+                    userBranchId,
+                  )}.`}
+          </span>
+        </section>
+      )}
 
       {loading && <Loader label="Loading invoices..." />}
 
@@ -197,7 +307,10 @@ export default function InvoicesPage() {
       {!loading && !error && (
         <>
           <section className="summary">
-            <SummaryItem label="Active Invoices" value={activeInvoices.length} />
+            <SummaryItem
+              label="Active Invoices"
+              value={activeInvoices.length}
+            />
             <SummaryItem label="Pending" value={pendingInvoices.length} />
             <SummaryItem label="Paid" value={paidInvoices.length} />
             <SummaryItem label="Cancelled" value={cancelledInvoices.length} />
@@ -215,7 +328,7 @@ export default function InvoicesPage() {
             title="Invoice Records"
             subtitle="Stored invoices from the accounting module."
           >
-            {invoices.length === 0 ? (
+            {visibleInvoices.length === 0 ? (
               <EmptyState
                 title="No invoices found"
                 description="Created invoices will appear here."
@@ -223,7 +336,7 @@ export default function InvoicesPage() {
             ) : (
               <Table
                 columns={INVOICE_COLUMNS}
-                data={invoices}
+                data={visibleInvoices}
                 emptyText="No invoices found."
                 density="comfortable"
                 variant="minimal"
@@ -257,33 +370,14 @@ export default function InvoicesPage() {
                       className="right actionCell"
                       onClick={(event) => event.stopPropagation()}
                     >
-                      {item.status === "Pending" ? (
-                        <div className="rowActions">
-                          <button
-                            type="button"
-                            className="rowAction"
-                            onClick={() =>
-                              openActionModal(item, ACTION_MARK_PAID)
-                            }
-                          >
-                            Paid
-                          </button>
-
-                          <button
-                            type="button"
-                            className="rowAction danger"
-                            onClick={() => openActionModal(item, ACTION_CANCEL)}
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      ) : item.status === "Paid" ? (
-                        <span className="mutedText">Paid</span>
-                      ) : item.status === "Cancelled" ? (
-                        <span className="mutedText">Cancelled</span>
-                      ) : (
-                        <span className="mutedText">{item.status || "-"}</span>
-                      )}
+                      <InvoiceActions
+                        invoice={item}
+                        canAct={canActOnInvoice(item)}
+                        onMarkPaid={() =>
+                          openActionModal(item, ACTION_MARK_PAID)
+                        }
+                        onCancel={() => openActionModal(item, ACTION_CANCEL)}
+                      />
                     </td>
                   </tr>
                 )}
@@ -301,25 +395,34 @@ export default function InvoicesPage() {
         size="lg"
         footer={
           selectedDetailsInvoice?.status === "Pending" ? (
-            <div className="detailsFooter">
-              <Button
-                variant="success"
-                onClick={() =>
-                  openActionModal(selectedDetailsInvoice, ACTION_MARK_PAID)
-                }
-              >
-                Mark Paid
-              </Button>
+            canActOnInvoice(selectedDetailsInvoice) ? (
+              <div className="detailsFooter">
+                <Button
+                  variant="success"
+                  onClick={() =>
+                    openActionModal(selectedDetailsInvoice, ACTION_MARK_PAID)
+                  }
+                >
+                  Mark Paid
+                </Button>
 
-              <Button
-                variant="danger"
-                onClick={() =>
-                  openActionModal(selectedDetailsInvoice, ACTION_CANCEL)
-                }
-              >
-                Cancel Invoice
-              </Button>
-            </div>
+                <Button
+                  variant="danger"
+                  onClick={() =>
+                    openActionModal(selectedDetailsInvoice, ACTION_CANCEL)
+                  }
+                >
+                  Cancel Invoice
+                </Button>
+              </div>
+            ) : (
+              <div className="readOnlyFooter">
+                {getBranchLockNote(
+                  selectedDetailsInvoice,
+                  "invoice status update",
+                )}
+              </div>
+            )
           ) : null
         }
       >
@@ -372,6 +475,11 @@ export default function InvoicesPage() {
               <div>
                 <span>Client</span>
                 <strong>{selectedInvoice.client_name || "-"}</strong>
+              </div>
+
+              <div>
+                <span>Branch</span>
+                <strong>{formatBranch(selectedInvoice.branch_id)}</strong>
               </div>
 
               <div>
@@ -428,6 +536,51 @@ export default function InvoicesPage() {
           color: var(--color-text-secondary);
           font-size: 11px;
           line-height: 1.45;
+        }
+
+        .header p strong {
+          color: var(--color-text-primary);
+          font-weight: 500;
+        }
+
+        .headerActions {
+          display: flex;
+          align-items: flex-start;
+          justify-content: flex-end;
+          gap: 8px;
+          flex-wrap: wrap;
+        }
+
+        .headerActions :global(.branchSelect) {
+          width: 150px;
+          min-width: 150px;
+          flex: 0 0 150px;
+        }
+
+        .headerActions > :global(button),
+        .headerActions > :global(a) {
+          width: auto;
+          min-width: 0;
+          min-height: 34px;
+          border-radius: var(--radius-md) !important;
+        }
+
+        .adminNotice {
+          display: grid;
+          gap: 4px;
+          border-radius: var(--radius-md);
+          padding: 12px 14px;
+          background: var(--color-info-bg);
+          color: var(--color-info);
+          border: 1px solid var(--color-info-border);
+          font-size: var(--text-xs);
+          line-height: 1.5;
+        }
+
+        .adminNotice strong {
+          color: inherit;
+          font-size: var(--text-xs);
+          font-weight: 600;
         }
 
         .summary {
@@ -493,6 +646,30 @@ export default function InvoicesPage() {
           border-color: var(--color-danger-border);
           color: var(--color-danger);
           text-decoration: none;
+        }
+
+        .readOnlyAction {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-height: 30px;
+          padding: 0 10px;
+          border: 1px solid var(--color-border-soft);
+          border-radius: var(--radius-md);
+          background: var(--color-overlay);
+          color: var(--color-text-muted);
+          font-size: var(--text-xs);
+          font-weight: 500;
+          line-height: 1;
+          white-space: nowrap;
+        }
+
+        .readOnlyFooter {
+          max-width: 420px;
+          color: var(--color-text-secondary);
+          font-size: var(--text-xs);
+          line-height: 1.45;
+          text-align: left;
         }
 
         .mutedText {
@@ -598,6 +775,19 @@ export default function InvoicesPage() {
             flex-direction: column;
           }
 
+          .headerActions {
+            width: 100%;
+            justify-content: flex-start;
+          }
+
+          .headerActions :global(.branchSelect),
+          .headerActions > :global(button),
+          .headerActions > :global(a) {
+            width: 100%;
+            min-width: 0;
+            flex: 1 1 100%;
+          }
+
           .summary {
             grid-template-columns: repeat(2, minmax(0, 1fr));
           }
@@ -619,6 +809,34 @@ export default function InvoicesPage() {
           }
         }
       `}</style>
+    </div>
+  );
+}
+
+function InvoiceActions({ invoice, canAct, onMarkPaid, onCancel }) {
+  if (invoice.status !== "Pending") {
+    return invoice.status === "Paid" ? (
+      <span className="mutedText">Paid</span>
+    ) : invoice.status === "Cancelled" ? (
+      <span className="mutedText">Cancelled</span>
+    ) : (
+      <span className="mutedText">{invoice.status || "-"}</span>
+    );
+  }
+
+  if (!canAct) {
+    return <span className="readOnlyAction">Read-only</span>;
+  }
+
+  return (
+    <div className="rowActions">
+      <button type="button" className="rowAction" onClick={onMarkPaid}>
+        Paid
+      </button>
+
+      <button type="button" className="rowAction danger" onClick={onCancel}>
+        Cancel
+      </button>
     </div>
   );
 }
@@ -805,6 +1023,28 @@ function InvoiceStatusBadge({ status }) {
       {status || "Pending"}
     </Badge>
   );
+}
+
+function resolveBranchFilter(value, userBranchId) {
+  if (value === "All") return "All";
+  if (value === "My") return Number(userBranchId);
+  return Number(value);
+}
+
+function filterItemsByBranchView(items, branchFilter, userBranchId) {
+  const resolvedBranch = resolveBranchFilter(branchFilter, userBranchId);
+
+  if (resolvedBranch === "All") return Array.isArray(items) ? items : [];
+
+  return (Array.isArray(items) ? items : []).filter(
+    (item) => Number(item?.branch_id) === Number(resolvedBranch),
+  );
+}
+
+function getBranchViewLabel(branchFilter, userBranchId) {
+  if (branchFilter === "All") return "all branches";
+  if (branchFilter === "My") return `${formatBranch(userBranchId)} branch`;
+  return `${formatBranch(branchFilter)} branch`;
 }
 
 function normalizeMaterialName(value) {
