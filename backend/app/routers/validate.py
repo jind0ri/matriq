@@ -1,7 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from ..config import ROLE_ADMIN, ROLE_SENIOR_TECH
+from ..config import ROLE_QA
+from ..services.notification_service import notify_role_for_branch
+
+from ..config import ROLE_ADMIN, ROLE_SENIOR_TECH, ROLE_QA
 from ..services.audit_service import log_event
 from ..services.auth_service import require_roles
 from ..services.sample_service import complete_review, get_review_by_sample_id, get_sample
@@ -104,6 +107,22 @@ def validate(
         reviewed_by=current_user["user_id"],
         decision=payload.decision,
     )
+
+    if payload.decision == "approve":
+        sample_metadata = sample.get("device_metadata") or {}
+        payment = sample_metadata.get("payment") or {}
+        payment_status = payment.get("payment_status")
+
+        if payment_status in {"Downpayment Paid", "PO Submitted", "Fully Paid"}:
+            notify_role_for_branch(
+                role=ROLE_QA,
+                branch_id=sample_item.get("branch_id"),
+                sample_id=payload.sample_id,
+                title="Validated Sample Ready for QA",
+                message=f"Sample {payload.sample_id} has been validated by Senior Technician and is ready for QA pre-testing approval.",
+                action_path="/technical/workflow",
+                created_by=current_user["user_id"],
+            )
 
     log_event(
         action="VALIDATION_APPROVED"

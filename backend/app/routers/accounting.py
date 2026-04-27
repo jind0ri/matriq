@@ -5,10 +5,13 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from ..config import ROLE_ACCOUNTING, ROLE_ADMIN
+from ..config import ROLE_ACCOUNTING, ROLE_ADMIN, ROLE_QA
 from ..database import execute, fetchall, fetchone
 from ..services.auth_service import require_roles
 from ..services.audit_service import log_event
+from ..config import ROLE_QA
+from ..services.notification_service import notify_role_for_branch
+from ..services.sample_service import get_sample
 
 router = APIRouter(prefix="/api/accounting", tags=["Accounting"])
 
@@ -368,6 +371,7 @@ def sync_sample_payment_from_invoice(
         """,
         (json.dumps(metadata), sample_id),
     )
+    
 
     log_event(
         action="SYNC_SAMPLE_PAYMENT_FROM_INVOICE",
@@ -778,7 +782,6 @@ def update_sample_payment(
     request: Request,
     current_user=Depends(require_roles(ROLE_ACCOUNTING, ROLE_ADMIN)),
 ):
-    from ..services.sample_service import get_sample
 
     item = get_sample(sample_id)
 
@@ -915,6 +918,36 @@ def update_sample_payment(
         """,
         (json.dumps(metadata), sample_id),
     )
+    
+    updated_sample = get_sample(sample_id)
+    updated_metadata = updated_sample.get("device_metadata") or {}
+    updated_test_data = updated_metadata.get("test_data")
+
+    if new_payment_status in INITIAL_PAYMENT_STATUSES and current_state == "Registered":
+        notify_role_for_branch(
+            role=ROLE_QA,
+            branch_id=item.get("branch_id"),
+            sample_id=sample_id,
+            title="Sample Ready for QA Pre-Testing",
+            message=f"Sample {sample_id} has payment clearance for testing and is ready for QA pre-testing approval.",
+            action_path="/technical/workflow",
+            created_by=current_user["user_id"],
+        )
+
+    if (
+        new_payment_status == PAYMENT_FULLY_PAID
+        and current_state == "For Review"
+        and updated_test_data
+    ):
+        notify_role_for_branch(
+            role=ROLE_QA,
+            branch_id=item.get("branch_id"),
+            sample_id=sample_id,
+            title="Sample Fully Paid for Release",
+            message=f"Sample {sample_id} is now fully paid and ready for QA release review.",
+            action_path="/technical/workflow",
+            created_by=current_user["user_id"],
+        )
 
     log_event(
         action="UPDATE_PAYMENT_STATUS",

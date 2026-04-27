@@ -251,4 +251,20 @@ export const apiClient = {
       method: "PATCH",
       body: JSON.stringify(payload),
     }),
+
+  getNotifications: () => request("/api/notifications"),
+
+  getUnreadNotifications: () => request("/api/notifications/unread"),
+
+  getUnreadNotificationCount: () => request("/api/notifications/unread-count"),
+
+  markNotificationRead: (notificationId) =>
+    request(`/api/notifications/${notificationId}/read`, {
+      method: "PATCH",
+    }),
+
+  markAllNotificationsRead: () =>
+    request("/api/notifications/read-all", {
+      method: "PATCH",
+    }),
 };

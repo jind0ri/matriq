@@ -15,6 +15,7 @@ from ..config import (
     ROLE_SENIOR_TECH,
     ROLE_LAB_TECH,
 )
+from ..services.notification_service import notify_role_for_branch
 from ..config import SUPABASE_URL, SUPABASE_SERVICE_KEY, SUPABASE_BUCKET
 from ..database import fetchall
 from ..schemas import SampleRegistrationRequest
@@ -960,6 +961,17 @@ def create_sample(
 
     sample = hydrate_sample_user_names(get_sample(sample["sample_id"]))
 
+    if db_decision == "Manual-Review":
+        notify_role_for_branch(
+            role=ROLE_SENIOR_TECH,
+            branch_id=sample.get("branch_id"),
+            sample_id=sample.get("sample_id"),
+            title="Sample Needs AI Classification Review",
+            message=f"Sample {sample.get('sample_id')} has low AI confidence and needs Senior Technician validation.",
+            action_path="/technical/workflow",
+            created_by=current_user["user_id"],
+        )
+
     log_event(
         action="CREATE_SAMPLE",
         endpoint_accessed="/api/samples",
@@ -1171,6 +1183,18 @@ def qa_pretesting_review(
         (json.dumps(metadata), sample_id),
     )
 
+    updated_sample = hydrate_sample_user_names(get_sample(sample_id))
+
+    notify_role_for_branch(
+        role=ROLE_LAB_TECH,
+        branch_id=updated_sample.get("branch_id"),
+        sample_id=sample_id,
+        title="Sample Approved for Testing",
+        message=f"Sample {sample_id} has been approved by QA and is ready for laboratory testing.",
+        action_path="/technical/workflow",
+        created_by=current_user["user_id"],
+    )
+
     log_event(
         action="QA_PRE_TESTING_REVIEW",
         endpoint_accessed=f"/api/samples/{sample_id}/qa-pretesting",
@@ -1180,7 +1204,7 @@ def qa_pretesting_review(
         ip_address=request.client.host if request.client else None,
     )
 
-    return hydrate_sample_user_names(get_sample(sample_id))
+    return updated_sample
 
 
 @router.patch("/samples/{sample_id}/qa-result-override")
@@ -1561,6 +1585,32 @@ def update_test_data(
         ),
     )
 
+    updated_sample = hydrate_sample_user_names(get_sample(sample_id))
+    updated_metadata = updated_sample.get("device_metadata") or {}
+    updated_payment = updated_metadata.get("payment") or {}
+    updated_payment_status = updated_payment.get("payment_status") or "Unpaid"
+
+    if updated_payment_status == "Fully Paid":
+        notify_role_for_branch(
+            role=ROLE_QA,
+            branch_id=updated_sample.get("branch_id"),
+            sample_id=sample_id,
+            title="Sample Ready for QA Release",
+            message=f"Sample {sample_id} testing is complete and fully paid. It is ready for QA release review.",
+            action_path="/technical/workflow",
+            created_by=current_user["user_id"],
+        )
+    else:
+        notify_role_for_branch(
+            role=ROLE_ACCOUNTING,
+            branch_id=updated_sample.get("branch_id"),
+            sample_id=sample_id,
+            title="Payment Needed Before Release",
+            message=f"Sample {sample_id} testing is complete but full payment is still required before report release.",
+            action_path="/accounting/billing",
+            created_by=current_user["user_id"],
+        )
+
     log_event(
         action="UPDATE_TEST_DATA",
         endpoint_accessed=f"/api/samples/{sample_id}/test-data",
@@ -1576,7 +1626,7 @@ def update_test_data(
         ip_address=request.client.host if request.client else None,
     )
 
-    return hydrate_sample_user_names(get_sample(sample_id))
+    return updated_sample
 
 
 # ============================================================
