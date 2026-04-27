@@ -17,6 +17,9 @@ import {
   Moon,
   Sun,
   GearSix,
+  ChatCircleText,
+  ChatsCircle,
+  Notebook,
 } from "phosphor-react";
 
 const NAV_CONFIG = {
@@ -25,12 +28,14 @@ const NAV_CONFIG = {
     { label: "Sample Intake", href: "/technical/intake", icon: PlusCircle },
     { label: "Workflow", href: "/technical/workflow", icon: Package },
     { label: "Registry", href: "/technical/registry", icon: Cube },
+    { label: "Feedback", href: "/feedback", icon: ChatCircleText },
   ],
 
   "Senior Technician": [
     { label: "Dashboard", href: "/technical", icon: SquaresFour },
     { label: "Workflow", href: "/technical/workflow", icon: Package },
     { label: "Registry", href: "/technical/registry", icon: Cube },
+    { label: "Feedback", href: "/feedback", icon: ChatCircleText },
   ],
 
   "QA Engineer": [
@@ -38,6 +43,8 @@ const NAV_CONFIG = {
     { label: "Workflow", href: "/technical/workflow", icon: Package },
     { label: "Registry", href: "/technical/registry", icon: Cube },
     { label: "Reports", href: "/technical/reports", icon: FileText },
+    { label: "Feedback", href: "/feedback", icon: ChatCircleText },
+    
   ],
 
   Administrator: [
@@ -45,6 +52,8 @@ const NAV_CONFIG = {
     { label: "Users", href: "/admin/users", icon: Users },
     { label: "Audit Logs", href: "/admin/audit-logs", icon: ClipboardText },
     { label: "Settings", href: "/admin/settings", icon: GearSix },
+    { label: "Feedback", href: "/feedback", icon: ChatCircleText },
+    { label: "Feedback Logs", href: "/admin/feedback", icon: Notebook },
   ],
 
   "Accounting Staff": [
@@ -52,6 +61,7 @@ const NAV_CONFIG = {
     { label: "Billing", href: "/accounting/billing", icon: Receipt },
     { label: "Invoices", href: "/accounting/invoices", icon: FileText },
     { label: "Reports", href: "/accounting/reports", icon: ClipboardText },
+    { label: "Feedback", href: "/feedback", icon: ChatCircleText },
   ],
 };
 

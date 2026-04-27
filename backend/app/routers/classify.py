@@ -11,6 +11,8 @@ from PIL import Image, UnidentifiedImageError
 from ..config import (
     CLASSIFY_ROLES,
     ROLE_ADMIN,
+    ROLE_QA,
+    ROLE_SENIOR_TECH,
     SUPABASE_URL,
     SUPABASE_SERVICE_KEY,
     SUPABASE_BUCKET,
@@ -18,6 +20,7 @@ from ..config import (
 from ..services.audit_service import log_event
 from ..services.auth_service import require_roles
 from ..services.model_service import active_model, predict, thresholds, validate_image_bytes
+from ..services.notification_service import notify_role_for_branch
 from ..services.sample_service import create_sample_with_inference, get_review_by_sample_id
 
 router = APIRouter(prefix="/api", tags=["Classification"])
@@ -236,7 +239,44 @@ async def classify(
         if decision_db == "Manual-Review"
         else None
     )
+    
+    payment = enriched_metadata.get("payment") or {}
+    payment_status = payment.get("payment_status") or "Unpaid"
 
+    allowed_initial_payment = {"Downpayment Paid", "PO Submitted", "Fully Paid"}
+
+    if decision_db == "Manual-Review":
+        notify_role_for_branch(
+            role=ROLE_SENIOR_TECH,
+            branch_id=stored_sample.get("branch_id"),
+            sample_id=stored_sample.get("sample_id"),
+            title="Sample Needs AI Classification Review",
+            message=(
+                f"Sample {stored_sample.get('sample_id')} has low AI confidence "
+                "and needs Senior Technician validation."
+            ),
+            action_path="/technical/workflow",
+            created_by=current_user["user_id"],
+        )
+
+    if (
+        decision_api == "AUTO_ACCEPTED"
+        and stored_sample.get("current_state") == "Registered"
+        and payment_status in allowed_initial_payment
+    ):
+        notify_role_for_branch(
+            role=ROLE_QA,
+            branch_id=stored_sample.get("branch_id"),
+            sample_id=stored_sample.get("sample_id"),
+            title="Sample Ready for QA Pre-Testing",
+            message=(
+                f"Sample {stored_sample.get('sample_id')} has payment clearance "
+                "for testing and is ready for QA pre-testing approval."
+            ),
+            action_path="/technical/workflow",
+            created_by=current_user["user_id"],
+        )
+    
     log_event(
         action="CLASSIFICATION_SUCCESS",
         endpoint_accessed="/api/classify",

@@ -258,6 +258,8 @@ export const apiClient = {
 
   getUnreadNotificationCount: () => request("/api/notifications/unread-count"),
 
+  getSyncStatus: () => request("/api/sync/status"),
+
   markNotificationRead: (notificationId) =>
     request(`/api/notifications/${notificationId}/read`, {
       method: "PATCH",
@@ -267,4 +269,21 @@ export const apiClient = {
     request("/api/notifications/read-all", {
       method: "PATCH",
     }),
+  createFeedbackReport: (payload) =>
+    request("/api/feedback", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  getMyFeedbackReports: () => request("/api/feedback/mine"),
+
+  getAdminFeedbackReports: () => request("/api/feedback/admin"),
+
+  updateFeedbackReport: (feedbackId, payload) =>
+    request(`/api/feedback/${feedbackId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+
+    
 };

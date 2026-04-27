@@ -961,6 +961,12 @@ def create_sample(
 
     sample = hydrate_sample_user_names(get_sample(sample["sample_id"]))
 
+    metadata = sample.get("device_metadata") or {}
+    payment = metadata.get("payment") or {}
+    payment_status = payment.get("payment_status") or "Unpaid"
+
+    allowed_initial_payment = {"Downpayment Paid", "PO Submitted", "Fully Paid"}
+
     if db_decision == "Manual-Review":
         notify_role_for_branch(
             role=ROLE_SENIOR_TECH,
@@ -972,9 +978,23 @@ def create_sample(
             created_by=current_user["user_id"],
         )
 
+    if (
+        db_decision == "Auto-Accepted"
+        and sample.get("current_state") == "Registered"
+        and payment_status in allowed_initial_payment
+    ):
+        notify_role_for_branch(
+            role=ROLE_QA,
+            branch_id=sample.get("branch_id"),
+            sample_id=sample.get("sample_id"),
+            title="Sample Ready for QA Pre-Testing",
+            message=f"Sample {sample.get('sample_id')} has payment clearance for testing and is ready for QA pre-testing approval.",
+            action_path="/technical/workflow",
+            created_by=current_user["user_id"],
+        )
+
     log_event(
         action="CREATE_SAMPLE",
-        endpoint_accessed="/api/samples",
         user_id=current_user["user_id"],
         sample_id=None,
         new_value=sample,

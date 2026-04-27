@@ -1031,7 +1031,16 @@ function formatDate(value) {
   if (!value) return "-";
 
   try {
-    return new Date(value).toLocaleString();
+    return new Date(value).toLocaleString("en-PH", {
+      timeZone: "Asia/Manila",
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+      hour: "numeric",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: true,
+    });
   } catch {
     return value;
   }
