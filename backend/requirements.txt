@@ -15,3 +15,4 @@ jax==0.4.30
 jaxlib==0.4.30
 httpx==0.28.1
 pytest==8.4.2
+resend

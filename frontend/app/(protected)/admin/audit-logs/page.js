@@ -800,7 +800,15 @@ function getActionVariant(action) {
   if (value.includes("delete") || value.includes("cancel")) return "danger";
   if (value.includes("payment") || value.includes("invoice")) return "warning";
   if (value.includes("release") || value.includes("approve")) return "success";
-  if (value.includes("login") || value.includes("access")) return "info";
+
+  if (
+    value.includes("login") ||
+    value.includes("access") ||
+    value.includes("auth") ||
+    value.includes("password")
+  ) {
+    return "info";
+  }
 
   return "brand";
 }
@@ -876,6 +884,30 @@ function getPageLabel(log) {
   const action = String(getAuditAction(log)).toLowerCase();
   const endpoint = String(getEndpoint(log)).toLowerCase();
 
+  if (
+    action.includes("forgot_password") ||
+    action.includes("password_reset_email") ||
+    endpoint.includes("/forgot-password")
+  ) {
+    return "Forgot Password";
+  }
+
+  if (
+    action.includes("password_reset_completed") ||
+    endpoint.includes("/reset-password")
+  ) {
+    return "Password Reset";
+  }
+
+  if (
+    action.includes("auth") ||
+    action.includes("login") ||
+    endpoint.includes("/api/auth") ||
+    endpoint.includes("/login")
+  ) {
+    return "Authentication";
+  }
+
   if (action.includes("sample") || endpoint.includes("/samples")) {
     return "Samples Page";
   }
@@ -902,10 +934,6 @@ function getPageLabel(log) {
 
   if (action.includes("audit") || endpoint.includes("/audit")) {
     return "Audit Logs";
-  }
-
-  if (action.includes("login") || endpoint.includes("/login")) {
-    return "Login Page";
   }
 
   if (action.includes("report") || endpoint.includes("/reports")) {

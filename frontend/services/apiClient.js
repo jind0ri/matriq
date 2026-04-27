@@ -134,6 +134,18 @@ export const apiClient = {
       body: JSON.stringify({ email, password }),
     }),
 
+  forgotPassword: (payload) =>
+    request("/api/auth/forgot-password", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  resetPassword: (payload) =>
+    request("/api/auth/reset-password", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
   getDashboard: () => request("/api/dashboard"),
   getSamples: () => request("/api/samples"),
   getSample: (id) => request(`/api/samples/${id}`),

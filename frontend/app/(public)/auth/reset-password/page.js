@@ -1,34 +1,83 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { ArrowLeft } from "phosphor-react";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { ArrowLeft, Eye, EyeSlash } from "phosphor-react";
 import { apiClient } from "@/services/apiClient";
 
-export default function ForgotPasswordPage() {
+function ResetPasswordContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
-  const [email, setEmail] = useState("");
+  const token = searchParams.get("token") || "";
+
+  const [form, setForm] = useState({
+    password: "",
+    confirmPassword: "",
+  });
+
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  async function submit(e) {
-    e.preventDefault();
+  function handleChange(event) {
+    const { name, value } = event.target;
 
-    setStatus("");
+    setForm((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+
     setError("");
+    setStatus("");
+  }
+
+  async function submit(event) {
+    event.preventDefault();
+
+    setError("");
+    setStatus("");
+
+    if (!token) {
+      setError("Invalid reset link. Please request a new password reset link.");
+      return;
+    }
+
+    if (!form.password || !form.confirmPassword) {
+      setError("Please enter and confirm your new password.");
+      return;
+    }
+
+    if (form.password.length < 6) {
+      setError("Password must be at least 6 characters.");
+      return;
+    }
+
+    if (form.password !== form.confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+
     setSubmitting(true);
 
     try {
-      await apiClient.forgotPassword({ email });
+      await apiClient.resetPassword({
+        token,
+        password: form.password,
+      });
 
       setStatus(
-        "If this email is registered, a password reset link will be sent shortly.",
+        "Password has been reset successfully. Redirecting to login...",
       );
-      setEmail("");
+
+      setTimeout(() => {
+        router.push("/auth/employee-login");
+      }, 1400);
     } catch (err) {
-      setError(err.message || "Password reset request failed.");
+      setError(err.message || "Password reset failed.");
     } finally {
       setSubmitting(false);
     }
@@ -36,12 +85,12 @@ export default function ForgotPasswordPage() {
 
   return (
     <>
-      <main className="forgotPage">
+      <main className="resetPage">
         <section className="authCard">
           <button
             type="button"
             className="backButton"
-            onClick={() => router.push("/auth/access-select")}
+            onClick={() => router.push("/auth/forgot-password")}
           >
             <ArrowLeft size={17} weight="regular" />
             <span>Back</span>
@@ -49,30 +98,81 @@ export default function ForgotPasswordPage() {
 
           <div className="logoBox">M</div>
 
-          <section className="forgotBlock">
+          <section className="resetBlock">
             <div className="heading">
-              <p className="sectionLabel">PASSWORD RECOVERY</p>
-              <h1>Reset your password</h1>
+              <p className="sectionLabel">PASSWORD RESET</p>
+              <h1>Create new password</h1>
               <p className="description">
-                Enter your account email. If the account exists, Matriq will send
-                a password reset link to that email.
+                Enter your new password below. After resetting, you can sign in
+                again using your updated credentials.
               </p>
             </div>
 
             <form className="form" onSubmit={submit}>
               <div className="field">
-                <label>Email</label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(event) => {
-                    setEmail(event.target.value);
-                    setError("");
-                    setStatus("");
-                  }}
-                  placeholder="user@matriq.com"
-                  required
-                />
+                <label htmlFor="password">New Password</label>
+
+                <div className="passwordWrap">
+                  <input
+                    id="password"
+                    name="password"
+                    type={showPassword ? "text" : "password"}
+                    value={form.password}
+                    onChange={handleChange}
+                    placeholder="Enter new password"
+                    required
+                  />
+
+                  <button
+                    type="button"
+                    className="passwordToggle"
+                    onClick={() => setShowPassword((current) => !current)}
+                    aria-label={
+                      showPassword ? "Hide password" : "Show password"
+                    }
+                  >
+                    {showPassword ? (
+                      <EyeSlash size={18} weight="regular" />
+                    ) : (
+                      <Eye size={18} weight="regular" />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <div className="field">
+                <label htmlFor="confirmPassword">Confirm Password</label>
+
+                <div className="passwordWrap">
+                  <input
+                    id="confirmPassword"
+                    name="confirmPassword"
+                    type={showConfirmPassword ? "text" : "password"}
+                    value={form.confirmPassword}
+                    onChange={handleChange}
+                    placeholder="Confirm new password"
+                    required
+                  />
+
+                  <button
+                    type="button"
+                    className="passwordToggle"
+                    onClick={() =>
+                      setShowConfirmPassword((current) => !current)
+                    }
+                    aria-label={
+                      showConfirmPassword
+                        ? "Hide confirm password"
+                        : "Show confirm password"
+                    }
+                  >
+                    {showConfirmPassword ? (
+                      <EyeSlash size={18} weight="regular" />
+                    ) : (
+                      <Eye size={18} weight="regular" />
+                    )}
+                  </button>
+                </div>
               </div>
 
               {error && <p className="error">{error}</p>}
@@ -83,7 +183,7 @@ export default function ForgotPasswordPage() {
                 className="submitButton"
                 disabled={submitting}
               >
-                {submitting ? "Sending..." : "Send Reset Link"}
+                {submitting ? "Resetting..." : "Reset Password"}
               </button>
 
               <button
@@ -99,7 +199,7 @@ export default function ForgotPasswordPage() {
       </main>
 
       <style jsx>{`
-        .forgotPage {
+        .resetPage {
           min-height: 100vh;
           width: 100%;
           background: #090021 !important;
@@ -177,7 +277,7 @@ export default function ForgotPasswordPage() {
           box-shadow: 0 18px 45px rgba(0, 0, 0, 0.22);
         }
 
-        .forgotBlock {
+        .resetBlock {
           width: 100%;
           display: flex;
           flex-direction: column;
@@ -261,6 +361,39 @@ export default function ForgotPasswordPage() {
           box-shadow: 0 0 0 3px rgba(255, 187, 0, 0.1);
         }
 
+        .passwordWrap {
+          position: relative;
+          width: 100%;
+        }
+
+        .passwordWrap input {
+          padding-right: 46px;
+        }
+
+        .passwordToggle {
+          position: absolute;
+          top: 50%;
+          right: 12px;
+          transform: translateY(-50%);
+          width: 26px;
+          height: 26px;
+          border: 0;
+          background: transparent !important;
+          color: rgba(255, 255, 255, 0.56) !important;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0;
+          cursor: pointer;
+          transition:
+            color 0.18s ease,
+            opacity 0.18s ease;
+        }
+
+        .passwordToggle:hover {
+          color: #ffbb00 !important;
+        }
+
         .error,
         .success {
           margin: 0;
@@ -322,7 +455,7 @@ export default function ForgotPasswordPage() {
         }
 
         @media (max-width: 520px) {
-          .forgotPage {
+          .resetPage {
             padding: 20px;
           }
 
@@ -349,5 +482,13 @@ export default function ForgotPasswordPage() {
         }
       `}</style>
     </>
+  );
+}
+
+export default function ResetPasswordPage() {
+  return (
+    <Suspense fallback={null}>
+      <ResetPasswordContent />
+    </Suspense>
   );
 }

@@ -12,6 +12,7 @@ def get_audit_logs(current_user=Depends(require_roles(ROLE_ADMIN))):
     return fetchall(
         """
         SELECT
+            log_id AS audit_id,
             user_id,
             sample_id,
             action,

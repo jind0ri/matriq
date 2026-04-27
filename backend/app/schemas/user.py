@@ -19,3 +19,12 @@ class UserResponse(BaseModel):
     is_active: bool = True
     status: str = "Active"
     account_status: str = "Active"
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    password: str
