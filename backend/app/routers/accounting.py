@@ -801,7 +801,12 @@ def update_sample_payment(
 
     old_payment_status = payment.get("payment_status") or PAYMENT_UNPAID
     new_payment_status = payload.get("payment_status")
-
+    
+    if new_payment_status == old_payment_status:
+        raise HTTPException(
+        status_code=400,
+        detail="Payment status is already set to this value.",
+    )
     amount_paid = normalize_amount(payload.get("amount_paid"), "amount_paid")
     balance = normalize_amount(payload.get("balance"), "balance")
     billing_notes = (payload.get("billing_notes") or "").strip()

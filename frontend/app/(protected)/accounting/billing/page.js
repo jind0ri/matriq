@@ -21,6 +21,7 @@ const BASE_FEE = 2500;
 
 const STATUS_FILTERS = {
   ALL: "All",
+  PAYMENT_FOLLOW_UP: "Payment Follow-up",
   READY: "Ready to Invoice",
   INVOICED: "Invoiced",
   PAID: "Paid",
@@ -179,6 +180,17 @@ export default function BillingPage() {
     return map;
   }, [visibleInvoices]);
 
+  const paymentFollowUpSamples = useMemo(() => {
+    return visibleSamples.filter((sample) => {
+      const payment = getPaymentMetadata(sample);
+      const paymentStatus = payment.payment_status || "Unpaid";
+
+      return (
+        sample.current_state === "For Review" && paymentStatus !== "Fully Paid"
+      );
+    });
+  }, [visibleSamples]);
+
   const releasedSamples = useMemo(() => {
     return visibleSamples.filter(
       (sample) =>
@@ -187,8 +199,22 @@ export default function BillingPage() {
     );
   }, [visibleSamples]);
 
+  const accountingQueueSamples = useMemo(() => {
+    const map = new Map();
+
+    paymentFollowUpSamples.forEach((sample) => {
+      map.set(sample.sample_id, sample);
+    });
+
+    releasedSamples.forEach((sample) => {
+      map.set(sample.sample_id, sample);
+    });
+
+    return Array.from(map.values());
+  }, [paymentFollowUpSamples, releasedSamples]);
+
   const billingRows = useMemo(() => {
-    return releasedSamples.map((sample) => {
+    return accountingQueueSamples.map((sample) => {
       const invoice = invoiceBySampleId.get(sample.sample_id);
       const billingStatus = getBillingStatus(sample, invoice);
       const payment = getPaymentMetadata(sample);
@@ -203,7 +229,7 @@ export default function BillingPage() {
         invoice_amount: invoice?.amount || BASE_FEE,
       };
     });
-  }, [releasedSamples, invoiceBySampleId]);
+  }, [accountingQueueSamples, invoiceBySampleId]);
 
   const filteredRows = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -233,6 +259,10 @@ export default function BillingPage() {
   const stats = useMemo(() => {
     return billingRows.reduce(
       (acc, item) => {
+        if (item.billing_status === STATUS_FILTERS.PAYMENT_FOLLOW_UP) {
+          acc.followUps += 1;
+        }
+
         if (item.billing_status === STATUS_FILTERS.READY) acc.ready += 1;
         if (item.billing_status === STATUS_FILTERS.INVOICED) acc.invoiced += 1;
         if (item.billing_status === STATUS_FILTERS.PAID) acc.paid += 1;
@@ -243,6 +273,7 @@ export default function BillingPage() {
         return acc;
       },
       {
+        followUps: 0,
         ready: 0,
         invoiced: 0,
         paid: 0,
@@ -337,6 +368,16 @@ export default function BillingPage() {
 
     setPaymentModalError("");
 
+    const currentPayment = selectedPaymentRecord.payment || {};
+    const currentPaymentStatus = currentPayment.payment_status || "Unpaid";
+
+    if (paymentStatus === currentPaymentStatus) {
+      setPaymentModalError(
+        "Please select a different payment status before saving.",
+      );
+      return;
+    }
+
     if (!canActOnItem(selectedPaymentRecord)) {
       setPaymentModalError(
         getBranchLockNote(selectedPaymentRecord, "payment update"),
@@ -400,8 +441,8 @@ export default function BillingPage() {
         <div>
           <h1>{isAdmin ? "Billing Oversight" : "Billing Queue"}</h1>
           <p>
-            Review released samples and payment readiness for{" "}
-            <strong>{branchLabel}</strong>.
+            Review payment follow-ups, released samples, and invoice readiness
+            for <strong>{branchLabel}</strong>.
           </p>
         </div>
 
@@ -460,10 +501,17 @@ export default function BillingPage() {
         <>
           <section className="statsRow">
             <StatCard
+              label="Follow-ups"
+              value={stats.followUps}
+              note="For Review samples needing full payment"
+              variant="warning"
+            />
+
+            <StatCard
               label="Ready"
               value={stats.ready}
               note="Released samples without active invoice"
-              variant="warning"
+              variant="info"
             />
 
             <StatCard
@@ -491,8 +539,8 @@ export default function BillingPage() {
           <MetricStrip
             items={[
               {
-                label: "Released Samples",
-                value: releasedSamples.length,
+                label: "Payment Follow-ups",
+                value: paymentFollowUpSamples.length,
               },
               {
                 label: "Outstanding",
@@ -532,6 +580,9 @@ export default function BillingPage() {
               onChange={(event) => setStatusFilter(event.target.value)}
             >
               <option value={STATUS_FILTERS.ALL}>All Billing Statuses</option>
+              <option value={STATUS_FILTERS.PAYMENT_FOLLOW_UP}>
+                Payment Follow-up
+              </option>
               <option value={STATUS_FILTERS.READY}>Ready to Invoice</option>
               <option value={STATUS_FILTERS.INVOICED}>Invoiced</option>
               <option value={STATUS_FILTERS.PAID}>Paid</option>
@@ -541,7 +592,7 @@ export default function BillingPage() {
 
           <Card
             title="Billing Records"
-            subtitle="Released samples with payment and invoice state. Click a row to view details."
+            subtitle="Payment follow-ups and released samples with invoice state. Click a row to view details."
           >
             {filteredRows.length === 0 ? (
               <EmptyState
@@ -881,6 +932,21 @@ export default function BillingPage() {
           text-decoration: none;
         }
 
+        :global(.textLink),
+        :global(.textLink:hover),
+        :global(.textLink:focus),
+        :global(.textLink:active),
+        :global(.footerButton),
+        :global(.footerButton:hover),
+        :global(.footerButton:focus),
+        :global(.footerButton:active),
+        :global(.rowAction),
+        :global(.rowAction:hover),
+        :global(.rowAction:focus),
+        :global(.rowAction:active) {
+          text-decoration: none !important;
+        }
+
         :global(.rowAction:disabled) {
           opacity: 0.55;
           cursor: not-allowed;
@@ -1123,7 +1189,6 @@ function BillingAction({
     return (
       <span className="readOnlyAction">
         Read-only
-
         <style jsx>{`
           .readOnlyAction {
             display: inline-flex;
@@ -1155,7 +1220,9 @@ function BillingAction({
         Payment
       </button>
 
-      {item.billing_status === STATUS_FILTERS.READY ? (
+      {item.billing_status === STATUS_FILTERS.PAYMENT_FOLLOW_UP ? (
+        <span className="mutedText">Not Released</span>
+      ) : item.billing_status === STATUS_FILTERS.READY ? (
         <button
           type="button"
           className="rowAction"
@@ -1482,7 +1549,9 @@ function BillingStatusBadge({ status }) {
         ? "danger"
         : status === STATUS_FILTERS.INVOICED
           ? "info"
-          : "warning";
+          : status === STATUS_FILTERS.PAYMENT_FOLLOW_UP
+            ? "warning"
+            : "neutral";
 
   return (
     <Badge variant={variant} size="sm">
@@ -1528,10 +1597,20 @@ function getBillingStatus(sample, invoice) {
   if (invoice?.status === "Pending") return STATUS_FILTERS.INVOICED;
   if (invoice?.status === "Cancelled") return STATUS_FILTERS.CANCELLED;
 
+  const payment = getPaymentMetadata(sample);
+  const paymentStatus = payment.payment_status || "Unpaid";
+
+  if (
+    sample.current_state === "For Review" &&
+    paymentStatus !== PAYMENT_STATUSES.FULLY_PAID
+  ) {
+    return STATUS_FILTERS.PAYMENT_FOLLOW_UP;
+  }
+
   if (sample.current_state === "Released") return STATUS_FILTERS.READY;
   if (sample.current_state === "Archived") return STATUS_FILTERS.PAID;
 
-  return STATUS_FILTERS.READY;
+  return STATUS_FILTERS.PAYMENT_FOLLOW_UP;
 }
 
 function getPaymentMetadata(sample) {

@@ -17,8 +17,6 @@ const BRANCH_LABELS = {
   2: "Pateros Branch",
 };
 
-const INITIAL_PAYMENT_REQUIREMENT = "50% Downpayment or Full Payment";
-
 export default function Page() {
   const router = useRouter();
   const user = getStoredUser();
@@ -43,7 +41,6 @@ export default function Page() {
     staff: staffName,
 
     clientType: "Walk-in",
-    paymentRequirement: INITIAL_PAYMENT_REQUIREMENT,
     paymentStatus: "Unpaid",
     amountPaid: "",
     balance: "",
@@ -99,7 +96,6 @@ export default function Page() {
     if (!form.projectId.trim()) missing.push("Project Identifier");
     if (!form.requestedTestType.trim()) missing.push("Requested Test Type");
     if (!form.clientType) missing.push("Client Type");
-    if (!form.paymentRequirement) missing.push("Payment Requirement");
     if (!form.paymentStatus) missing.push("Payment Status");
     if (!form.actualSampleChecked) missing.push("Actual Sample Checked");
     if (!form.file) missing.push("Sample Image");
@@ -111,7 +107,6 @@ export default function Page() {
     form.projectId,
     form.requestedTestType,
     form.clientType,
-    form.paymentRequirement,
     form.paymentStatus,
     form.amountPaid,
     form.actualSampleChecked,
@@ -162,7 +157,6 @@ export default function Page() {
 
         payment: {
           client_type: form.clientType,
-          payment_requirement: form.paymentRequirement,
           payment_status: form.paymentStatus,
           amount_paid: form.amountPaid,
           balance: form.balance,
@@ -303,23 +297,6 @@ export default function Page() {
               >
                 <option value="Walk-in">Walk-in</option>
                 <option value="Quotation">Quotation</option>
-              </Select>
-
-              <Select
-                label="Payment Requirement"
-                name="paymentRequirement"
-                value={form.paymentRequirement}
-                required
-                onChange={(event) =>
-                  updateForm({ paymentRequirement: event.target.value })
-                }
-              >
-                <option value="50% Downpayment or Full Payment">
-                  50% Downpayment or Full Payment
-                </option>
-                <option value="50% Downpayment">50% Downpayment</option>
-                <option value="Full Payment">Full Payment</option>
-                <option value="Purchase Order">Purchase Order</option>
               </Select>
 
               <Select

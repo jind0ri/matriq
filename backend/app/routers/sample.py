@@ -1146,8 +1146,8 @@ def qa_pretesting_review(
     item = get_sample(sample_id)
     if not item:
         raise HTTPException(status_code=404, detail="Sample not found")
-    
-        require_sample_branch_access(current_user, item)
+
+    require_sample_branch_access(current_user, item)
 
     if item.get("current_state") != "Registered":
         raise HTTPException(
@@ -1319,8 +1319,11 @@ def qa_release_review(
     payment_status = metadata.get("payment", {}).get("payment_status")
     test_data = metadata.get("test_data")
 
-    if payment_status != "Fully Paid" and current_user["role"] != ROLE_ADMIN:
-        raise HTTPException(status_code=400, detail="Full payment is required before release")
+    if payment_status != "Fully Paid":
+        raise HTTPException(
+            status_code=400,
+            detail="Full payment is required before release",
+        )
 
     if not test_data and current_user["role"] != ROLE_ADMIN:
         raise HTTPException(status_code=400, detail="Test data is required before release")
@@ -1653,7 +1656,7 @@ def update_sample_status(
         if current_state != "For Review" and role != ROLE_ADMIN:
             raise HTTPException(status_code=400, detail="Only For Review samples can be released")
 
-        if payment_status != "Fully Paid" and role != ROLE_ADMIN:
+        if payment_status != "Fully Paid":
             raise HTTPException(
                 status_code=400,
                 detail="Full payment is required before releasing official reports",
