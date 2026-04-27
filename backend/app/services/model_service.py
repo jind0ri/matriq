@@ -99,12 +99,11 @@ def preprocess(pil_image: Image.Image) -> dict:
     return {
         'aligned_image_uint8': denoised,
         'normalized_batch': np.expand_dims(normalized, axis=0),
-        'quality_flags': (['blurry_image'] if blur_score < 55 else []) + (['low_visibility'] if visibility_low else []),
-        'quality_flags': quality_flags,
+        'quality_flags':
+    'quality_flags': quality_flags,
         'blur_score': blur_score,
         'edge_density': float(cv2.Canny(gray, 80, 160).mean() / 255.0),
-        'mean_hue': float(cv2.cvtColor(denoised, cv2.COLOR_RGB2HSV)[:, :, 0].mean()),
-        'mean_hue': mean_hue,
+    'mean_hue': mean_hue,
         'mean_saturation': mean_saturation,
         'mean_value': mean_value,
         'gray_std': float(gray.std() / 255.0),
@@ -196,10 +195,7 @@ def _load_real_model():
 @@ -179,9 +272,23 @@
     else:
         predicted_label, confidence = _heuristic_predict(pre)
-
-    if pre['quality_flags']:
-        confidence = max(0.0, confidence - 0.08 * len(pre['quality_flags']))
-    # Apply quality flag penalties
+        # Apply quality flag penalties
     base_quality_flags = [f for f in pre['quality_flags'] if f in ('blurry_image', 'low_visibility')]
     if base_quality_flags:
         confidence = max(0.0, confidence - 0.08 * len(base_quality_flags))
@@ -223,8 +219,7 @@ def _load_real_model():
         'model_version': meta['version_number'],
         'version_id': meta.get('version_id'),
         'provider': provider,
-        'preprocessing': {'quality_flags': pre['quality_flags'], 'blur_score': round(pre['blur_score'], 4)},
-        'preprocessing': {
+ 'preprocessing': {
             'quality_flags': pre['quality_flags'],
             'blur_score': round(pre['blur_score'], 4),
             'anomaly_score': anomaly_score,
