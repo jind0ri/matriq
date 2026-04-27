@@ -7,6 +7,12 @@ from urllib.parse import quote
 import json
 from datetime import datetime
 from math import pi
+from pathlib import Path
+
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import mm
+from reportlab.pdfgen import canvas
 
 from ..config import (
     ROLE_ACCOUNTING,
@@ -901,6 +907,397 @@ def evaluate_standardized_test(test_type, payload):
 
 
 # ============================================================
+# OFFICIAL PDF REPORT HELPERS
+# ============================================================
+
+BRANCH_LETTERHEAD = {
+    1: {
+        "name": "Marikina Main Office",
+        "label": "Marikina",
+        "address": "No. 5 Chile St., Greenheights Subd., Phase 1, Concepcion Uno, Marikina City",
+        "phone": "+63 (02) 8870-1879 / 8463-6836",
+        "email": "matestlaboratory.chile@gmail.com",
+    },
+    2: {
+        "name": "Pateros Branch",
+        "label": "Pateros",
+        "address": "Unit C 25 F. Angeles St., Brgy. Sto. Rosario-Kanluran, Pateros, Metro Manila",
+        "phone": "+63 (02) 7949-9033 / 8642-0664",
+        "email": "matestlaboratory.pateros@gmail.com",
+    },
+}
+
+
+def get_branch_letterhead(branch_id):
+    try:
+        normalized = int(branch_id or 1)
+    except Exception:
+        normalized = 1
+
+    return BRANCH_LETTERHEAD.get(normalized, BRANCH_LETTERHEAD[1])
+
+
+def safe_text(value):
+    if value is None or value == "":
+        return "-"
+
+    return str(value)
+
+
+def format_report_datetime(value):
+    if not value:
+        return "-"
+
+    try:
+        if isinstance(value, datetime):
+            return value.strftime("%b %d, %Y %I:%M %p")
+
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        return parsed.strftime("%b %d, %Y %I:%M %p")
+    except Exception:
+        return str(value)
+
+
+def get_final_test_result(test_data):
+    if not isinstance(test_data, dict):
+        return "-"
+
+    return (
+        test_data.get("qa_final_result")
+        or test_data.get("final_result")
+        or test_data.get("result")
+        or "-"
+    )
+
+
+def build_report_verification_code(sample):
+    payload = {
+        "sample_id": sample.get("sample_id"),
+        "client_name": sample.get("client_name"),
+        "project_reference": sample.get("project_reference"),
+        "branch_id": sample.get("branch_id"),
+        "confidence_score": sample.get("confidence_score"),
+        "current_state": sample.get("current_state"),
+        "updated_at": str(sample.get("updated_at") or ""),
+    }
+
+    raw = json.dumps(payload, sort_keys=True, default=str)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16].upper()
+
+
+def draw_wrapped_text(pdf, text, x, y, max_width, line_height=10, font_name="Helvetica", font_size=8):
+    pdf.setFont(font_name, font_size)
+
+    words = safe_text(text).split()
+    lines = []
+    current = ""
+
+    for word in words:
+        proposed = f"{current} {word}".strip()
+
+        if pdf.stringWidth(proposed, font_name, font_size) <= max_width:
+            current = proposed
+        else:
+            if current:
+                lines.append(current)
+            current = word
+
+    if current:
+        lines.append(current)
+
+    for line in lines:
+        pdf.drawString(x, y, line)
+        y -= line_height
+
+    return y
+
+
+def draw_report_header(pdf, sample):
+    width, height = A4
+    assets_dir = Path(__file__).resolve().parents[1] / "assets"
+    matest_logo = assets_dir / "MATEST.png"
+    dpwh_logo = assets_dir / "DPWH.png"
+
+    branch = get_branch_letterhead(sample.get("branch_id"))
+
+    top_y = height - 16 * mm
+
+    if matest_logo.exists():
+        pdf.drawImage(
+            str(matest_logo),
+            15 * mm,
+            top_y - 18 * mm,
+            width=58 * mm,
+            height=18 * mm,
+            preserveAspectRatio=True,
+            mask="auto",
+        )
+    else:
+        pdf.setFont("Helvetica-Bold", 22)
+        pdf.setFillColor(colors.HexColor("#f58220"))
+        pdf.drawString(15 * mm, top_y - 10 * mm, "Matest")
+        pdf.setFillColor(colors.black)
+
+    if dpwh_logo.exists():
+        pdf.drawImage(
+            str(dpwh_logo),
+            76 * mm,
+            top_y - 18 * mm,
+            width=18 * mm,
+            height=18 * mm,
+            preserveAspectRatio=True,
+            mask="auto",
+        )
+    else:
+        pdf.setFont("Helvetica-Bold", 6)
+        pdf.drawString(76 * mm, top_y - 8 * mm, "DPWH-BRS")
+        pdf.drawString(76 * mm, top_y - 12 * mm, "Accredited")
+
+    pdf.setStrokeColor(colors.HexColor("#333333"))
+    pdf.setLineWidth(0.8)
+    pdf.line(100 * mm, top_y + 2 * mm, 100 * mm, top_y - 21 * mm)
+
+    pdf.setFont("Helvetica-Bold", 7)
+    pdf.setFillColor(colors.black)
+
+    right_x = 104 * mm
+    right_y = top_y - 1 * mm
+
+    pdf.drawString(right_x, right_y, f"{branch['label']}: {branch['address']}")
+    right_y -= 4 * mm
+    pdf.drawString(right_x, right_y, f"Phone: {branch['phone']}")
+    right_y -= 4 * mm
+    pdf.drawString(right_x, right_y, f"Email: {branch['email']}")
+
+    right_y -= 6 * mm
+    pdf.setFont("Helvetica", 6.5)
+    pdf.drawString(right_x, right_y, "Laboratory Services and Technical Solutions Inc.")
+
+    pdf.setStrokeColor(colors.black)
+    pdf.setLineWidth(1)
+    pdf.line(15 * mm, top_y - 24 * mm, width - 15 * mm, top_y - 24 * mm)
+    pdf.setLineWidth(0.4)
+    pdf.line(15 * mm, top_y - 25.5 * mm, width - 15 * mm, top_y - 25.5 * mm)
+
+
+def draw_field(pdf, label, value, x, y, label_width=34 * mm, value_width=55 * mm):
+    pdf.setFont("Helvetica-Bold", 7)
+    pdf.setFillColor(colors.HexColor("#374151"))
+    pdf.drawString(x, y, label.upper())
+
+    pdf.setFont("Helvetica", 8)
+    pdf.setFillColor(colors.black)
+    draw_wrapped_text(pdf, safe_text(value), x + label_width, y, value_width, 9, "Helvetica", 8)
+
+
+def draw_section_title(pdf, title, x, y, width):
+    pdf.setFillColor(colors.HexColor("#f3f4f6"))
+    pdf.rect(x, y - 5, width, 14, stroke=0, fill=1)
+
+    pdf.setFillColor(colors.black)
+    pdf.setFont("Helvetica-Bold", 9)
+    pdf.drawString(x + 4, y, title.upper())
+
+
+def draw_key_value_table(pdf, rows, x, y, width, row_height=16):
+    label_width = width * 0.36
+
+    pdf.setStrokeColor(colors.HexColor("#d1d5db"))
+    pdf.setLineWidth(0.4)
+
+    for label, value in rows:
+        pdf.rect(x, y - row_height + 4, width, row_height, stroke=1, fill=0)
+
+        pdf.setFillColor(colors.HexColor("#f9fafb"))
+        pdf.rect(x, y - row_height + 4, label_width, row_height, stroke=0, fill=1)
+
+        pdf.setFillColor(colors.HexColor("#374151"))
+        pdf.setFont("Helvetica-Bold", 7)
+        pdf.drawString(x + 5, y - 7, safe_text(label).upper())
+
+        pdf.setFillColor(colors.black)
+        pdf.setFont("Helvetica", 8)
+        pdf.drawString(x + label_width + 5, y - 7, safe_text(value))
+
+        y -= row_height
+
+    return y
+
+
+def build_official_sample_report_pdf(sample):
+    buffer = BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=A4)
+
+    width, height = A4
+    margin_x = 15 * mm
+
+    metadata = sample.get("device_metadata") or {}
+    if isinstance(metadata, str):
+        try:
+            metadata = json.loads(metadata)
+        except Exception:
+            metadata = {}
+
+    payment = metadata.get("payment") or {}
+    qa = metadata.get("qa") or {}
+    test_data = metadata.get("test_data") or {}
+    test_values = test_data.get("values") or {}
+    trf = metadata.get("trf") or {}
+    preprocessing = metadata.get("preprocessing") or {}
+
+    verification_code = build_report_verification_code(sample)
+
+    draw_report_header(pdf, sample)
+
+    y = height - 50 * mm
+
+    pdf.setFont("Helvetica-Bold", 13)
+    pdf.setFillColor(colors.black)
+    pdf.drawCentredString(width / 2, y, "OFFICIAL LABORATORY TEST REPORT")
+
+    y -= 8 * mm
+
+    pdf.setFont("Helvetica", 8)
+    pdf.drawCentredString(
+        width / 2,
+        y,
+        "Computer-generated report based on released QA-authorized laboratory records",
+    )
+
+    y -= 12 * mm
+
+    draw_section_title(pdf, "Report Tracking Information", margin_x, y, width - 30 * mm)
+    y -= 9 * mm
+
+    left_x = margin_x
+    right_x = width / 2 + 5 * mm
+
+    draw_field(pdf, "Sample ID", sample.get("sample_id"), left_x, y)
+    draw_field(pdf, "Branch", get_branch_letterhead(sample.get("branch_id"))["label"], right_x, y)
+
+    y -= 9 * mm
+    draw_field(pdf, "Client", sample.get("client_name"), left_x, y)
+    draw_field(pdf, "Project", sample.get("project_reference"), right_x, y)
+
+    y -= 9 * mm
+    draw_field(pdf, "Material", sample.get("material_type") or sample.get("ai_predicted_label"), left_x, y)
+    draw_field(pdf, "Released At", format_report_datetime(qa.get("release_reviewed_at")), right_x, y)
+
+    y -= 14 * mm
+
+    draw_section_title(pdf, "AI Material Identification", margin_x, y, width - 30 * mm)
+    y -= 9 * mm
+
+    ai_rows = [
+        ("Predicted Material", sample.get("ai_predicted_label") or sample.get("material_type")),
+        ("Confidence Score", f"{round(float(sample.get('confidence_score') or 0) * 100, 2)}%"),
+        ("Model Version", sample.get("model_version")),
+        ("Decision", sample.get("decision")),
+        ("Quality Flags", ", ".join(preprocessing.get("quality_flags") or []) if isinstance(preprocessing, dict) else "-"),
+    ]
+
+    y = draw_key_value_table(pdf, ai_rows, margin_x, y, width - 30 * mm)
+    y -= 8 * mm
+
+    draw_section_title(pdf, "Test Result Summary", margin_x, y, width - 30 * mm)
+    y -= 9 * mm
+
+    test_rows = [
+        ("Test Name", test_values.get("test_name") or test_data.get("test_type")),
+        ("Standard", test_values.get("standard")),
+        ("System Result", test_data.get("system_result") or test_data.get("result")),
+        ("Final Result", get_final_test_result(test_data)),
+        ("System Remarks", test_data.get("system_remarks")),
+        ("Technician Remarks", test_data.get("remarks")),
+        ("Entered By", test_data.get("entered_by_name") or test_data.get("entered_by_display") or test_data.get("entered_by")),
+        ("Entered At", format_report_datetime(test_data.get("entered_at"))),
+    ]
+
+    y = draw_key_value_table(pdf, test_rows, margin_x, y, width - 30 * mm)
+    y -= 8 * mm
+
+    if y < 85 * mm:
+        pdf.showPage()
+        draw_report_header(pdf, sample)
+        y = height - 50 * mm
+
+    draw_section_title(pdf, "Recorded Test Values", margin_x, y, width - 30 * mm)
+    y -= 9 * mm
+
+    value_rows = []
+    for key, value in test_values.items():
+        if key in {"test_name", "standard", "evaluation_basis"}:
+            continue
+        value_rows.append((key.replace("_", " ").title(), value))
+
+    if not value_rows:
+        value_rows = [("Recorded Values", "No detailed values available")]
+
+    for label, value in value_rows:
+        if y < 35 * mm:
+            pdf.showPage()
+            draw_report_header(pdf, sample)
+            y = height - 50 * mm
+        y = draw_key_value_table(pdf, [(label, value)], margin_x, y, width - 30 * mm)
+
+    y -= 8 * mm
+
+    if y < 75 * mm:
+        pdf.showPage()
+        draw_report_header(pdf, sample)
+        y = height - 50 * mm
+
+    draw_section_title(pdf, "Payment and Release Clearance", margin_x, y, width - 30 * mm)
+    y -= 9 * mm
+
+    clearance_rows = [
+        ("Payment Status", payment.get("payment_status")),
+        ("Amount Paid", payment.get("amount_paid")),
+        ("Balance", payment.get("balance")),
+        ("Release Cleared", "Yes" if payment.get("financially_cleared_for_release") or payment.get("payment_status") == "Fully Paid" else "No"),
+        ("QA Release Reviewed By", qa.get("release_reviewed_by_name") or qa.get("release_reviewed_by_display") or qa.get("release_reviewed_by")),
+        ("QA Release Reviewed At", format_report_datetime(qa.get("release_reviewed_at"))),
+    ]
+
+    y = draw_key_value_table(pdf, clearance_rows, margin_x, y, width - 30 * mm)
+    y -= 12 * mm
+
+    pdf.setStrokeColor(colors.HexColor("#d1d5db"))
+    pdf.rect(margin_x, y - 33 * mm, width - 30 * mm, 33 * mm, stroke=1, fill=0)
+
+    pdf.setFont("Helvetica-Bold", 8)
+    pdf.setFillColor(colors.black)
+    pdf.drawString(margin_x + 5, y - 8, "DIGITAL AUTHORIZATION")
+
+    pdf.setFont("Helvetica", 8)
+    pdf.drawString(
+        margin_x + 5,
+        y - 20,
+        f"Authorized by: {qa.get('release_reviewed_by_name') or qa.get('release_reviewed_by_display') or qa.get('release_reviewed_by') or '-'}",
+    )
+    pdf.drawString(margin_x + 5, y - 32, f"Role: QA Engineer / Authorized Reviewer")
+    pdf.drawString(margin_x + 5, y - 44, f"Timestamp: {format_report_datetime(qa.get('release_reviewed_at'))}")
+
+    pdf.setFont("Helvetica-Bold", 8)
+    pdf.drawString(width / 2 + 10 * mm, y - 20, "Verification Code")
+    pdf.setFont("Courier-Bold", 10)
+    pdf.drawString(width / 2 + 10 * mm, y - 34, verification_code)
+
+    pdf.setFont("Helvetica", 7)
+    pdf.setFillColor(colors.HexColor("#6b7280"))
+    pdf.drawString(
+        margin_x,
+        18 * mm,
+        "This report is system-generated from MATRIQ records. Verify authenticity using the sample ID, audit trail, and verification code.",
+    )
+    pdf.drawRightString(width - margin_x, 18 * mm, f"Generated: {format_report_datetime(datetime.now())}")
+
+    pdf.save()
+    buffer.seek(0)
+
+    return buffer
+
+# ============================================================
 # SAMPLE REGISTRATION
 # ============================================================
 
@@ -1483,6 +1880,58 @@ def sample_detail(
     )
 
     return hydrated_item
+
+
+@router.get("/samples/{sample_id}/report/pdf")
+def sample_report_pdf(
+    sample_id: str,
+    request: Request,
+    current_user=Depends(
+        require_roles(
+            ROLE_QA,
+            ROLE_ADMIN,
+            ROLE_ACCOUNTING,
+        )
+    ),
+):
+    item = get_sample(sample_id)
+
+    if not item:
+        raise HTTPException(status_code=404, detail="Sample not found")
+
+    if current_user.get("role") != ROLE_ADMIN:
+        require_sample_branch_access(current_user, item)
+
+    if item.get("current_state") != "Released" and current_user.get("role") != ROLE_ADMIN:
+        raise HTTPException(
+            status_code=400,
+            detail="Official PDF report is available only after QA release.",
+        )
+
+    hydrated_item = hydrate_sample_user_names(item)
+    pdf_buffer = build_official_sample_report_pdf(hydrated_item)
+
+    log_event(
+        action="DOWNLOAD_SAMPLE_REPORT_PDF",
+        endpoint_accessed=f"/api/samples/{sample_id}/report/pdf",
+        user_id=current_user["user_id"],
+        sample_id=sample_id,
+        new_value={
+            "sample_id": sample_id,
+            "report_type": "official_pdf",
+        },
+        ip_address=request.client.host if request.client else None,
+    )
+
+    filename = f"{sample_id}-official-report.pdf"
+
+    return StreamingResponse(
+        pdf_buffer,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        },
+    )
 
 
 @router.get("/reviews")

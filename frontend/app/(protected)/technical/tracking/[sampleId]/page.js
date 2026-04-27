@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { apiClient } from "@/services/apiClient";
+import { apiClient, getStoredUser } from "@/services/apiClient";
 
 import Badge from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
@@ -11,9 +11,19 @@ import Card from "@/components/ui/Card";
 import EmptyState from "@/components/ui/EmptyState";
 import Loader from "@/components/ui/Loader";
 
+const PDF_DOWNLOAD_ROLES = new Set([
+  "QA Engineer",
+  "Accounting Staff",
+  "Administrator",
+]);
+
 export default function TrackingDetailPage() {
   const params = useParams();
   const sampleId = params?.sampleId;
+
+  const user = getStoredUser();
+  const role = user?.role || "";
+  const canDownloadOfficialReport = PDF_DOWNLOAD_ROLES.has(role);
 
   const [item, setItem] = useState(null);
   const [error, setError] = useState("");
@@ -117,6 +127,7 @@ export default function TrackingDetailPage() {
               testValues={testValues}
               qa={qa}
               onPrint={handlePrintReport}
+              canDownloadOfficialReport={canDownloadOfficialReport}
             />
           )}
 
@@ -431,13 +442,20 @@ export default function TrackingDetailPage() {
                     not imply material acceptance unless separately certified.
                   </p>
 
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={handlePrintReport}
-                  >
-                    Print / Save Report
-                  </Button>
+                  {canDownloadOfficialReport ? (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={handlePrintReport}
+                    >
+                      Print / Save Report
+                    </Button>
+                  ) : (
+                    <p className="sideNote">
+                      Official PDF printing is restricted to QA Engineers,
+                      Accounting Staff, and Administrators.
+                    </p>
+                  )}
                 </Card>
               )}
 
@@ -946,6 +964,7 @@ function OfficialReport({
   testValues,
   qa,
   onPrint,
+  canDownloadOfficialReport,
 }) {
   const systemResult = getSystemResult(testData) || "RECORDED";
   const finalResult = getFinalResult(testData) || systemResult;
@@ -958,12 +977,18 @@ function OfficialReport({
     <section className="official-report">
       <Card
         title="Laboratory Test Report Preview"
-        subtitle="Review the finalized report before printing or saving a PDF copy."
+        subtitle={
+          canDownloadOfficialReport
+            ? "Review the finalized report before printing or saving a PDF copy."
+            : "Review-only preview of the finalized report."
+        }
         className="no-print-card-header"
         actions={
-          <Button variant="primary" size="sm" onClick={onPrint}>
-            Print / Save PDF
-          </Button>
+          canDownloadOfficialReport ? (
+            <Button variant="primary" size="sm" onClick={onPrint}>
+              Print / Save PDF
+            </Button>
+          ) : null
         }
       >
         <article className="reportSheet">

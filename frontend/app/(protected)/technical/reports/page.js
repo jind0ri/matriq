@@ -20,12 +20,19 @@ const REPORT_COLUMNS = [
   { key: "test", label: "Test", width: "190px" },
   { key: "result", label: "Result", width: "130px" },
   { key: "released", label: "Released At", width: "155px" },
-  { key: "action", label: "Report", align: "right", width: "120px" },
+  { key: "action", label: "Report", align: "right", width: "230px" },
 ];
+
+const PDF_DOWNLOAD_ROLES = new Set([
+  "QA Engineer",
+  "Accounting Staff",
+  "Administrator",
+]);
 
 export default function ReportsPage() {
   const user = getStoredUser();
   const role = user?.role || "Lab Technician";
+  const canDownloadOfficialReport = PDF_DOWNLOAD_ROLES.has(role);
   const isAdmin = role === "Administrator";
   const userBranchId = Number(user?.branch_id);
 
@@ -65,6 +72,46 @@ export default function ReportsPage() {
     branchFilter !== "My" &&
     Number(resolveBranchFilter(branchFilter, userBranchId)) !==
       Number(userBranchId);
+
+  async function downloadSampleReport(sampleId) {
+    const token =
+      localStorage.getItem("access_token") || localStorage.getItem("token");
+
+    if (!token) {
+      setError("Missing login token. Please log in again.");
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `http://127.0.0.1:8000/api/samples/${sampleId}/report/pdf`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.detail || "Failed to download PDF report.");
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${sampleId}-official-report.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err.message || "Failed to download PDF report.");
+    }
+  }
 
   async function loadReports() {
     setLoading(true);
@@ -199,7 +246,7 @@ export default function ReportsPage() {
               ? `You are viewing all cloud-synced released reports. This page is read-only; operational actions remain branch-aware in Workflow.`
               : isOtherBranchView
                 ? `You are viewing ${branchViewLabel} released reports for monitoring. This page is read-only.`
-                : "Released reports document actual laboratory outcomes. A failed result can still be released because release confirms report authorization, not material acceptance."}
+                : "Released reports are viewable for monitoring. Official PDF download is restricted to QA Engineers, Accounting Staff, and Administrators."}
         </span>
       </section>
 
@@ -308,12 +355,26 @@ export default function ReportsPage() {
                       </td>
 
                       <td className="right">
-                        <Link
-                          href={`/technical/tracking/${item.sample_id}`}
-                          className="reportLink"
-                        >
-                          Open
-                        </Link>
+                        <div className="reportActions">
+                          {canDownloadOfficialReport && (
+                            <button
+                              type="button"
+                              className="reportButton"
+                              onClick={() =>
+                                downloadSampleReport(item.sample_id)
+                              }
+                            >
+                              Download PDF
+                            </button>
+                          )}
+
+                          <Link
+                            href={`/technical/tracking/${item.sample_id}`}
+                            className="reportLink"
+                          >
+                            View
+                          </Link>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -430,6 +491,39 @@ export default function ReportsPage() {
           text-align: right;
         }
 
+        .reportActions {
+          display: inline-flex;
+          align-items: center;
+          justify-content: flex-end;
+          gap: 8px;
+          min-width: 210px;
+        }
+
+        .reportButton {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-height: 32px;
+          padding: 0 12px;
+          border: 1px solid var(--color-brand);
+          border-radius: var(--radius-md);
+          background: var(--color-brand);
+          color: #ffffff;
+          font-size: var(--text-xs);
+          font-weight: 600;
+          text-decoration: none;
+          white-space: nowrap;
+          cursor: pointer;
+          transition:
+            background-color var(--transition-base),
+            border-color var(--transition-base),
+            opacity var(--transition-base);
+        }
+
+        .reportButton:hover {
+          opacity: 0.88;
+        }
+
         :global(.reportLink) {
           display: inline-flex;
           align-items: center;
@@ -458,7 +552,7 @@ export default function ReportsPage() {
         }
 
         :global(.reportsTable table) {
-          min-width: 1040px;
+          min-width: 1220px;
         }
 
         @media (max-width: 900px) {
