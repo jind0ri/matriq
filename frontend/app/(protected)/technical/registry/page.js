@@ -970,55 +970,143 @@ export default function RegistryPage() {
           background: var(--color-overlay);
         }
 
-        @media (max-width: 1180px) {
-          .toolbar {
-            grid-template-columns: minmax(0, 1fr) 180px 220px;
-          }
+@media (max-width: 1180px) {
+  .toolbar {
+    grid-template-columns: minmax(0, 1fr) 180px 220px;
+  }
 
-          .viewToggle {
-            justify-content: flex-start;
-          }
-        }
+  .viewToggle {
+    justify-content: flex-start;
+  }
+}
 
-        @media (max-width: 1080px) {
-          .summary {
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-          }
+@media (max-width: 1080px) {
+  .summary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 
-          .toolbar {
-            grid-template-columns: 1fr;
-          }
+  .toolbar {
+    grid-template-columns: 1fr;
+  }
 
-          .viewToggle {
-            justify-content: flex-start;
-          }
-        }
+  .viewToggle {
+    justify-content: flex-start;
+  }
+}
 
-        @media (max-width: 720px) {
-          .header {
-            flex-direction: column;
-          }
+@media (max-width: 720px) {
+  .page {
+    gap: 18px;
+  }
 
-          .summary {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-          }
-        }
+  .header {
+    flex-direction: column;
+    align-items: stretch;
+  }
 
-        @media (max-width: 640px) {
-          .grid {
-            grid-template-columns: 1fr;
-          }
+  .header :global(button) {
+    width: 100%;
+  }
 
-          .sampleMetaGrid,
-          .sampleMetaGrid.bottom {
-            grid-template-columns: 1fr;
-          }
-        }
+  .summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
 
-        @media (max-width: 520px) {
-          .summary {
-            grid-template-columns: 1fr;
-          }
+  .summary div {
+    padding: 10px;
+    border: 1px solid var(--color-border-soft);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+  }
+
+  .toolbar {
+    gap: 10px;
+  }
+
+  .toolbar :global(input),
+  .toolbar :global(select),
+  .toolbar :global(button) {
+    width: 100%;
+  }
+
+  .savedFilters {
+    align-items: stretch;
+  }
+
+  .savedFilters :global(button) {
+    width: 100%;
+  }
+
+  .savedList {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .savedFilterBtn {
+    width: 100%;
+    min-height: 38px;
+    text-align: left;
+  }
+
+  .viewToggle {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .iconToggle {
+    width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .sampleCard {
+    padding: 14px;
+  }
+
+  .sampleCardTop {
+    flex-direction: column;
+  }
+
+  .sampleMetaGrid,
+  .sampleMetaGrid.bottom {
+    grid-template-columns: 1fr;
+  }
+
+  .notice {
+    padding: 11px 12px;
+  }
+
+  :global(.registryTable) {
+    overflow-x: auto;
+  }
+
+  :global(.registryTable table) {
+    min-width: 860px;
+  }
+}
+
+@media (max-width: 520px) {
+  .summary {
+    grid-template-columns: 1fr;
+  }
+
+  h1 {
+    font-size: 16px;
+  }
+
+  .subtitle {
+    font-size: 10.5px;
+  }
+
+  .sampleCardTop strong {
+    font-size: 14px;
+  }
+}
         }
       `}</style>
     </div>

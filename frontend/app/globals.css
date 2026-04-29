@@ -511,4 +511,64 @@ html[data-theme="dark"] td {
     box-shadow: none !important;
     transform: none !important;
   }
+
+  /* ============================================================
+   MOBILE RESPONSIVE SAFETY PATCH
+   ============================================================ */
+
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+img,
+video,
+canvas,
+svg {
+  max-width: 100%;
+}
+
+.page {
+  width: 100%;
+  max-width: 100%;
+}
+
+@media (max-width: 768px) {
+  body {
+    font-size: 14px;
+  }
+
+  .page {
+    gap: 16px !important;
+  }
+
+  table {
+    min-width: 720px;
+  }
+
+  input,
+  select,
+  textarea,
+  button {
+    min-height: 40px;
+  }
+}
+
+@media (max-width: 520px) {
+  .page-title {
+    font-size: 22px;
+  }
+
+  .page-subtitle {
+    font-size: 12px;
+  }
+
+  .surface,
+  .surface-interactive,
+  .panel,
+  .muted-panel {
+    border-radius: 12px;
+  }
+}
 }
