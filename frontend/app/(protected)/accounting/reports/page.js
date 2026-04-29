@@ -199,6 +199,16 @@ export default function AccountingReportsPage() {
             View Invoices
           </Link>
 
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() =>
+              exportAccountingReportCSV(visibleInvoices, branchLabel)
+            }
+          >
+            Export CSV
+          </Button>
+
           <Button variant="secondary" size="sm" onClick={loadData}>
             Refresh
           </Button>
@@ -656,4 +666,63 @@ function formatUser(userId) {
 
 function formatCurrency(value) {
   return `₱${Number(value || 0).toLocaleString()}`;
+}
+
+function exportAccountingReportCSV(invoices, branchLabel) {
+  if (!Array.isArray(invoices) || invoices.length === 0) {
+    alert("No accounting records available to export.");
+    return;
+  }
+
+  const headers = [
+    "Invoice ID",
+    "Sample ID",
+    "Client Name",
+    "Branch",
+    "Created By",
+    "Amount",
+    "Status",
+    "Created At",
+    "Updated At",
+    "Paid At",
+  ];
+
+  const rows = invoices.map((item) => [
+    item.invoice_id || "",
+    item.sample_id || "",
+    item.client_name || "",
+    formatBranch(item.branch_id),
+    item.created_by_name ||
+      item.created_by_display ||
+      item.created_by_full_name ||
+      formatUser(item.created_by),
+    Number(item.amount || 0),
+    item.status || "",
+    item.created_at || "",
+    item.updated_at || "",
+    item.paid_at || "",
+  ]);
+
+  const csv = [headers, ...rows]
+    .map((row) =>
+      row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(","),
+    )
+    .join("\n");
+
+  const blob = new Blob([csv], {
+    type: "text/csv;charset=utf-8;",
+  });
+
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+
+  const date = new Date().toISOString().slice(0, 10);
+  link.href = url;
+  link.download = `matriq-accounting-report-${branchLabel.replaceAll(" ", "-")}-${date}.csv`;
+
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+
+  URL.revokeObjectURL(url);
 }

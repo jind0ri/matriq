@@ -70,6 +70,48 @@ export default function TrackingDetailPage() {
     window.print();
   }
 
+  async function handleDownloadExcelReport() {
+    const token =
+      localStorage.getItem("access_token") || localStorage.getItem("token");
+
+    if (!token) {
+      setError("Missing login token. Please log in again.");
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `http://127.0.0.1:8000/api/samples/${sampleId}/report/excel`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        throw new Error(
+          errorData?.detail || "Failed to download Excel report.",
+        );
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+
+      link.href = url;
+      link.download = `${sampleId}-official-report.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err.message || "Failed to download Excel report.");
+    }
+  }
+
   return (
     <div className="page">
       <header className="header no-print">
@@ -127,6 +169,7 @@ export default function TrackingDetailPage() {
               testValues={testValues}
               qa={qa}
               onPrint={handlePrintReport}
+              onDownloadExcel={handleDownloadExcelReport}
               canDownloadOfficialReport={canDownloadOfficialReport}
             />
           )}
@@ -443,16 +486,26 @@ export default function TrackingDetailPage() {
                   </p>
 
                   {canDownloadOfficialReport ? (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={handlePrintReport}
-                    >
-                      Print / Save Report
-                    </Button>
+                    <div className="sideActions">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={handlePrintReport}
+                      >
+                        Print / Save Report
+                      </Button>
+
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={handleDownloadExcelReport}
+                      >
+                        Download Excel
+                      </Button>
+                    </div>
                   ) : (
                     <p className="sideNote">
-                      Official PDF printing is restricted to QA Engineers,
+                      Official report downloads are restricted to QA Engineers,
                       Accounting Staff, and Administrators.
                     </p>
                   )}
@@ -653,6 +706,11 @@ export default function TrackingDetailPage() {
           font-weight: 500;
           text-transform: uppercase;
           letter-spacing: 0.05em;
+        }
+
+        .sideActions {
+          display: grid;
+          gap: 8px;
         }
 
         :global(.sideLinkButton) {
@@ -964,6 +1022,7 @@ function OfficialReport({
   testValues,
   qa,
   onPrint,
+  onDownloadExcel,
   canDownloadOfficialReport,
 }) {
   const systemResult = getSystemResult(testData) || "RECORDED";
@@ -985,9 +1044,15 @@ function OfficialReport({
         className="no-print-card-header"
         actions={
           canDownloadOfficialReport ? (
-            <Button variant="primary" size="sm" onClick={onPrint}>
-              Print / Save PDF
-            </Button>
+            <div className="reportActionGroup">
+              <Button variant="primary" size="sm" onClick={onPrint}>
+                Print / Save PDF
+              </Button>
+
+              <Button variant="secondary" size="sm" onClick={onDownloadExcel}>
+                Download Excel
+              </Button>
+            </div>
           ) : null
         }
       >
@@ -1322,6 +1387,14 @@ function OfficialReport({
           gap: 40px;
           margin-top: 38px;
           align-items: end;
+        }
+
+        .reportActionGroup {
+          display: inline-flex;
+          align-items: center;
+          justify-content: flex-end;
+          gap: 8px;
+          flex-wrap: wrap;
         }
 
         .signatureBlock {

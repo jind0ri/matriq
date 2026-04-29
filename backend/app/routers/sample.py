@@ -13,6 +13,8 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
 from ..config import (
     ROLE_ACCOUNTING,
@@ -970,13 +972,53 @@ def get_final_test_result(test_data):
     )
 
 
+def get_ai_confidence_score(sample):
+    for field in ("confidence_score", "ai_confidence_score"):
+        value = sample.get(field)
+
+        if value is None or value == "":
+            continue
+
+        try:
+            return float(value)
+        except Exception:
+            continue
+
+    return None
+
+
+def format_confidence_score(sample):
+    confidence = get_ai_confidence_score(sample)
+
+    if confidence is None:
+        return "-"
+
+    return f"{round(confidence * 100, 2)}%"
+
+
+def format_report_cell_value(value):
+    if value is None or value == "":
+        return "-"
+
+    if isinstance(value, datetime):
+        return format_report_datetime(value)
+
+    if isinstance(value, list):
+        return ", ".join(safe_text(item) for item in value) or "-"
+
+    if isinstance(value, dict):
+        return json.dumps(value, ensure_ascii=False)
+
+    return str(value)
+
+
 def build_report_verification_code(sample):
     payload = {
         "sample_id": sample.get("sample_id"),
         "client_name": sample.get("client_name"),
         "project_reference": sample.get("project_reference"),
         "branch_id": sample.get("branch_id"),
-        "confidence_score": sample.get("confidence_score"),
+        "confidence_score": get_ai_confidence_score(sample),
         "current_state": sample.get("current_state"),
         "updated_at": str(sample.get("updated_at") or ""),
     }
@@ -1190,7 +1232,7 @@ def build_official_sample_report_pdf(sample):
 
     ai_rows = [
         ("Predicted Material", sample.get("ai_predicted_label") or sample.get("material_type")),
-        ("Confidence Score", f"{round(float(sample.get('confidence_score') or 0) * 100, 2)}%"),
+        ("Confidence Score", format_confidence_score(sample)),
         ("Model Version", sample.get("model_version")),
         ("Decision", sample.get("decision")),
         ("Quality Flags", ", ".join(preprocessing.get("quality_flags") or []) if isinstance(preprocessing, dict) else "-"),
@@ -1295,6 +1337,208 @@ def build_official_sample_report_pdf(sample):
     pdf.save()
     buffer.seek(0)
 
+    return buffer
+
+
+def build_official_sample_report_excel(sample):
+    buffer = BytesIO()
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Official Report"
+
+    metadata = sample.get("device_metadata") or {}
+    if isinstance(metadata, str):
+        try:
+            metadata = json.loads(metadata)
+        except Exception:
+            metadata = {}
+
+    payment = metadata.get("payment") or {}
+    qa = metadata.get("qa") or {}
+    test_data = metadata.get("test_data") or {}
+    test_values = test_data.get("values") or {}
+    trf = metadata.get("trf") or {}
+    preprocessing = metadata.get("preprocessing") or {}
+
+    verification_code = build_report_verification_code(sample)
+    branch = get_branch_letterhead(sample.get("branch_id"))
+
+    workbook.properties.creator = "MATRIQ"
+    workbook.properties.title = f"Official Laboratory Test Report {sample.get('sample_id')}"
+    workbook.properties.subject = "Official laboratory report export"
+
+    sheet.sheet_view.showGridLines = False
+    sheet.freeze_panes = "A6"
+    sheet.page_setup.orientation = "portrait"
+    sheet.page_setup.fitToWidth = 1
+    sheet.page_setup.fitToHeight = 0
+    sheet.sheet_properties.pageSetUpPr.fitToPage = True
+
+    widths = {
+        "A": 22,
+        "B": 28,
+        "C": 20,
+        "D": 22,
+        "E": 28,
+        "F": 20,
+    }
+
+    for column, width in widths.items():
+        sheet.column_dimensions[column].width = width
+
+    section_fill = PatternFill("solid", fgColor="F3F4F6")
+    title_fill = PatternFill("solid", fgColor="111827")
+    label_fill = PatternFill("solid", fgColor="F9FAFB")
+    thin_gray = Side(style="thin", color="D1D5DB")
+    table_border = Border(
+        left=thin_gray,
+        right=thin_gray,
+        top=thin_gray,
+        bottom=thin_gray,
+    )
+    label_font = Font(bold=True, color="374151", size=9)
+    value_font = Font(color="111827", size=10)
+    section_font = Font(bold=True, color="111827", size=10)
+
+    def style_range(row, start_col=1, end_col=6, fill=None, font=None):
+        for col in range(start_col, end_col + 1):
+            cell = sheet.cell(row=row, column=col)
+            cell.border = table_border
+            cell.alignment = Alignment(vertical="top", wrap_text=True)
+            if fill:
+                cell.fill = fill
+            if font:
+                cell.font = font
+
+    def write_merged(row, start_col, end_col, value, fill=None, font=None, align="left"):
+        sheet.merge_cells(
+            start_row=row,
+            start_column=start_col,
+            end_row=row,
+            end_column=end_col,
+        )
+        cell = sheet.cell(row=row, column=start_col, value=value)
+        cell.alignment = Alignment(
+            horizontal=align,
+            vertical="center",
+            wrap_text=True,
+        )
+        if fill:
+            cell.fill = fill
+        if font:
+            cell.font = font
+        style_range(row, start_col, end_col, fill, font)
+        return cell
+
+    def write_section(row, title):
+        write_merged(row, 1, 6, title.upper(), section_fill, section_font)
+        sheet.row_dimensions[row].height = 21
+        return row + 1
+
+    def write_pair_row(row, left_label, left_value, right_label=None, right_value=None):
+        sheet.cell(row=row, column=1, value=left_label)
+        sheet.cell(row=row, column=2, value=format_report_cell_value(left_value))
+        sheet.merge_cells(start_row=row, start_column=2, end_row=row, end_column=3)
+
+        if right_label is not None:
+            sheet.cell(row=row, column=4, value=right_label)
+            sheet.cell(row=row, column=5, value=format_report_cell_value(right_value))
+            sheet.merge_cells(start_row=row, start_column=5, end_row=row, end_column=6)
+
+        for col in (1, 4):
+            cell = sheet.cell(row=row, column=col)
+            cell.fill = label_fill
+            cell.font = label_font
+
+        for col in (2, 5):
+            cell = sheet.cell(row=row, column=col)
+            cell.font = value_font
+
+        style_range(row)
+        sheet.row_dimensions[row].height = 24
+        return row + 1
+
+    write_merged(
+        1,
+        1,
+        6,
+        "OFFICIAL LABORATORY TEST REPORT",
+        title_fill,
+        Font(bold=True, color="FFFFFF", size=14),
+        "center",
+    )
+    sheet.row_dimensions[1].height = 26
+    write_merged(
+        2,
+        1,
+        6,
+        "Computer-generated report based on released QA-authorized laboratory records",
+        None,
+        Font(italic=True, color="6B7280", size=9),
+        "center",
+    )
+    write_pair_row(4, "Report No.", f"RPT-{sample.get('sample_id')}", "Generated", format_report_datetime(datetime.now()))
+
+    row = 6
+    row = write_section(row, "Report Tracking Information")
+    row = write_pair_row(row, "Sample ID", sample.get("sample_id"), "Branch", branch["label"])
+    row = write_pair_row(row, "Client", sample.get("client_name"), "Project", sample.get("project_reference"))
+    row = write_pair_row(row, "Material", sample.get("material_type") or sample.get("ai_predicted_label"), "Released At", qa.get("release_reviewed_at"))
+    row = write_pair_row(row, "Branch Address", branch["address"], "Contact", f"{branch['phone']} | {branch['email']}")
+
+    row += 1
+    row = write_section(row, "AI Material Identification")
+    row = write_pair_row(row, "Predicted Material", sample.get("ai_predicted_label") or sample.get("material_type"), "Confidence Score", format_confidence_score(sample))
+    row = write_pair_row(row, "Model Version", sample.get("model_version"), "Decision", sample.get("decision"))
+    row = write_pair_row(row, "Quality Flags", preprocessing.get("quality_flags") if isinstance(preprocessing, dict) else None)
+
+    row += 1
+    row = write_section(row, "Test Result Summary")
+    row = write_pair_row(row, "Test Name", test_values.get("test_name") or test_data.get("test_type"), "Standard", test_values.get("standard"))
+    row = write_pair_row(row, "System Result", test_data.get("system_result") or test_data.get("result"), "Final Result", get_final_test_result(test_data))
+    row = write_pair_row(row, "System Remarks", test_data.get("system_remarks"), "Technician Remarks", test_data.get("remarks"))
+    row = write_pair_row(row, "Entered By", test_data.get("entered_by_name") or test_data.get("entered_by_display") or test_data.get("entered_by"), "Entered At", test_data.get("entered_at"))
+
+    row += 1
+    row = write_section(row, "Recorded Test Values")
+    recorded_rows = [
+        (key.replace("_", " ").title(), value)
+        for key, value in test_values.items()
+        if key not in {"test_name", "standard", "evaluation_basis"}
+    ]
+
+    if not recorded_rows:
+        recorded_rows = [("Recorded Values", "No detailed values available")]
+
+    for label, value in recorded_rows:
+        row = write_pair_row(row, label, value)
+
+    row += 1
+    row = write_section(row, "Payment and Release Clearance")
+    row = write_pair_row(row, "Payment Status", payment.get("payment_status"), "Amount Paid", payment.get("amount_paid"))
+    row = write_pair_row(row, "Balance", payment.get("balance"), "Release Cleared", "Yes" if payment.get("financially_cleared_for_release") or payment.get("payment_status") == "Fully Paid" else "No")
+    row = write_pair_row(row, "QA Release Reviewed By", qa.get("release_reviewed_by_name") or qa.get("release_reviewed_by_display") or qa.get("release_reviewed_by"), "QA Release Reviewed At", qa.get("release_reviewed_at"))
+    row = write_pair_row(row, "TRF Reference", trf.get("trf_number") or trf.get("reference_number"), "Billing Notes", payment.get("billing_notes"))
+
+    row += 1
+    row = write_section(row, "Authorization")
+    row = write_pair_row(row, "Authorized Reviewer", qa.get("release_reviewed_by_name") or qa.get("release_reviewed_by_display") or qa.get("release_reviewed_by"), "Role", "QA Engineer / Authorized Reviewer")
+    row = write_pair_row(row, "Employee Signature", " ", "Date Signed", " ")
+    row = write_pair_row(row, "Verification Code", verification_code, "Report Timestamp", qa.get("release_reviewed_at"))
+
+    row += 1
+    write_merged(
+        row,
+        1,
+        6,
+        "This report is system-generated from MATRIQ records. Verify authenticity using the sample ID, audit trail, and verification code.",
+        None,
+        Font(color="6B7280", size=8),
+    )
+    sheet.row_dimensions[row].height = 30
+
+    workbook.save(buffer)
+    buffer.seek(0)
     return buffer
 
 # ============================================================
@@ -1928,6 +2172,58 @@ def sample_report_pdf(
     return StreamingResponse(
         pdf_buffer,
         media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        },
+    )
+
+
+@router.get("/samples/{sample_id}/report/excel")
+def sample_report_excel(
+    sample_id: str,
+    request: Request,
+    current_user=Depends(
+        require_roles(
+            ROLE_QA,
+            ROLE_ADMIN,
+            ROLE_ACCOUNTING,
+        )
+    ),
+):
+    item = get_sample(sample_id)
+
+    if not item:
+        raise HTTPException(status_code=404, detail="Sample not found")
+
+    if current_user.get("role") != ROLE_ADMIN:
+        require_sample_branch_access(current_user, item)
+
+    if item.get("current_state") != "Released" and current_user.get("role") != ROLE_ADMIN:
+        raise HTTPException(
+            status_code=400,
+            detail="Official Excel report is available only after QA release.",
+        )
+
+    hydrated_item = hydrate_sample_user_names(item)
+    excel_buffer = build_official_sample_report_excel(hydrated_item)
+
+    log_event(
+        action="DOWNLOAD_SAMPLE_REPORT_EXCEL",
+        endpoint_accessed=f"/api/samples/{sample_id}/report/excel",
+        user_id=current_user["user_id"],
+        sample_id=sample_id,
+        new_value={
+            "sample_id": sample_id,
+            "report_type": "official_excel",
+        },
+        ip_address=request.client.host if request.client else None,
+    )
+
+    filename = f"{sample_id}-official-report.xlsx"
+
+    return StreamingResponse(
+        excel_buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={
             "Content-Disposition": f'attachment; filename="{filename}"',
         },

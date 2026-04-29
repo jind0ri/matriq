@@ -8,11 +8,12 @@ import Badge from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 import EmptyState from "@/components/ui/EmptyState";
-import Input from "@/components/ui/Input";
 import Loader from "@/components/ui/Loader";
 import Modal from "@/components/ui/Modal";
-import Select from "@/components/ui/Select";
 import Table from "@/components/ui/Table";
+import Input from "@/components/ui/Input";
+import Select from "@/components/ui/Select";
+import { filterSamples } from "@/features/samples/sample.utils";
 
 const TABLE_COLUMNS = [
   { key: "sample", label: "Sample", width: "160px" },
@@ -31,9 +32,14 @@ export default function RegistryPage() {
 
   const [items, setItems] = useState([]);
   const [viewMode, setViewMode] = useState("list");
-  const [branchFilter, setBranchFilter] = useState(isAdmin ? "All" : "My");
-  const [statusFilter, setStatusFilter] = useState("All");
-  const [search, setSearch] = useState("");
+  const [filters, setFilters] = useState({
+    search: "",
+    branch: isAdmin ? "All" : "My",
+    status: "All",
+    material: "All",
+  });
+
+  const [savedFilters, setSavedFilters] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -61,13 +67,13 @@ export default function RegistryPage() {
     ];
   }, [isAdmin, userBranchId]);
 
-  const branchViewLabel = getBranchViewLabel(branchFilter, userBranchId);
-  const isCloudMonitoring = !isAdmin && branchFilter === "All";
+  const branchViewLabel = getBranchViewLabel(filters.branch, userBranchId);
+  const isCloudMonitoring = !isAdmin && filters.branch === "All";
   const isOtherBranchView =
     !isAdmin &&
-    branchFilter !== "All" &&
-    branchFilter !== "My" &&
-    Number(resolveBranchFilter(branchFilter, userBranchId)) !==
+    filters.branch !== "All" &&
+    filters.branch !== "My" &&
+    Number(resolveBranchFilter(filters.branch, userBranchId)) !==
       Number(userBranchId);
 
   function getMetadata(item) {
@@ -218,50 +224,45 @@ export default function RegistryPage() {
     setSelectedDetailsSample(null);
   }
 
+  function saveCurrentFilter() {
+    const name = prompt("Enter filter name:");
+
+    if (!name) return;
+
+    const newFilter = {
+      id: Date.now(),
+      name,
+      config: filters,
+    };
+
+    setSavedFilters((prev) => [...prev, newFilter]);
+  }
+
+  function applySavedFilter(savedFilter) {
+    setFilters(savedFilter.config);
+  }
+
   useEffect(() => {
     loadSamples();
   }, []);
 
   useEffect(() => {
-    if (!isAdmin && branchFilter !== "All" && branchFilter !== "My") {
-      const resolved = resolveBranchFilter(branchFilter, userBranchId);
+    if (!isAdmin && filters.branch !== "All" && filters.branch !== "My") {
+      const resolved = resolveBranchFilter(filters.branch, userBranchId);
       const isOwnBranch = Number(resolved) === Number(userBranchId);
 
       if (isOwnBranch) {
-        setBranchFilter("My");
+        setFilters((prev) => ({
+          ...prev,
+          branch: "My",
+        }));
       }
     }
-  }, [branchFilter, isAdmin, userBranchId]);
+  }, [filters.branch, isAdmin, userBranchId]);
 
   const visibleItems = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    const resolvedBranch = resolveBranchFilter(branchFilter, userBranchId);
-
-    return items.filter((item) => {
-      const material = normalizeMaterialName(
-        item.material_type || item.ai_predicted_label,
-      );
-
-      const matchesBranch =
-        resolvedBranch === "All" ||
-        Number(item.branch_id) === Number(resolvedBranch);
-
-      const matchesSearch =
-        !q ||
-        item.sample_id?.toLowerCase().includes(q) ||
-        item.client_name?.toLowerCase().includes(q) ||
-        item.project_reference?.toLowerCase().includes(q) ||
-        item.project_id?.toLowerCase().includes(q) ||
-        material.toLowerCase().includes(q) ||
-        item.material_type?.toLowerCase().includes(q) ||
-        item.ai_predicted_label?.toLowerCase().includes(q);
-
-      const matchesStatus =
-        statusFilter === "All" || item.current_state === statusFilter;
-
-      return matchesBranch && matchesSearch && matchesStatus;
-    });
-  }, [items, search, statusFilter, branchFilter, userBranchId]);
+    return filterSamples(items, filters, userBranchId);
+  }, [items, filters, userBranchId]);
 
   const summary = useMemo(() => {
     return visibleItems.reduce(
@@ -306,7 +307,9 @@ export default function RegistryPage() {
       {(isAdmin || isCloudMonitoring || isOtherBranchView) && (
         <section className="notice">
           <strong>
-            {isAdmin ? "Administrator Registry View" : "Cloud-Synced Monitoring"}
+            {isAdmin
+              ? "Administrator Registry View"
+              : "Cloud-Synced Monitoring"}
           </strong>
           <span>
             {isAdmin
@@ -360,61 +363,12 @@ export default function RegistryPage() {
           </section>
 
           <section className="toolbar">
-            <Input
-              name="registrySearch"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search sample ID, client, project, or material..."
+            <SampleFilters
+              filters={filters}
+              setFilters={setFilters}
+              branchOptions={branchOptions}
+              role={role}
             />
-
-            <Select
-              name="branchFilter"
-              value={branchFilter}
-              onChange={(event) => setBranchFilter(event.target.value)}
-            >
-              {branchOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </Select>
-
-            <Select
-              name="statusFilter"
-              value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value)}
-            >
-              <option value="All">All Queues</option>
-
-              {role === "Lab Technician" && (
-                <>
-                  <option value="Registered">Ready for Testing</option>
-                  <option value="In Testing">In Testing</option>
-                </>
-              )}
-
-              {role === "Senior Technician" && (
-                <option value="For Review">Manual Review</option>
-              )}
-
-              {role === "QA Engineer" && (
-                <>
-                  <option value="Registered">QA Pre-Test</option>
-                  <option value="For Review">QA Release</option>
-                  <option value="Released">Archive</option>
-                </>
-              )}
-
-              {role === "Administrator" && (
-                <>
-                  <option value="Registered">Registered</option>
-                  <option value="In Testing">In Testing</option>
-                  <option value="For Review">For Review</option>
-                  <option value="Released">Released</option>
-                  <option value="Archived">Archived</option>
-                </>
-              )}
-            </Select>
 
             <div className="viewToggle">
               <button
@@ -439,6 +393,27 @@ export default function RegistryPage() {
                 ▦
               </button>
             </div>
+          </section>
+
+          <section className="savedFilters">
+            <Button variant="secondary" size="sm" onClick={saveCurrentFilter}>
+              Save Current Filter
+            </Button>
+
+            {savedFilters.length > 0 && (
+              <div className="savedList">
+                {savedFilters.map((savedFilter) => (
+                  <button
+                    key={savedFilter.id}
+                    type="button"
+                    className="savedFilterBtn"
+                    onClick={() => applySavedFilter(savedFilter)}
+                  >
+                    {savedFilter.name}
+                  </button>
+                ))}
+              </div>
+            )}
           </section>
 
           {viewMode === "list" && (
@@ -715,9 +690,35 @@ export default function RegistryPage() {
 
         .toolbar {
           display: grid;
-          grid-template-columns: minmax(0, 1fr) 180px 220px auto;
+          grid-template-columns: minmax(0, 1fr) 180px 220px 220px auto;
           gap: 12px;
           align-items: end;
+        }
+
+        .savedFilters {
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+
+        .savedList {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+        }
+
+        .savedFilterBtn {
+          padding: 6px 10px;
+          border-radius: var(--radius-sm);
+          border: 1px solid var(--color-border-soft);
+          background: var(--color-surface);
+          color: var(--color-text-primary);
+          font-size: 11px;
+          cursor: pointer;
+        }
+
+        .savedFilterBtn:hover {
+          background: var(--color-overlay);
         }
 
         .viewToggle {
@@ -1021,6 +1022,99 @@ export default function RegistryPage() {
         }
       `}</style>
     </div>
+  );
+}
+
+function SampleFilters({ filters, setFilters, branchOptions, role }) {
+  return (
+    <>
+      <Input
+        name="registrySearch"
+        value={filters.search}
+        onChange={(event) =>
+          setFilters((prev) => ({
+            ...prev,
+            search: event.target.value,
+          }))
+        }
+        placeholder="Search sample ID, client, project, or material..."
+      />
+
+      <Select
+        name="branchFilter"
+        value={filters.branch}
+        onChange={(event) =>
+          setFilters((prev) => ({
+            ...prev,
+            branch: event.target.value,
+          }))
+        }
+      >
+        {branchOptions.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </Select>
+
+      <Select
+        name="statusFilter"
+        value={filters.status}
+        onChange={(event) =>
+          setFilters((prev) => ({
+            ...prev,
+            status: event.target.value,
+          }))
+        }
+      >
+        <option value="All">All Queues</option>
+
+        {role === "Lab Technician" && (
+          <>
+            <option value="Registered">Ready for Testing</option>
+            <option value="In Testing">In Testing</option>
+          </>
+        )}
+
+        {role === "Senior Technician" && (
+          <option value="For Review">Manual Review</option>
+        )}
+
+        {role === "QA Engineer" && (
+          <>
+            <option value="Registered">QA Pre-Test</option>
+            <option value="For Review">QA Release</option>
+            <option value="Released">Archive</option>
+          </>
+        )}
+
+        {role === "Administrator" && (
+          <>
+            <option value="Registered">Registered</option>
+            <option value="In Testing">In Testing</option>
+            <option value="For Review">For Review</option>
+            <option value="Released">Released</option>
+            <option value="Archived">Archived</option>
+          </>
+        )}
+      </Select>
+
+      <Select
+        name="materialFilter"
+        value={filters.material}
+        onChange={(event) =>
+          setFilters((prev) => ({
+            ...prev,
+            material: event.target.value,
+          }))
+        }
+      >
+        <option value="All">All Materials</option>
+        <option value="Concrete">Concrete</option>
+        <option value="Reinforcing Steel Bar">Reinforcing Steel Bar</option>
+        <option value="Soil Aggregates">Soil Aggregates</option>
+      </Select>
+    </>
   );
 }
 

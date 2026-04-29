@@ -20,7 +20,7 @@ const REPORT_COLUMNS = [
   { key: "test", label: "Test", width: "190px" },
   { key: "result", label: "Result", width: "130px" },
   { key: "released", label: "Released At", width: "155px" },
-  { key: "action", label: "Report", align: "right", width: "230px" },
+  { key: "action", label: "Report", align: "right", width: "280px" },
 ];
 
 const PDF_DOWNLOAD_ROLES = new Set([
@@ -73,7 +73,7 @@ export default function ReportsPage() {
     Number(resolveBranchFilter(branchFilter, userBranchId)) !==
       Number(userBranchId);
 
-  async function downloadSampleReport(sampleId) {
+  async function downloadSampleReport(sampleId, format = "pdf") {
     const token =
       localStorage.getItem("access_token") || localStorage.getItem("token");
 
@@ -83,8 +83,11 @@ export default function ReportsPage() {
     }
 
     try {
+      const isExcel = format === "excel";
       const response = await fetch(
-        `http://127.0.0.1:8000/api/samples/${sampleId}/report/pdf`,
+        `http://127.0.0.1:8000/api/samples/${sampleId}/report/${
+          isExcel ? "excel" : "pdf"
+        }`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -94,7 +97,10 @@ export default function ReportsPage() {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => null);
-        throw new Error(errorData?.detail || "Failed to download PDF report.");
+        throw new Error(
+          errorData?.detail ||
+            `Failed to download ${isExcel ? "Excel" : "PDF"} report.`,
+        );
       }
 
       const blob = await response.blob();
@@ -102,14 +108,14 @@ export default function ReportsPage() {
 
       const link = document.createElement("a");
       link.href = url;
-      link.download = `${sampleId}-official-report.pdf`;
+      link.download = `${sampleId}-official-report.${isExcel ? "xlsx" : "pdf"}`;
       document.body.appendChild(link);
       link.click();
       link.remove();
 
       window.URL.revokeObjectURL(url);
     } catch (err) {
-      setError(err.message || "Failed to download PDF report.");
+      setError(err.message || "Failed to download report.");
     }
   }
 
@@ -361,10 +367,22 @@ export default function ReportsPage() {
                               type="button"
                               className="reportButton"
                               onClick={() =>
-                                downloadSampleReport(item.sample_id)
+                                downloadSampleReport(item.sample_id, "pdf")
                               }
                             >
                               Download PDF
+                            </button>
+                          )}
+
+                          {canDownloadOfficialReport && (
+                            <button
+                              type="button"
+                              className="reportButton secondary"
+                              onClick={() =>
+                                downloadSampleReport(item.sample_id, "excel")
+                              }
+                            >
+                              Excel
                             </button>
                           )}
 
@@ -496,7 +514,7 @@ export default function ReportsPage() {
           align-items: center;
           justify-content: flex-end;
           gap: 8px;
-          min-width: 210px;
+          min-width: 260px;
         }
 
         .reportButton {
@@ -522,6 +540,18 @@ export default function ReportsPage() {
 
         .reportButton:hover {
           opacity: 0.88;
+        }
+
+        .reportButton.secondary {
+          border-color: var(--color-border-soft);
+          background: var(--color-surface);
+          color: var(--color-text-primary);
+          font-weight: 500;
+        }
+
+        .reportButton.secondary:hover {
+          border-color: var(--color-brand);
+          color: var(--color-brand);
         }
 
         :global(.reportLink) {
