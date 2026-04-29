@@ -12,45 +12,48 @@ export default function CameraCapture({ onCapture, onClose }) {
   const [error, setError] = useState("");
   const [facingMode, setFacingMode] = useState("environment");
 
-  const startCamera = useCallback(async (facing = facingMode) => {
-    setError("");
-    setCapturedImage(null);
+  const startCamera = useCallback(
+    async (facing = facingMode) => {
+      setError("");
+      setCapturedImage(null);
 
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
-    }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+      }
 
-    try {
-      const constraints = {
-        video: {
-          facingMode: facing,
-          width: { ideal: 1280 },
-          height: { ideal: 960 },
-        },
-        audio: false,
-      };
-
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      streamRef.current = stream;
-
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.onloadedmetadata = () => {
-          videoRef.current.play();
-          setIsStreaming(true);
+      try {
+        const constraints = {
+          video: {
+            facingMode: facing,
+            width: { ideal: 1280 },
+            height: { ideal: 960 },
+          },
+          audio: false,
         };
+
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        streamRef.current = stream;
+
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.onloadedmetadata = () => {
+            videoRef.current.play();
+            setIsStreaming(true);
+          };
+        }
+      } catch (err) {
+        console.error("Camera access error:", err);
+        if (err.name === "NotAllowedError") {
+          setError("Camera access denied. Please allow camera permissions.");
+        } else if (err.name === "NotFoundError") {
+          setError("No camera found on this device.");
+        } else {
+          setError("Could not access camera. Please try again.");
+        }
       }
-    } catch (err) {
-      console.error("Camera access error:", err);
-      if (err.name === "NotAllowedError") {
-        setError("Camera access denied. Please allow camera permissions.");
-      } else if (err.name === "NotFoundError") {
-        setError("No camera found on this device.");
-      } else {
-        setError("Could not access camera. Please try again.");
-      }
-    }
-  }, [facingMode]);
+    },
+    [facingMode],
+  );
 
   const stopCamera = useCallback(() => {
     if (streamRef.current) {
@@ -86,7 +89,7 @@ export default function CameraCapture({ onCapture, onClose }) {
         }
       },
       "image/jpeg",
-      0.9
+      0.9,
     );
   }, [stopCamera]);
 
@@ -97,7 +100,10 @@ export default function CameraCapture({ onCapture, onClose }) {
 
   const confirmCapture = useCallback(() => {
     if (capturedImage && onCapture) {
-      const timestamp = new Date().toISOString().replaceAll(":", "-").replaceAll(".", "-");
+      const timestamp = new Date()
+        .toISOString()
+        .replaceAll(":", "-")
+        .replaceAll(".", "-");
       const file = new File([capturedImage.blob], `camera-${timestamp}.jpg`, {
         type: "image/jpeg",
       });
@@ -117,8 +123,19 @@ export default function CameraCapture({ onCapture, onClose }) {
 
   return (
     <>
-      <div className="overlay" onClick={handleClose} onKeyDown={(e) => e.key === "Escape" && handleClose()} role="dialog" aria-modal="true" aria-label="Camera capture dialog">
-        <div className="modal" onClick={(e) => e.stopPropagation()} role="document">
+      <div
+        className="overlay"
+        onClick={handleClose}
+        onKeyDown={(e) => e.key === "Escape" && handleClose()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Camera capture dialog"
+      >
+        <div
+          className="modal"
+          onClick={(e) => e.stopPropagation()}
+          role="document"
+        >
           <div className="header">
             <h3>Capture Sample Image</h3>
             <button className="closeBtn" onClick={handleClose}>
@@ -146,7 +163,10 @@ export default function CameraCapture({ onCapture, onClose }) {
                     <ArrowsClockwise size={20} />
                     Retake
                   </button>
-                  <button className="actionBtn primary" onClick={confirmCapture}>
+                  <button
+                    className="actionBtn primary"
+                    onClick={confirmCapture}
+                  >
                     <Check size={20} />
                     Use Photo
                   </button>
@@ -170,7 +190,11 @@ export default function CameraCapture({ onCapture, onClose }) {
                 <canvas ref={canvasRef} style={{ display: "none" }} />
                 {isStreaming && (
                   <div className="cameraControls">
-                    <button className="switchBtn" onClick={switchCamera} title="Switch Camera">
+                    <button
+                      className="switchBtn"
+                      onClick={switchCamera}
+                      title="Switch Camera"
+                    >
                       <ArrowsClockwise size={24} />
                     </button>
                     <button className="captureBtn" onClick={capturePhoto}>
@@ -189,23 +213,25 @@ export default function CameraCapture({ onCapture, onClose }) {
         .overlay {
           position: fixed;
           inset: 0;
-          background: rgba(0, 0, 0, 0.7);
+          background: rgba(0, 0, 0, 0.78);
           display: flex;
           align-items: center;
           justify-content: center;
-          z-index: 1000;
+          z-index: 10000;
           padding: 20px;
         }
 
         .modal {
-          background: #fff;
+          background: var(--color-surface);
+          color: var(--color-text-primary);
+          border: 1px solid var(--color-border-soft);
           border-radius: 20px;
-          width: 100%;
-          max-width: 540px;
-          max-height: 90vh;
+          width: min(960px, 100%);
+          max-height: 94vh;
           overflow: hidden;
           display: flex;
           flex-direction: column;
+          box-shadow: var(--shadow-lg);
         }
 
         .header {
@@ -213,34 +239,38 @@ export default function CameraCapture({ onCapture, onClose }) {
           align-items: center;
           justify-content: space-between;
           padding: 16px 20px;
-          border-bottom: 1px solid #e5e7eb;
+          border-bottom: 1px solid var(--color-border-soft);
+          background: var(--color-surface);
         }
 
         .header h3 {
           margin: 0;
+          color: var(--color-text-primary);
           font-size: 18px;
-          font-weight: 600;
+          font-weight: 700;
         }
 
         .closeBtn {
-          border: none;
-          background: transparent;
+          border: 1px solid var(--color-border-soft);
+          background: var(--color-surface);
+          color: var(--color-text-primary);
           cursor: pointer;
-          padding: 4px;
-          border-radius: 8px;
+          padding: 6px;
+          border-radius: 10px;
           display: flex;
           align-items: center;
           justify-content: center;
         }
 
         .closeBtn:hover {
-          background: #f3f4f6;
+          background: var(--color-overlay);
         }
 
         .content {
-          padding: 20px;
+          padding: 16px;
           flex: 1;
           overflow: auto;
+          background: var(--color-surface);
         }
 
         .cameraContainer {
@@ -248,64 +278,57 @@ export default function CameraCapture({ onCapture, onClose }) {
           background: #000;
           border-radius: 16px;
           overflow: hidden;
-          aspect-ratio: 4/3;
+          min-height: 520px;
         }
 
         .videoPreview {
           width: 100%;
           height: 100%;
+          min-height: 520px;
           object-fit: cover;
+          display: block;
         }
 
         .loadingOverlay {
           position: absolute;
           inset: 0;
-          background: #1f2937;
+          background: #111827;
           display: flex;
           flex-direction: column;
           align-items: center;
           justify-content: center;
-          color: #9ca3af;
+          color: #d1d5db;
           gap: 12px;
         }
 
         .cameraControls {
           position: absolute;
-          bottom: 20px;
+          bottom: 24px;
           left: 0;
           right: 0;
           display: flex;
           align-items: center;
           justify-content: center;
-          gap: 24px;
+          gap: 28px;
+          padding: 0 20px;
         }
 
         .captureBtn {
-          width: 72px;
-          height: 72px;
+          width: 82px;
+          height: 82px;
           border-radius: 50%;
-          border: 4px solid #fff;
-          background: rgba(255, 255, 255, 0.2);
+          border: 5px solid #fff;
+          background: rgba(255, 255, 255, 0.18);
           cursor: pointer;
           display: flex;
           align-items: center;
           justify-content: center;
           color: #fff;
-          transition: all 0.2s;
-        }
-
-        .captureBtn:hover {
-          background: rgba(255, 255, 255, 0.3);
-          transform: scale(1.05);
-        }
-
-        .captureBtn:active {
-          transform: scale(0.95);
         }
 
         .switchBtn {
-          width: 48px;
-          height: 48px;
+          width: 54px;
+          height: 54px;
           border-radius: 50%;
           border: none;
           background: rgba(255, 255, 255, 0.2);
@@ -314,11 +337,6 @@ export default function CameraCapture({ onCapture, onClose }) {
           align-items: center;
           justify-content: center;
           color: #fff;
-          transition: all 0.2s;
-        }
-
-        .switchBtn:hover {
-          background: rgba(255, 255, 255, 0.3);
         }
 
         .previewContainer {
@@ -329,9 +347,10 @@ export default function CameraCapture({ onCapture, onClose }) {
 
         .previewImage {
           width: 100%;
+          max-height: 70vh;
           border-radius: 16px;
-          aspect-ratio: 4/3;
-          object-fit: cover;
+          object-fit: contain;
+          background: #000;
         }
 
         .captureActions {
@@ -348,53 +367,107 @@ export default function CameraCapture({ onCapture, onClose }) {
           padding: 14px 20px;
           border-radius: 12px;
           font-size: 15px;
-          font-weight: 600;
+          font-weight: 700;
           cursor: pointer;
           border: none;
-          transition: all 0.2s;
         }
 
         .actionBtn.primary {
-          background: #2563eb;
-          color: #fff;
-        }
-
-        .actionBtn.primary:hover {
-          background: #1d4ed8;
+          background: var(--color-brand);
+          color: var(--color-text-inverse);
         }
 
         .actionBtn.secondary {
-          background: #f3f4f6;
-          color: #374151;
-          border: 1px solid #d1d5db;
-        }
-
-        .actionBtn.secondary:hover {
-          background: #e5e7eb;
+          background: var(--color-overlay);
+          color: var(--color-text-primary);
+          border: 1px solid var(--color-border-soft);
         }
 
         .errorBox {
           text-align: center;
           padding: 40px 20px;
-          color: #dc2626;
-        }
-
-        .errorBox p {
-          margin-bottom: 16px;
+          color: var(--color-danger);
         }
 
         .retryBtn {
-          background: #2563eb;
-          color: #fff;
+          background: var(--color-brand);
+          color: var(--color-text-inverse);
           border: none;
           padding: 12px 24px;
           border-radius: 10px;
-          font-weight: 600;
+          font-weight: 700;
           cursor: pointer;
         }
 
-        .retryBtn:hover {
-          background: #1d4ed8;
+        @media (max-width: 768px) {
+          .overlay {
+            padding: 0;
+            align-items: stretch;
+          }
+
+          .modal {
+            width: 100vw;
+            height: 100dvh;
+            max-height: none;
+            border-radius: 0;
+            border: none;
+          }
+
+          .header {
+            min-height: 62px;
+            padding: 14px 16px;
+          }
+
+          .header h3 {
+            font-size: 17px;
+            color: var(--color-text-primary);
+          }
+
+          .content {
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+          }
+
+          .cameraContainer {
+            flex: 1;
+            min-height: calc(100dvh - 62px);
+            border-radius: 0;
+          }
+
+          .videoPreview {
+            min-height: calc(100dvh - 62px);
+          }
+
+          .cameraControls {
+            bottom: calc(env(safe-area-inset-bottom) + 30px);
+          }
+
+          .captureBtn {
+            width: 88px;
+            height: 88px;
+          }
+
+          .switchBtn {
+            width: 58px;
+            height: 58px;
+          }
+
+          .previewContainer {
+            min-height: calc(100dvh - 62px);
+            padding: 12px;
+            background: var(--color-surface);
+          }
+
+          .previewImage {
+            flex: 1;
+            max-height: none;
+            min-height: 0;
+          }
+
+          .captureActions {
+            padding-bottom: env(safe-area-inset-bottom);
+          }
         }
       `}</style>
     </>
