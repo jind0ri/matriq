@@ -28,7 +28,13 @@ LOCAL_SQLITE_PATH = os.getenv('LOCAL_SQLITE_PATH', str(DATA_DIR / 'matriq_local.
 JWT_SECRET = os.getenv('JWT_SECRET', 'matriq-dev-secret-key-32-characters-long')
 JWT_ALGORITHM = 'HS256'
 TOKEN_EXPIRE_MINUTES = int(os.getenv('TOKEN_EXPIRE_MINUTES', '480'))
-CORS_ORIGINS = os.getenv('CORS_ORIGINS', '*').split(',')
+raw = os.getenv('CORS_ORIGINS', '')
+
+CORS_ORIGINS = [
+    origin.strip()
+    for origin in raw.split(',')
+    if origin.strip()
+]
 
 MODEL_ROOT = BASE_DIR / 'assets' / 'ai_models'
 MODEL_REGISTRY_PATH = MODEL_ROOT / 'registry.json'

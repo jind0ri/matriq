@@ -9,7 +9,7 @@ from app.routers import auth, sample, validate, classify, audit, accounting, use
 app = FastAPI(title='Matriq AI Sample Management API')
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=CORS_ORIGINS if CORS_ORIGINS != ['*'] else ['*'],
+    allow_origins=CORS_ORIGINS if CORS_ORIGINS else ['*'],
     allow_credentials=True,
     allow_methods=['*'],
     allow_headers=['*'],
