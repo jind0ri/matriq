@@ -59,14 +59,13 @@ export default function Page() {
     branchId: userBranchId,
     staff: staffName,
 
-    // Payment Information
-    clientType: "Walk-in",
-    paymentStatus: "Unpaid",
-    amountPaid: "",
-    balance: "",
-    billingNotes: "",
-
     file: null,
+
+    sampleHandling: {
+      isWitnessed: false,
+      isRetrieved: false,
+      isDisposed: false,
+    },
   });
 
   const [previewUrl, setPreviewUrl] = useState("");
@@ -74,40 +73,40 @@ export default function Page() {
   const [error, setError] = useState("");
   const [showCamera, setShowCamera] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-const [testCodes, setTestCodes] = useState([]);
-const [testCodesByCategory, setTestCodesByCategory] = useState({});
-const [loadingTestCodes, setLoadingTestCodes] = useState(true);
-  
+  const [testCodes, setTestCodes] = useState([]);
+  const [testCodesByCategory, setTestCodesByCategory] = useState({});
+  const [loadingTestCodes, setLoadingTestCodes] = useState(true);
 
-const testCodeOptions = useMemo(() => {
-  return testCodes.map((t) => ({
-    code: t.code,
-    label: `${t.code} - ${t.name}`,
-    standard: t.standard,
-    name: t.name,
-  }));
-}, [testCodes]);
 
-useEffect(() => {
-  const fetchTestCodes = async () => {
-    try {
-      const data = await apiClient.getTestCodes();
+  const testCodeOptions = useMemo(() => {
+    return testCodes.map((t) => ({
+      code: t.code,
+      label: `${t.code} - ${t.name}`,
+      standard: t.standard,
+      name: t.name,
+    }));
+  }, [testCodes]);
 
-      const grouped = groupTestCodesByCategory(data);
+  useEffect(() => {
+    const fetchTestCodes = async () => {
+      try {
+        const data = await apiClient.getTestCodes();
 
-      setTestCodes(data);
-      setTestCodesByCategory(grouped);
-    } catch (err) {
-      console.error("Failed to load test codes:", err);
-      setTestCodes([]);
-      setTestCodesByCategory({});
-    } finally {
-      setLoadingTestCodes(false);
-    }
-  };
+        const grouped = groupTestCodesByCategory(data);
 
-  fetchTestCodes();
-}, []);
+        setTestCodes(data);
+        setTestCodesByCategory(grouped);
+      } catch (err) {
+        console.error("Failed to load test codes:", err);
+        setTestCodes([]);
+        setTestCodesByCategory({});
+      } finally {
+        setLoadingTestCodes(false);
+      }
+    };
+
+    fetchTestCodes();
+  }, []);
 
   useEffect(() => {
     setForm((prev) => ({
@@ -150,10 +149,14 @@ useEffect(() => {
     if (!form.projectId.trim()) missing.push("Project Identifier");
     if (!form.testCode.trim()) missing.push("Test Code");
     if (!form.requestedTestType.trim()) missing.push("Requested Test Type");
-    if (!form.clientType) missing.push("Client Type");
-    if (!form.paymentStatus) missing.push("Payment Status");
-    if (!form.amountPaid.trim()) missing.push("Amount Paid");
     if (!form.file) missing.push("Sample Image");
+
+    // NEW REQUIRED FIELDS
+    if (!form.supplierName.trim()) missing.push("Supplier Name");
+    if (!form.numberOfSamples.trim()) missing.push("Number of Samples");
+    if (!form.dateRequested) missing.push("Date Requested");
+    if (!form.dateTestingRequired) missing.push("Date Testing Required");
+    if (!form.timeTestingRequired) missing.push("Time Testing Required");
 
     return missing;
   }, [
@@ -161,10 +164,12 @@ useEffect(() => {
     form.projectId,
     form.testCode,
     form.requestedTestType,
-    form.clientType,
-    form.paymentStatus,
-    form.amountPaid,
     form.file,
+    form.supplierName,
+    form.numberOfSamples,
+    form.dateRequested,
+    form.dateTestingRequired,
+    form.timeTestingRequired,
   ]);
 
   const canAnalyze =
@@ -176,14 +181,24 @@ useEffect(() => {
     setError("");
   }
 
-function handleTestCodeChange(testCode) {
-  const selectedTest = testCodes.find((t) => t.code === testCode);
-  updateForm({
-    testCode: testCode,
-    testStandard: selectedTest?.standard || "",
-    requestedTestType: selectedTest?.name || "",
-  });
-}
+  function updateSampleHandling(field, value) {
+    setForm((prev) => ({
+      ...prev,
+      sampleHandling: {
+        ...prev.sampleHandling,
+        [field]: value,
+      },
+    }));
+  }
+
+  function handleTestCodeChange(testCode) {
+    const selectedTest = testCodes.find((t) => t.code === testCode);
+    updateForm({
+      testCode: testCode,
+      testStandard: selectedTest?.standard || "",
+      requestedTestType: selectedTest?.name || "",
+    });
+  }
 
   function handleCameraCapture(file) {
     updateForm({ file });
@@ -237,14 +252,12 @@ function handleTestCodeChange(testCode) {
           registry_branch: form.branchLabel,
           branch_id: form.branchId,
           terminal_staff: form.staff,
-        },
 
-        payment: {
-          client_type: form.clientType,
-          payment_status: form.paymentStatus,
-          amount_paid: form.amountPaid,
-          balance: form.balance,
-          billing_notes: form.billingNotes.trim(),
+          sample_handling: {
+            is_witnessed: form.sampleHandling.isWitnessed,
+            is_retrieved: form.sampleHandling.isRetrieved,
+            is_disposed: form.sampleHandling.isDisposed,
+          },
         },
       }),
     );
@@ -361,6 +374,7 @@ function handleTestCodeChange(testCode) {
                 <Input
                   label="Supplier Name"
                   value={form.supplierName}
+                  required
                   onChange={(event) =>
                     updateForm({ supplierName: event.target.value })
                   }
@@ -369,48 +383,51 @@ function handleTestCodeChange(testCode) {
                 <Input
                   label="Number of Samples"
                   value={form.numberOfSamples}
+                  required
+                  type="number"
                   onChange={(event) =>
                     updateForm({ numberOfSamples: event.target.value })
                   }
-                  placeholder="e.g. 3"
-                  type="number"
                 />
 
                 <Input
                   label="Date Requested"
                   value={form.dateRequested}
+                  required
+                  type="date"
                   onChange={(event) =>
                     updateForm({ dateRequested: event.target.value })
                   }
-                  type="date"
                 />
 
                 <Input
                   label="Date Testing Required"
                   value={form.dateTestingRequired}
+                  required
+                  type="date"
                   onChange={(event) =>
                     updateForm({ dateTestingRequired: event.target.value })
                   }
-                  type="date"
                 />
 
                 <Input
                   label="Time Testing Required"
                   value={form.timeTestingRequired}
+                  required
+                  type="time"
                   onChange={(event) =>
                     updateForm({ timeTestingRequired: event.target.value })
                   }
-                  type="time"
                 />
 
-<TestCodeSelect
-  label="Test Code"
-  value={form.testCode}
-  required
-  onChange={handleTestCodeChange}
-options={testCodeOptions}
-  loading={loadingTestCodes}
-/>
+                <TestCodeSelect
+                  label="Test Code"
+                  value={form.testCode}
+                  required
+                  onChange={handleTestCodeChange}
+                  options={testCodeOptions}
+                  loading={loadingTestCodes}
+                />
 
                 <Input
                   label="Test Standard"
@@ -447,65 +464,61 @@ options={testCodeOptions}
             </Card>
 
             <Card
-              title="Payment Information"
-              subtitle="Record the current payment status before testing and release."
+              title="Sample Handling Instructions"
+              subtitle="Define post-testing handling and witness requirements."
             >
               <div className="formGrid">
+
+                {/* Witnessed */}
                 <Select
-                  label="Client Type"
-                  name="clientType"
-                  value={form.clientType}
-                  required
-                  onChange={(event) =>
-                    updateForm({ clientType: event.target.value })
+                  label="Testing to be witnessed?"
+                  value={form.sampleHandling.isWitnessed ? "Yes" : "No"}
+                  onChange={(e) =>
+                    updateSampleHandling(
+                      "isWitnessed",
+                      e.target.value === "Yes"
+                    )
                   }
                 >
-                  <option value="Walk-in">Walk-in</option>
-                  <option value="Quotation">Quotation</option>
+                  <option value="No">No</option>
+                  <option value="Yes">Yes</option>
                 </Select>
 
+                {/* Retrieved */}
                 <Select
-                  label="Payment Status"
-                  name="paymentStatus"
-                  value={form.paymentStatus}
-                  required
-                  onChange={(event) =>
-                    updateForm({ paymentStatus: event.target.value })
+                  label="Sample to be retrieved after test?"
+                  value={form.sampleHandling.isRetrieved ? "Yes" : "No"}
+                  onChange={(e) =>
+                    updateSampleHandling(
+                      "isRetrieved",
+                      e.target.value === "Yes"
+                    )
                   }
                 >
-                  <option value="Unpaid">Unpaid</option>
-                  <option value="Downpayment Paid">Downpayment Paid</option>
-                  <option value="PO Submitted">PO Submitted</option>
-                  <option value="Fully Paid">Fully Paid</option>
+                  <option value="No">No</option>
+                  <option value="Yes">Yes</option>
                 </Select>
 
-                <Input
-                  label="Amount Paid"
-                  value={form.amountPaid}
-                  required
-                  onChange={(event) =>
-                    updateForm({ amountPaid: event.target.value })
+                {/* Disposed */}
+                <Select
+                  label="Sample to be disposed after test?"
+                  value={form.sampleHandling.isDisposed ? "Yes" : "No"}
+                  onChange={(e) =>
+                    updateSampleHandling(
+                      "isDisposed",
+                      e.target.value === "Yes"
+                    )
                   }
-                  placeholder="e.g. 2500"
-                />
+                >
+                  <option value="No">No</option>
+                  <option value="Yes">Yes</option>
+                </Select>
 
-                <Input
-                  label="Balance"
-                  value={form.balance}
-                  onChange={(event) =>
-                    updateForm({ balance: event.target.value })
-                  }
-                  placeholder="e.g. 2500"
-                />
+              </div>
 
-                <Textarea
-                  label="Billing Notes"
-                  value={form.billingNotes}
-                  onChange={(event) =>
-                    updateForm({ billingNotes: event.target.value })
-                  }
-                  rows={3}
-                />
+              {/* Policy Note */}
+              <div className="policyNote">
+                <strong>Note:</strong> Samples will be retained for a maximum period of <b>5 days</b>.
               </div>
             </Card>
           </section>
@@ -669,9 +682,8 @@ options={testCodeOptions}
                     </div>
 
                     <div
-                      className={`resultBadge ${
-                        result ? getDecisionBadgeClass(result.decision) : ""
-                      }`}
+                      className={`resultBadge ${result ? getDecisionBadgeClass(result.decision) : ""
+                        }`}
                     >
                       {result ? getDecisionLabel(result.decision) : "Pending"}
                     </div>
@@ -695,10 +707,10 @@ options={testCodeOptions}
                       valueStyle={
                         result
                           ? {
-                              color: getConfidenceColor(
-                                Number(result.confidence_score),
-                              ),
-                            }
+                            color: getConfidenceColor(
+                              Number(result.confidence_score),
+                            ),
+                          }
                           : {}
                       }
                       note={
@@ -737,7 +749,7 @@ options={testCodeOptions}
                   {result && result.decision !== "AUTO_ACCEPTED" && (
                     <div className="routingAlert">
                       {result.decision === "MANUAL_REVIEW_QUEUE" ||
-                      result.decision === "MANUAL_REVIEW" ? (
+                        result.decision === "MANUAL_REVIEW" ? (
                         <p>
                           This sample has been queued for Senior Technician
                           review because the confidence score is below the
@@ -853,6 +865,20 @@ options={testCodeOptions}
           padding: 20px;
           overflow: hidden;
         }
+
+        .policyNote {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+  background: var(--color-overlay);
+  border: 1px solid var(--color-border-soft);
+}
+
+.policyNote strong {
+  color: var(--color-text-primary);
+}
 
         .uploadArea::before {
           content: "";
