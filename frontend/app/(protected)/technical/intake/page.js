@@ -18,9 +18,7 @@ import Button from "@/components/ui/Button";
 import Select from "@/components/ui/Select";
 import Textarea from "@/components/ui/Textarea";
 import CameraCapture from "@/components/ui/CameraCapture";
-import TestCodeSelect from "@/components/ui/TestCodeSelect";
 import { apiClient, getStoredUser } from "@/services/apiClient";
-import { groupTestCodesByCategory } from "@/services/testCodeHelpers";
 
 const BRANCH_LABELS = {
   1: "Main Laboratory - Marikina",
@@ -41,31 +39,29 @@ export default function Page() {
     "Current User";
 
   const [form, setForm] = useState({
-    // TRF Metadata
     clientName: "",
     clientAddress: "",
     projectId: "",
-    testReferenceNo: "",
-    sampleSpecification: "",
+    structureDetails: "",
     requestedTestType: "",
-    testCode: "",
-    testStandard: "",
-    dateRequested: "",
-    dateTestingRequired: "",
-    timeTestingRequired: "",
-    numberOfSamples: "",
-    supplierName: "",
     branchLabel,
     branchId: userBranchId,
     staff: staffName,
 
-    file: null,
+    clientType: "Walk-in",
+    paymentStatus: "Unpaid",
+    amountPaid: "",
+    balance: "",
+    billingNotes: "",
 
-    sampleHandling: {
-      isWitnessed: false,
-      isRetrieved: false,
-      isDisposed: false,
-    },
+    actualSampleChecked: false,
+    voidsCracks: "",
+    weight: "",
+    diameter: "",
+    referenceTestIds: "",
+    conditionNotes: "",
+
+    file: null,
   });
 
   const [previewUrl, setPreviewUrl] = useState("");
@@ -73,40 +69,6 @@ export default function Page() {
   const [error, setError] = useState("");
   const [showCamera, setShowCamera] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [testCodes, setTestCodes] = useState([]);
-  const [testCodesByCategory, setTestCodesByCategory] = useState({});
-  const [loadingTestCodes, setLoadingTestCodes] = useState(true);
-
-
-  const testCodeOptions = useMemo(() => {
-    return testCodes.map((t) => ({
-      code: t.code,
-      label: `${t.code} - ${t.name}`,
-      standard: t.standard,
-      name: t.name,
-    }));
-  }, [testCodes]);
-
-  useEffect(() => {
-    const fetchTestCodes = async () => {
-      try {
-        const data = await apiClient.getTestCodes();
-
-        const grouped = groupTestCodesByCategory(data);
-
-        setTestCodes(data);
-        setTestCodesByCategory(grouped);
-      } catch (err) {
-        console.error("Failed to load test codes:", err);
-        setTestCodes([]);
-        setTestCodesByCategory({});
-      } finally {
-        setLoadingTestCodes(false);
-      }
-    };
-
-    fetchTestCodes();
-  }, []);
 
   useEffect(() => {
     setForm((prev) => ({
@@ -147,29 +109,23 @@ export default function Page() {
 
     if (!form.clientName.trim()) missing.push("Client / Contractor");
     if (!form.projectId.trim()) missing.push("Project Identifier");
-    if (!form.testCode.trim()) missing.push("Test Code");
     if (!form.requestedTestType.trim()) missing.push("Requested Test Type");
+    if (!form.clientType) missing.push("Client Type");
+    if (!form.paymentStatus) missing.push("Payment Status");
+    if (!form.amountPaid.trim()) missing.push("Amount Paid");
+    if (!form.actualSampleChecked) missing.push("Actual Sample Checked");
     if (!form.file) missing.push("Sample Image");
-
-    // NEW REQUIRED FIELDS
-    if (!form.supplierName.trim()) missing.push("Supplier Name");
-    if (!form.numberOfSamples.trim()) missing.push("Number of Samples");
-    if (!form.dateRequested) missing.push("Date Requested");
-    if (!form.dateTestingRequired) missing.push("Date Testing Required");
-    if (!form.timeTestingRequired) missing.push("Time Testing Required");
 
     return missing;
   }, [
     form.clientName,
     form.projectId,
-    form.testCode,
     form.requestedTestType,
+    form.clientType,
+    form.paymentStatus,
+    form.amountPaid,
+    form.actualSampleChecked,
     form.file,
-    form.supplierName,
-    form.numberOfSamples,
-    form.dateRequested,
-    form.dateTestingRequired,
-    form.timeTestingRequired,
   ]);
 
   const canAnalyze =
@@ -179,25 +135,6 @@ export default function Page() {
     setForm((prev) => ({ ...prev, ...nextValues }));
     setResult(null);
     setError("");
-  }
-
-  function updateSampleHandling(field, value) {
-    setForm((prev) => ({
-      ...prev,
-      sampleHandling: {
-        ...prev.sampleHandling,
-        [field]: value,
-      },
-    }));
-  }
-
-  function handleTestCodeChange(testCode) {
-    const selectedTest = testCodes.find((t) => t.code === testCode);
-    updateForm({
-      testCode: testCode,
-      testStandard: selectedTest?.standard || "",
-      requestedTestType: selectedTest?.name || "",
-    });
   }
 
   function handleCameraCapture(file) {
@@ -239,25 +176,28 @@ export default function Page() {
           client_name: form.clientName.trim(),
           client_address: form.clientAddress.trim(),
           project_identifier: form.projectId.trim(),
-          test_reference_no: form.testReferenceNo.trim(),
-          sample_specification: form.sampleSpecification.trim(),
+          structure_details: form.structureDetails.trim(),
           requested_test_type: form.requestedTestType.trim(),
-          test_code: form.testCode.trim(),
-          test_standard: form.testStandard.trim(),
-          date_requested: form.dateRequested,
-          date_testing_required: form.dateTestingRequired,
-          time_testing_required: form.timeTestingRequired,
-          number_of_samples: form.numberOfSamples.trim(),
-          supplier_name: form.supplierName.trim(),
           registry_branch: form.branchLabel,
           branch_id: form.branchId,
           terminal_staff: form.staff,
+        },
 
-          sample_handling: {
-            is_witnessed: form.sampleHandling.isWitnessed,
-            is_retrieved: form.sampleHandling.isRetrieved,
-            is_disposed: form.sampleHandling.isDisposed,
-          },
+        payment: {
+          client_type: form.clientType,
+          payment_status: form.paymentStatus,
+          amount_paid: form.amountPaid,
+          balance: form.balance,
+          billing_notes: form.billingNotes.trim(),
+        },
+
+        test_slip: {
+          actual_sample_checked: form.actualSampleChecked,
+          voids_cracks: form.voidsCracks.trim(),
+          weight: form.weight.trim(),
+          diameter: form.diameter.trim(),
+          reference_test_ids: form.referenceTestIds.trim(),
+          condition_notes: form.conditionNotes.trim(),
         },
       }),
     );
@@ -333,7 +273,7 @@ export default function Page() {
           <section className="mainColumn">
             <Card
               title="Client & TRF Metadata"
-              subtitle="Capture the Test Request Form details for registration."
+              subtitle="Capture the request form details used for registration."
             >
               <div className="formGrid">
                 <Input
@@ -363,93 +303,22 @@ export default function Page() {
                 />
 
                 <Input
-                  label="Test Reference No."
-                  value={form.testReferenceNo}
-                  onChange={(event) =>
-                    updateForm({ testReferenceNo: event.target.value })
-                  }
-                  placeholder="e.g. TRF-2024-001"
-                />
-
-                <Input
-                  label="Supplier Name"
-                  value={form.supplierName}
-                  required
-                  onChange={(event) =>
-                    updateForm({ supplierName: event.target.value })
-                  }
-                />
-
-                <Input
-                  label="Number of Samples"
-                  value={form.numberOfSamples}
-                  required
-                  type="number"
-                  onChange={(event) =>
-                    updateForm({ numberOfSamples: event.target.value })
-                  }
-                />
-
-                <Input
-                  label="Date Requested"
-                  value={form.dateRequested}
-                  required
-                  type="date"
-                  onChange={(event) =>
-                    updateForm({ dateRequested: event.target.value })
-                  }
-                />
-
-                <Input
-                  label="Date Testing Required"
-                  value={form.dateTestingRequired}
-                  required
-                  type="date"
-                  onChange={(event) =>
-                    updateForm({ dateTestingRequired: event.target.value })
-                  }
-                />
-
-                <Input
-                  label="Time Testing Required"
-                  value={form.timeTestingRequired}
-                  required
-                  type="time"
-                  onChange={(event) =>
-                    updateForm({ timeTestingRequired: event.target.value })
-                  }
-                />
-
-                <TestCodeSelect
-                  label="Test Code"
-                  value={form.testCode}
-                  required
-                  onChange={handleTestCodeChange}
-                  options={testCodeOptions}
-                  loading={loadingTestCodes}
-                />
-
-                <Input
-                  label="Test Standard"
-                  value={form.testStandard}
-                  readOnly
-                  placeholder="Auto-populated from Test Code"
-                />
-
-                <Input
                   label="Requested Test Type"
                   value={form.requestedTestType}
-                  readOnly
-                  placeholder="Auto-populated from Test Code"
+                  required
+                  onChange={(event) =>
+                    updateForm({ requestedTestType: event.target.value })
+                  }
+                  placeholder="e.g. Concrete Compression Test"
                 />
 
                 <Textarea
-                  label="Sample Specification"
-                  value={form.sampleSpecification}
+                  label="Structure / Design Details"
+                  value={form.structureDetails}
                   onChange={(event) =>
-                    updateForm({ sampleSpecification: event.target.value })
+                    updateForm({ structureDetails: event.target.value })
                   }
-                  placeholder="e.g. 3000 psi concrete @ 7 days, cylindrical specimen"
+                  placeholder="e.g. SLAB 3000 psi @ 7 days"
                   rows={3}
                 />
 
@@ -464,61 +333,130 @@ export default function Page() {
             </Card>
 
             <Card
-              title="Sample Handling Instructions"
-              subtitle="Define post-testing handling and witness requirements."
+              title="Payment Information"
+              subtitle="Record the current payment status before testing and release."
             >
               <div className="formGrid">
-
-                {/* Witnessed */}
                 <Select
-                  label="Testing to be witnessed?"
-                  value={form.sampleHandling.isWitnessed ? "Yes" : "No"}
-                  onChange={(e) =>
-                    updateSampleHandling(
-                      "isWitnessed",
-                      e.target.value === "Yes"
-                    )
+                  label="Client Type"
+                  name="clientType"
+                  value={form.clientType}
+                  required
+                  onChange={(event) =>
+                    updateForm({ clientType: event.target.value })
                   }
                 >
-                  <option value="No">No</option>
-                  <option value="Yes">Yes</option>
+                  <option value="Walk-in">Walk-in</option>
+                  <option value="Quotation">Quotation</option>
                 </Select>
 
-                {/* Retrieved */}
                 <Select
-                  label="Sample to be retrieved after test?"
-                  value={form.sampleHandling.isRetrieved ? "Yes" : "No"}
-                  onChange={(e) =>
-                    updateSampleHandling(
-                      "isRetrieved",
-                      e.target.value === "Yes"
-                    )
+                  label="Payment Status"
+                  name="paymentStatus"
+                  value={form.paymentStatus}
+                  required
+                  onChange={(event) =>
+                    updateForm({ paymentStatus: event.target.value })
                   }
                 >
-                  <option value="No">No</option>
-                  <option value="Yes">Yes</option>
+                  <option value="Unpaid">Unpaid</option>
+                  <option value="Downpayment Paid">Downpayment Paid</option>
+                  <option value="PO Submitted">PO Submitted</option>
+                  <option value="Fully Paid">Fully Paid</option>
                 </Select>
 
-                {/* Disposed */}
-                <Select
-                  label="Sample to be disposed after test?"
-                  value={form.sampleHandling.isDisposed ? "Yes" : "No"}
-                  onChange={(e) =>
-                    updateSampleHandling(
-                      "isDisposed",
-                      e.target.value === "Yes"
-                    )
+                <Input
+                  label="Amount Paid"
+                  value={form.amountPaid}
+                  required
+                  onChange={(event) =>
+                    updateForm({ amountPaid: event.target.value })
                   }
-                >
-                  <option value="No">No</option>
-                  <option value="Yes">Yes</option>
-                </Select>
+                  placeholder="e.g. 2500"
+                />
 
+                <Input
+                  label="Balance"
+                  value={form.balance}
+                  onChange={(event) =>
+                    updateForm({ balance: event.target.value })
+                  }
+                  placeholder="e.g. 2500"
+                />
+
+                <Textarea
+                  label="Billing Notes"
+                  value={form.billingNotes}
+                  onChange={(event) =>
+                    updateForm({ billingNotes: event.target.value })
+                  }
+                  rows={3}
+                />
               </div>
+            </Card>
 
-              {/* Policy Note */}
-              <div className="policyNote">
-                <strong>Note:</strong> Samples will be retained for a maximum period of <b>5 days</b>.
+            <Card
+              title="Lab Tech Test Slip"
+              subtitle="Record physical sample inspection before test encoding."
+            >
+              <div className="formGrid">
+                <label className="checkField">
+                  <input
+                    type="checkbox"
+                    checked={form.actualSampleChecked}
+                    onChange={(event) =>
+                      updateForm({ actualSampleChecked: event.target.checked })
+                    }
+                  />
+                  <span>
+                    Actual sample checked <em>Required</em>
+                  </span>
+                </label>
+
+                <Input
+                  label="Voids / Cracks Observed"
+                  value={form.voidsCracks}
+                  onChange={(event) =>
+                    updateForm({ voidsCracks: event.target.value })
+                  }
+                  placeholder="e.g. No visible cracks"
+                />
+
+                <Input
+                  label="Weight"
+                  value={form.weight}
+                  onChange={(event) =>
+                    updateForm({ weight: event.target.value })
+                  }
+                  placeholder="e.g. 8.2 kg"
+                />
+
+                <Input
+                  label="Diameter"
+                  value={form.diameter}
+                  onChange={(event) =>
+                    updateForm({ diameter: event.target.value })
+                  }
+                  placeholder="e.g. 150 mm"
+                />
+
+                <Input
+                  label="Reference Test IDs"
+                  value={form.referenceTestIds}
+                  onChange={(event) =>
+                    updateForm({ referenceTestIds: event.target.value })
+                  }
+                  placeholder="e.g. CT-001, CT-002"
+                />
+
+                <Textarea
+                  label="Condition Notes"
+                  value={form.conditionNotes}
+                  onChange={(event) =>
+                    updateForm({ conditionNotes: event.target.value })
+                  }
+                  rows={3}
+                />
               </div>
             </Card>
           </section>
@@ -682,8 +620,9 @@ export default function Page() {
                     </div>
 
                     <div
-                      className={`resultBadge ${result ? getDecisionBadgeClass(result.decision) : ""
-                        }`}
+                      className={`resultBadge ${
+                        result ? getDecisionBadgeClass(result.decision) : ""
+                      }`}
                     >
                       {result ? getDecisionLabel(result.decision) : "Pending"}
                     </div>
@@ -707,10 +646,10 @@ export default function Page() {
                       valueStyle={
                         result
                           ? {
-                            color: getConfidenceColor(
-                              Number(result.confidence_score),
-                            ),
-                          }
+                              color: getConfidenceColor(
+                                Number(result.confidence_score),
+                              ),
+                            }
                           : {}
                       }
                       note={
@@ -749,7 +688,7 @@ export default function Page() {
                   {result && result.decision !== "AUTO_ACCEPTED" && (
                     <div className="routingAlert">
                       {result.decision === "MANUAL_REVIEW_QUEUE" ||
-                        result.decision === "MANUAL_REVIEW" ? (
+                      result.decision === "MANUAL_REVIEW" ? (
                         <p>
                           This sample has been queued for Senior Technician
                           review because the confidence score is below the
@@ -844,6 +783,30 @@ export default function Page() {
           gap: 14px;
         }
 
+        .checkField {
+          grid-column: 1 / -1;
+          display: inline-flex;
+          align-items: center;
+          gap: 10px;
+          color: var(--color-text-primary);
+          font-size: var(--text-sm);
+          font-weight: 500;
+        }
+
+        .checkField input {
+          width: 17px;
+          height: 17px;
+          accent-color: var(--color-brand);
+        }
+
+        .checkField em {
+          margin-left: 6px;
+          color: var(--color-text-muted);
+          font-size: 10px;
+          font-style: normal;
+          font-weight: 400;
+        }
+
         .aiPanel {
           display: grid;
           gap: 16px;
@@ -865,20 +828,6 @@ export default function Page() {
           padding: 20px;
           overflow: hidden;
         }
-
-        .policyNote {
-  margin-top: 12px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  font-size: var(--text-xs);
-  color: var(--color-text-secondary);
-  background: var(--color-overlay);
-  border: 1px solid var(--color-border-soft);
-}
-
-.policyNote strong {
-  color: var(--color-text-primary);
-}
 
         .uploadArea::before {
           content: "";
