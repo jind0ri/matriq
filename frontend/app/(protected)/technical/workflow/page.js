@@ -218,6 +218,10 @@ export default function WorkflowPage() {
   const [loading, setLoading] = useState(true);
   const [workingId, setWorkingId] = useState("");
 
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [modalAction, setModalAction] = useState(null); // "approve" or "reject"
+  const [modalSample, setModalSample] = useState(null);
+
   const canViewLabTechQueue = isLabTech || isAdmin;
   const canActAsLabTech = isLabTech || isAdmin;
 
@@ -338,7 +342,10 @@ export default function WorkflowPage() {
     return [
       { label: "Ready", value: visibleReadyForTesting.length },
       { label: "AI Review", value: visibleReviews.length },
-      { label: "QA Queue", value: visibleQaPreTesting.length + visibleQaRelease.length },
+      {
+        label: "QA Queue",
+        value: visibleQaPreTesting.length + visibleQaRelease.length,
+      },
       { label: "Branch View", value: branchViewLabel },
     ];
   }, [
@@ -480,6 +487,26 @@ export default function WorkflowPage() {
     } finally {
       setWorkingId("");
     }
+  }
+
+  async function confirmAndValidate(item, decision) {
+    // Optional: ensure role
+    if (!canActAsSeniorTech) {
+      setActionError(
+        "Only Senior Technicians can approve or reject AI classification review cases.",
+      );
+      return;
+    }
+
+    // Show browser confirmation dialog
+    const confirmed = window.confirm(
+      `Are you sure you want to ${decision.toUpperCase()} the AI classification for sample ${item.sample_id}? This action cannot be undone.`,
+    );
+
+    if (!confirmed) return; // stop if user cancels
+
+    // Call existing validation function
+    await handleValidation(item, decision);
   }
 
   async function handleValidation(item, decision) {
@@ -643,7 +670,9 @@ export default function WorkflowPage() {
     const missingFields = getMissingRequiredFields(form.testType, form);
 
     if (missingFields.length > 0) {
-      setFormError(`Please complete required fields: ${missingFields.join(", ")}.`);
+      setFormError(
+        `Please complete required fields: ${missingFields.join(", ")}.`,
+      );
       return;
     }
 
@@ -817,7 +846,11 @@ export default function WorkflowPage() {
         <>
           <section className="stats">
             {stats.map((stat) => (
-              <StatCard key={stat.label} label={stat.label} value={stat.value} />
+              <StatCard
+                key={stat.label}
+                label={stat.label}
+                value={stat.value}
+              />
             ))}
           </section>
 
@@ -941,8 +974,11 @@ export default function WorkflowPage() {
                       <Button
                         size="sm"
                         variant="success"
-                        onClick={() => handleValidation(item, "approve")}
-                        disabled={workingId === item.sample_id}
+                        onClick={() => {
+                          setModalAction("approve");
+                          setModalSample(item);
+                          setShowConfirmModal(true);
+                        }}
                       >
                         Approve Classification
                       </Button>
@@ -950,8 +986,11 @@ export default function WorkflowPage() {
                       <Button
                         size="sm"
                         variant="danger"
-                        onClick={() => handleValidation(item, "reject")}
-                        disabled={workingId === item.sample_id}
+                        onClick={() => {
+                          setModalAction("reject");
+                          setModalSample(item);
+                          setShowConfirmModal(true);
+                        }}
                       >
                         Reject Classification
                       </Button>
@@ -967,6 +1006,39 @@ export default function WorkflowPage() {
                   )}
                 </Card>
               ))}
+
+              {showConfirmModal && modalSample && (
+                <div className="modalOverlay">
+                  <div className="modalContent">
+                    <h3>
+                      Confirm{" "}
+                      {modalAction === "approve" ? "Approval" : "Rejection"}
+                    </h3>
+                    <p>
+                      Are you sure you want to {modalAction.toUpperCase()} the
+                      AI classification for sample {modalSample.sample_id}? This
+                      action cannot be undone.
+                    </p>
+                    <div className="modalButtons">
+                      <Button
+                        variant="secondary"
+                        onClick={() => setShowConfirmModal(false)}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        variant="primary"
+                        onClick={async () => {
+                          await handleValidation(modalSample, modalAction);
+                          setShowConfirmModal(false);
+                        }}
+                      >
+                        Confirm
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </QueueSection>
           )}
 
@@ -1147,7 +1219,8 @@ export default function WorkflowPage() {
                                   <p>
                                     Original system result was{" "}
                                     <b>{qaOverride.system_result}</b>. QA final
-                                    result is <b>{qaOverride.override_result}</b>.
+                                    result is{" "}
+                                    <b>{qaOverride.override_result}</b>.
                                   </p>
                                   <p>
                                     <b>Reason:</b> {qaOverride.override_reason}
@@ -1253,7 +1326,9 @@ export default function WorkflowPage() {
                                       )
                                     }
                                   >
-                                    <option value="">Select final result</option>
+                                    <option value="">
+                                      Select final result
+                                    </option>
                                     <option value="PASS">PASS</option>
                                     <option value="FAIL">FAIL</option>
                                     <option value="RECORDED">RECORDED</option>
@@ -1280,9 +1355,7 @@ export default function WorkflowPage() {
                                   <Button
                                     size="sm"
                                     variant="secondary"
-                                    onClick={() =>
-                                      handleQaResultOverride(item)
-                                    }
+                                    onClick={() => handleQaResultOverride(item)}
                                     disabled={workingId === item.sample_id}
                                   >
                                     Save QA Final Result
@@ -1343,7 +1416,9 @@ export default function WorkflowPage() {
       <Modal
         open={testModalOpen}
         title="Test Data Entry"
-        description={selectedSample?.sample_id || "Enter test data for this sample."}
+        description={
+          selectedSample?.sample_id || "Enter test data for this sample."
+        }
         onClose={closeTestModal}
         size="lg"
         footer={
@@ -1838,6 +1913,65 @@ export default function WorkflowPage() {
             justify-content: flex-start;
           }
         }
+
+        .modalOverlay {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: rgba(
+            0,
+            0,
+            0,
+            0.35
+          ); /* slightly lighter background for soft shadow */
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          z-index: 1000;
+        }
+
+        .modalContent {
+          background: #fff;
+          padding: 24px 28px;
+          border-radius: 12px;
+          width: 440px;
+          max-width: 90%;
+          box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25); /* deeper shadow for elevation */
+          display: flex;
+          flex-direction: column;
+        }
+
+        .modalTitle {
+          font-size: 1.25rem;
+          font-weight: 600;
+          margin-bottom: 14px;
+          color: #111;
+        }
+
+        .modalMessage {
+          font-size: 1rem;
+          margin-bottom: 22px;
+          line-height: 1.5;
+          color: #333;
+        }
+
+        .modalButtons {
+          display: flex;
+          justify-content: flex-end;
+          gap: 12px;
+        }
+
+        .modalButtons .secondary {
+          background: #f5f5f5;
+          color: #333;
+        }
+
+        .modalButtons .primary {
+          background: #4f46e5; /* deep purple like screenshot */
+          color: #fff;
+        }
       `}</style>
     </div>
   );
@@ -1858,7 +1992,10 @@ function QueueSection({ title, subtitle, emptyText, children }) {
       </div>
 
       {!hasChildren ? (
-        <EmptyState title={emptyText} description="No action is needed right now." />
+        <EmptyState
+          title={emptyText}
+          description="No action is needed right now."
+        />
       ) : (
         <div className="list">{children}</div>
       )}
@@ -2306,6 +2443,7 @@ function ReportInfo({ label, value }) {
 }
 
 function TestFields({ form, setForm }) {
+  // Concrete Tests
   if (form.testType === "concrete_compression") {
     return (
       <>
@@ -2322,17 +2460,37 @@ function TestFields({ form, setForm }) {
           onChange={(value) => setForm({ ...form, specimenHeight: value })}
         />
         <InputField
-          label="Maximum Load (kN)"
+          label="Mass (kg)"
+          value={form.mass}
+          required
+          onChange={(value) => setForm({ ...form, mass: value })}
+        />
+        <InputField
+          label="Maximum Applied Load (kN)"
           value={form.maxLoad}
           required
           onChange={(value) => setForm({ ...form, maxLoad: value })}
         />
         <InputField
-          label="Required Strength (MPa)"
+          label="Computed Compressive Strength (MPa / psi)"
           value={form.requiredStrength}
           required
           onChange={(value) => setForm({ ...form, requiredStrength: value })}
         />
+        <InputField
+          label="Fracture Type"
+          value={form.fractureType}
+          onChange={(value) => setForm({ ...form, fractureType: value })}
+        />
+        <Select
+          label="Pass / Fail"
+          value={form.passFail}
+          onChange={(e) => setForm({ ...form, passFail: e.target.value })}
+        >
+          <option value="">Select result</option>
+          <option value="Pass">Pass</option>
+          <option value="Fail">Fail</option>
+        </Select>
       </>
     );
   }
@@ -2349,29 +2507,27 @@ function TestFields({ form, setForm }) {
         <InputField
           label="Minimum Slump (mm)"
           value={form.minSlump}
-          required
           onChange={(value) => setForm({ ...form, minSlump: value })}
         />
         <InputField
           label="Maximum Slump (mm)"
           value={form.maxSlump}
-          required
           onChange={(value) => setForm({ ...form, maxSlump: value })}
         />
-
         <Select
           label="Slump Type"
-          name="slumpType"
           value={form.slumpType}
-          required
-          onChange={(event) =>
-            setForm({ ...form, slumpType: event.target.value })
-          }
+          onChange={(e) => setForm({ ...form, slumpType: e.target.value })}
         >
           <option value="true">True Slump</option>
           <option value="shear">Shear Slump</option>
           <option value="collapse">Collapse Slump</option>
         </Select>
+        <InputField
+          label="Ambient Temperature (°C)"
+          value={form.ambientTemp}
+          onChange={(value) => setForm({ ...form, ambientTemp: value })}
+        />
       </>
     );
   }
@@ -2379,25 +2535,6 @@ function TestFields({ form, setForm }) {
   if (form.testType === "concrete_flexural") {
     return (
       <>
-        <InputField
-          label="Required Flexural Strength (MPa)"
-          value={form.requiredFlexural}
-          required
-          onChange={(value) => setForm({ ...form, requiredFlexural: value })}
-        />
-
-        <InputField
-          label="Flexural Strength (MPa)"
-          value={form.flexuralStrength}
-          onChange={(value) => setForm({ ...form, flexuralStrength: value })}
-        />
-
-        <NoteBox>
-          Flexural strength is optional if beam values are provided. The system
-          can compute the modulus of rupture when beam dimensions and load are
-          entered.
-        </NoteBox>
-
         <InputField
           label="Beam Width (mm)"
           value={form.beamWidth}
@@ -2418,10 +2555,22 @@ function TestFields({ form, setForm }) {
           value={form.flexuralMaxLoad}
           onChange={(value) => setForm({ ...form, flexuralMaxLoad: value })}
         />
+        <InputField
+          label="Flexural Strength (MPa)"
+          value={form.flexuralStrength}
+          onChange={(value) => setForm({ ...form, flexuralStrength: value })}
+        />
+        <InputField
+          label="Required Flexural Strength (MPa)"
+          value={form.requiredFlexural}
+          required
+          onChange={(value) => setForm({ ...form, requiredFlexural: value })}
+        />
       </>
     );
   }
 
+  // RSB Tests
   if (form.testType === "rsb_tensile") {
     return (
       <>
@@ -2461,42 +2610,30 @@ function TestFields({ form, setForm }) {
           required
           onChange={(value) => setForm({ ...form, requiredElongation: value })}
         />
-
-        <NoteBox>
-          Result will be automatically computed based on the provided minimum
-          requirements.
-        </NoteBox>
       </>
     );
   }
 
   if (form.testType === "rsb_bend") {
     return (
-      <>
-        <Select
-          label="Bend Observation"
-          name="bendObservation"
-          value={form.bendObservation}
-          required
-          onChange={(event) =>
-            setForm({ ...form, bendObservation: event.target.value })
-          }
-        >
-          <option value="">Select observed condition</option>
-          <option value="no_crack">No Crack / No Fracture</option>
-          <option value="crack">Visible Crack</option>
-          <option value="fracture">Fracture</option>
-          <option value="broken">Broken</option>
-        </Select>
-
-        <NoteBox>
-          Technician records only the physical observation. The system computes
-          PASS or FAIL.
-        </NoteBox>
-      </>
+      <Select
+        label="Bend Observation"
+        value={form.bendObservation}
+        required
+        onChange={(event) =>
+          setForm({ ...form, bendObservation: event.target.value })
+        }
+      >
+        <option value="">Select observed condition</option>
+        <option value="no_crack">No Crack / No Fracture</option>
+        <option value="crack">Visible Crack</option>
+        <option value="fracture">Fracture</option>
+        <option value="broken">Broken</option>
+      </Select>
     );
   }
 
+  // Soil / Aggregates Tests
   if (form.testType === "soil_moisture") {
     return (
       <>
@@ -2627,7 +2764,6 @@ function TestFields({ form, setForm }) {
     return (
       <Select
         label="Color Comparison"
-        name="colorComparison"
         value={form.colorComparison}
         required
         onChange={(event) =>
@@ -2684,7 +2820,9 @@ function getMissingRequiredFields(testType, form) {
   return requiredFields
     .filter(([field]) => {
       const value = form[field];
-      return value === null || value === undefined || String(value).trim() === "";
+      return (
+        value === null || value === undefined || String(value).trim() === ""
+      );
     })
     .map(([, label]) => label);
 }

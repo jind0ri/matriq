@@ -50,16 +50,6 @@ export default function Page() {
 
     clientType: "Walk-in",
     paymentStatus: "Unpaid",
-    amountPaid: "",
-    balance: "",
-    billingNotes: "",
-
-    actualSampleChecked: false,
-    voidsCracks: "",
-    weight: "",
-    diameter: "",
-    referenceTestIds: "",
-    conditionNotes: "",
 
     file: null,
   });
@@ -112,8 +102,6 @@ export default function Page() {
     if (!form.requestedTestType.trim()) missing.push("Requested Test Type");
     if (!form.clientType) missing.push("Client Type");
     if (!form.paymentStatus) missing.push("Payment Status");
-    if (!form.amountPaid.trim()) missing.push("Amount Paid");
-    if (!form.actualSampleChecked) missing.push("Actual Sample Checked");
     if (!form.file) missing.push("Sample Image");
 
     return missing;
@@ -123,8 +111,6 @@ export default function Page() {
     form.requestedTestType,
     form.clientType,
     form.paymentStatus,
-    form.amountPaid,
-    form.actualSampleChecked,
     form.file,
   ]);
 
@@ -186,18 +172,6 @@ export default function Page() {
         payment: {
           client_type: form.clientType,
           payment_status: form.paymentStatus,
-          amount_paid: form.amountPaid,
-          balance: form.balance,
-          billing_notes: form.billingNotes.trim(),
-        },
-
-        test_slip: {
-          actual_sample_checked: form.actualSampleChecked,
-          voids_cracks: form.voidsCracks.trim(),
-          weight: form.weight.trim(),
-          diameter: form.diameter.trim(),
-          reference_test_ids: form.referenceTestIds.trim(),
-          condition_notes: form.conditionNotes.trim(),
         },
       }),
     );
@@ -347,7 +321,7 @@ export default function Page() {
                   }
                 >
                   <option value="Walk-in">Walk-in</option>
-                  <option value="Quotation">Quotation</option>
+                  <option value="Accredited Billing Client">Accredited Billing Client</option>
                 </Select>
 
                 <Select
@@ -362,101 +336,7 @@ export default function Page() {
                   <option value="Unpaid">Unpaid</option>
                   <option value="Downpayment Paid">Downpayment Paid</option>
                   <option value="PO Submitted">PO Submitted</option>
-                  <option value="Fully Paid">Fully Paid</option>
                 </Select>
-
-                <Input
-                  label="Amount Paid"
-                  value={form.amountPaid}
-                  required
-                  onChange={(event) =>
-                    updateForm({ amountPaid: event.target.value })
-                  }
-                  placeholder="e.g. 2500"
-                />
-
-                <Input
-                  label="Balance"
-                  value={form.balance}
-                  onChange={(event) =>
-                    updateForm({ balance: event.target.value })
-                  }
-                  placeholder="e.g. 2500"
-                />
-
-                <Textarea
-                  label="Billing Notes"
-                  value={form.billingNotes}
-                  onChange={(event) =>
-                    updateForm({ billingNotes: event.target.value })
-                  }
-                  rows={3}
-                />
-              </div>
-            </Card>
-
-            <Card
-              title="Lab Tech Test Slip"
-              subtitle="Record physical sample inspection before test encoding."
-            >
-              <div className="formGrid">
-                <label className="checkField">
-                  <input
-                    type="checkbox"
-                    checked={form.actualSampleChecked}
-                    onChange={(event) =>
-                      updateForm({ actualSampleChecked: event.target.checked })
-                    }
-                  />
-                  <span>
-                    Actual sample checked <em>Required</em>
-                  </span>
-                </label>
-
-                <Input
-                  label="Voids / Cracks Observed"
-                  value={form.voidsCracks}
-                  onChange={(event) =>
-                    updateForm({ voidsCracks: event.target.value })
-                  }
-                  placeholder="e.g. No visible cracks"
-                />
-
-                <Input
-                  label="Weight"
-                  value={form.weight}
-                  onChange={(event) =>
-                    updateForm({ weight: event.target.value })
-                  }
-                  placeholder="e.g. 8.2 kg"
-                />
-
-                <Input
-                  label="Diameter"
-                  value={form.diameter}
-                  onChange={(event) =>
-                    updateForm({ diameter: event.target.value })
-                  }
-                  placeholder="e.g. 150 mm"
-                />
-
-                <Input
-                  label="Reference Test IDs"
-                  value={form.referenceTestIds}
-                  onChange={(event) =>
-                    updateForm({ referenceTestIds: event.target.value })
-                  }
-                  placeholder="e.g. CT-001, CT-002"
-                />
-
-                <Textarea
-                  label="Condition Notes"
-                  value={form.conditionNotes}
-                  onChange={(event) =>
-                    updateForm({ conditionNotes: event.target.value })
-                  }
-                  rows={3}
-                />
               </div>
             </Card>
           </section>
