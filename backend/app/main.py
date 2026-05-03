@@ -4,7 +4,7 @@ from fastapi.responses import JSONResponse
 
 from .config import CORS_ORIGINS, DATABASE_URL
 from .database import init_db
-from app.routers import auth, sample, validate, classify, audit, accounting, users, settings, notifications, feedback, sync
+from app.routers import auth, sample, validate, classify, audit, accounting, users, settings, notifications, feedback, sync, test_codes
 
 app = FastAPI(title='Matriq AI Sample Management API')
 app.add_middleware(
@@ -109,3 +109,4 @@ app.include_router(settings.router)
 app.include_router(notifications.router)
 app.include_router(feedback.router)
 app.include_router(sync.router)
+app.include_router(test_codes.router)

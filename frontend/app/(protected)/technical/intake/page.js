@@ -18,7 +18,9 @@ import Button from "@/components/ui/Button";
 import Select from "@/components/ui/Select";
 import Textarea from "@/components/ui/Textarea";
 import CameraCapture from "@/components/ui/CameraCapture";
+import TestCodeSelect from "@/components/ui/TestCodeSelect";
 import { apiClient, getStoredUser } from "@/services/apiClient";
+import { groupTestCodesByCategory } from "@/services/testCodeHelpers";
 
 const BRANCH_LABELS = {
   1: "Main Laboratory - Marikina",
@@ -39,27 +41,30 @@ export default function Page() {
     "Current User";
 
   const [form, setForm] = useState({
+    // TRF Metadata
     clientName: "",
     clientAddress: "",
     projectId: "",
-    structureDetails: "",
+    testReferenceNo: "",
+    sampleSpecification: "",
     requestedTestType: "",
+    testCode: "",
+    testStandard: "",
+    dateRequested: "",
+    dateTestingRequired: "",
+    timeTestingRequired: "",
+    numberOfSamples: "",
+    supplierName: "",
     branchLabel,
     branchId: userBranchId,
     staff: staffName,
 
+    // Payment Information
     clientType: "Walk-in",
     paymentStatus: "Unpaid",
     amountPaid: "",
     balance: "",
     billingNotes: "",
-
-    actualSampleChecked: false,
-    voidsCracks: "",
-    weight: "",
-    diameter: "",
-    referenceTestIds: "",
-    conditionNotes: "",
 
     file: null,
   });
@@ -69,6 +74,40 @@ export default function Page() {
   const [error, setError] = useState("");
   const [showCamera, setShowCamera] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+const [testCodes, setTestCodes] = useState([]);
+const [testCodesByCategory, setTestCodesByCategory] = useState({});
+const [loadingTestCodes, setLoadingTestCodes] = useState(true);
+  
+
+const testCodeOptions = useMemo(() => {
+  return testCodes.map((t) => ({
+    code: t.code,
+    label: `${t.code} - ${t.name}`,
+    standard: t.standard,
+    name: t.name,
+  }));
+}, [testCodes]);
+
+useEffect(() => {
+  const fetchTestCodes = async () => {
+    try {
+      const data = await apiClient.getTestCodes();
+
+      const grouped = groupTestCodesByCategory(data);
+
+      setTestCodes(data);
+      setTestCodesByCategory(grouped);
+    } catch (err) {
+      console.error("Failed to load test codes:", err);
+      setTestCodes([]);
+      setTestCodesByCategory({});
+    } finally {
+      setLoadingTestCodes(false);
+    }
+  };
+
+  fetchTestCodes();
+}, []);
 
   useEffect(() => {
     setForm((prev) => ({
@@ -109,22 +148,22 @@ export default function Page() {
 
     if (!form.clientName.trim()) missing.push("Client / Contractor");
     if (!form.projectId.trim()) missing.push("Project Identifier");
+    if (!form.testCode.trim()) missing.push("Test Code");
     if (!form.requestedTestType.trim()) missing.push("Requested Test Type");
     if (!form.clientType) missing.push("Client Type");
     if (!form.paymentStatus) missing.push("Payment Status");
     if (!form.amountPaid.trim()) missing.push("Amount Paid");
-    if (!form.actualSampleChecked) missing.push("Actual Sample Checked");
     if (!form.file) missing.push("Sample Image");
 
     return missing;
   }, [
     form.clientName,
     form.projectId,
+    form.testCode,
     form.requestedTestType,
     form.clientType,
     form.paymentStatus,
     form.amountPaid,
-    form.actualSampleChecked,
     form.file,
   ]);
 
@@ -136,6 +175,15 @@ export default function Page() {
     setResult(null);
     setError("");
   }
+
+function handleTestCodeChange(testCode) {
+  const selectedTest = testCodes.find((t) => t.code === testCode);
+  updateForm({
+    testCode: testCode,
+    testStandard: selectedTest?.standard || "",
+    requestedTestType: selectedTest?.name || "",
+  });
+}
 
   function handleCameraCapture(file) {
     updateForm({ file });
@@ -176,8 +224,16 @@ export default function Page() {
           client_name: form.clientName.trim(),
           client_address: form.clientAddress.trim(),
           project_identifier: form.projectId.trim(),
-          structure_details: form.structureDetails.trim(),
+          test_reference_no: form.testReferenceNo.trim(),
+          sample_specification: form.sampleSpecification.trim(),
           requested_test_type: form.requestedTestType.trim(),
+          test_code: form.testCode.trim(),
+          test_standard: form.testStandard.trim(),
+          date_requested: form.dateRequested,
+          date_testing_required: form.dateTestingRequired,
+          time_testing_required: form.timeTestingRequired,
+          number_of_samples: form.numberOfSamples.trim(),
+          supplier_name: form.supplierName.trim(),
           registry_branch: form.branchLabel,
           branch_id: form.branchId,
           terminal_staff: form.staff,
@@ -189,15 +245,6 @@ export default function Page() {
           amount_paid: form.amountPaid,
           balance: form.balance,
           billing_notes: form.billingNotes.trim(),
-        },
-
-        test_slip: {
-          actual_sample_checked: form.actualSampleChecked,
-          voids_cracks: form.voidsCracks.trim(),
-          weight: form.weight.trim(),
-          diameter: form.diameter.trim(),
-          reference_test_ids: form.referenceTestIds.trim(),
-          condition_notes: form.conditionNotes.trim(),
         },
       }),
     );
@@ -273,7 +320,7 @@ export default function Page() {
           <section className="mainColumn">
             <Card
               title="Client & TRF Metadata"
-              subtitle="Capture the request form details used for registration."
+              subtitle="Capture the Test Request Form details for registration."
             >
               <div className="formGrid">
                 <Input
@@ -303,22 +350,89 @@ export default function Page() {
                 />
 
                 <Input
+                  label="Test Reference No."
+                  value={form.testReferenceNo}
+                  onChange={(event) =>
+                    updateForm({ testReferenceNo: event.target.value })
+                  }
+                  placeholder="e.g. TRF-2024-001"
+                />
+
+                <Input
+                  label="Supplier Name"
+                  value={form.supplierName}
+                  onChange={(event) =>
+                    updateForm({ supplierName: event.target.value })
+                  }
+                />
+
+                <Input
+                  label="Number of Samples"
+                  value={form.numberOfSamples}
+                  onChange={(event) =>
+                    updateForm({ numberOfSamples: event.target.value })
+                  }
+                  placeholder="e.g. 3"
+                  type="number"
+                />
+
+                <Input
+                  label="Date Requested"
+                  value={form.dateRequested}
+                  onChange={(event) =>
+                    updateForm({ dateRequested: event.target.value })
+                  }
+                  type="date"
+                />
+
+                <Input
+                  label="Date Testing Required"
+                  value={form.dateTestingRequired}
+                  onChange={(event) =>
+                    updateForm({ dateTestingRequired: event.target.value })
+                  }
+                  type="date"
+                />
+
+                <Input
+                  label="Time Testing Required"
+                  value={form.timeTestingRequired}
+                  onChange={(event) =>
+                    updateForm({ timeTestingRequired: event.target.value })
+                  }
+                  type="time"
+                />
+
+<TestCodeSelect
+  label="Test Code"
+  value={form.testCode}
+  required
+  onChange={handleTestCodeChange}
+options={testCodeOptions}
+  loading={loadingTestCodes}
+/>
+
+                <Input
+                  label="Test Standard"
+                  value={form.testStandard}
+                  readOnly
+                  placeholder="Auto-populated from Test Code"
+                />
+
+                <Input
                   label="Requested Test Type"
                   value={form.requestedTestType}
-                  required
-                  onChange={(event) =>
-                    updateForm({ requestedTestType: event.target.value })
-                  }
-                  placeholder="e.g. Concrete Compression Test"
+                  readOnly
+                  placeholder="Auto-populated from Test Code"
                 />
 
                 <Textarea
-                  label="Structure / Design Details"
-                  value={form.structureDetails}
+                  label="Sample Specification"
+                  value={form.sampleSpecification}
                   onChange={(event) =>
-                    updateForm({ structureDetails: event.target.value })
+                    updateForm({ sampleSpecification: event.target.value })
                   }
-                  placeholder="e.g. SLAB 3000 psi @ 7 days"
+                  placeholder="e.g. 3000 psi concrete @ 7 days, cylindrical specimen"
                   rows={3}
                 />
 
@@ -389,71 +503,6 @@ export default function Page() {
                   value={form.billingNotes}
                   onChange={(event) =>
                     updateForm({ billingNotes: event.target.value })
-                  }
-                  rows={3}
-                />
-              </div>
-            </Card>
-
-            <Card
-              title="Lab Tech Test Slip"
-              subtitle="Record physical sample inspection before test encoding."
-            >
-              <div className="formGrid">
-                <label className="checkField">
-                  <input
-                    type="checkbox"
-                    checked={form.actualSampleChecked}
-                    onChange={(event) =>
-                      updateForm({ actualSampleChecked: event.target.checked })
-                    }
-                  />
-                  <span>
-                    Actual sample checked <em>Required</em>
-                  </span>
-                </label>
-
-                <Input
-                  label="Voids / Cracks Observed"
-                  value={form.voidsCracks}
-                  onChange={(event) =>
-                    updateForm({ voidsCracks: event.target.value })
-                  }
-                  placeholder="e.g. No visible cracks"
-                />
-
-                <Input
-                  label="Weight"
-                  value={form.weight}
-                  onChange={(event) =>
-                    updateForm({ weight: event.target.value })
-                  }
-                  placeholder="e.g. 8.2 kg"
-                />
-
-                <Input
-                  label="Diameter"
-                  value={form.diameter}
-                  onChange={(event) =>
-                    updateForm({ diameter: event.target.value })
-                  }
-                  placeholder="e.g. 150 mm"
-                />
-
-                <Input
-                  label="Reference Test IDs"
-                  value={form.referenceTestIds}
-                  onChange={(event) =>
-                    updateForm({ referenceTestIds: event.target.value })
-                  }
-                  placeholder="e.g. CT-001, CT-002"
-                />
-
-                <Textarea
-                  label="Condition Notes"
-                  value={form.conditionNotes}
-                  onChange={(event) =>
-                    updateForm({ conditionNotes: event.target.value })
                   }
                   rows={3}
                 />
@@ -781,30 +830,6 @@ export default function Page() {
           display: grid;
           grid-template-columns: repeat(2, minmax(0, 1fr));
           gap: 14px;
-        }
-
-        .checkField {
-          grid-column: 1 / -1;
-          display: inline-flex;
-          align-items: center;
-          gap: 10px;
-          color: var(--color-text-primary);
-          font-size: var(--text-sm);
-          font-weight: 500;
-        }
-
-        .checkField input {
-          width: 17px;
-          height: 17px;
-          accent-color: var(--color-brand);
-        }
-
-        .checkField em {
-          margin-left: 6px;
-          color: var(--color-text-muted);
-          font-size: 10px;
-          font-style: normal;
-          font-weight: 400;
         }
 
         .aiPanel {

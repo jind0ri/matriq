@@ -1,6 +1,11 @@
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000";
 
+  let testCodesCache = null;
+let testCodesCacheTime = 0;
+
+const TEST_CODES_TTL = 1000 * 60 * 10; // 10 minutes
+
 export function isInactivePayload(payload) {
   if (!payload) return true;
 
@@ -35,13 +40,11 @@ export function saveAuthSession(payload) {
       name: payload.name,
       user_id: payload.user_id,
       branch_id: payload.branch_id,
-
-      // Account status fields used by AppShell route protection.
       is_active: payload.is_active,
       active: payload.active,
       status: payload.status,
       account_status: payload.account_status,
-    }),
+    })
   );
 }
 
@@ -49,7 +52,6 @@ export function getStoredUser() {
   if (typeof window === "undefined") return null;
 
   const raw = localStorage.getItem("user");
-
   if (!raw) return null;
 
   try {
@@ -155,6 +157,28 @@ export const apiClient = {
   getAccountingBilling: () => request("/api/accounting/billing"),
   getAccountingInvoices: () => request("/api/accounting/invoices"),
 
+getTestCodes: async () => {
+  const now = Date.now();
+
+  // 1. return cache if valid
+  if (testCodesCache && now - testCodesCacheTime < TEST_CODES_TTL) {
+    return testCodesCache;
+  }
+
+  // 2. fetch from API
+  const res = await request("/api/test-codes");
+
+  const data = Array.isArray(res)
+  ? res
+  : res?.test_codes || res?.data || res?.result || [];
+
+  // 3. store cache
+  testCodesCache = data;
+  testCodesCacheTime = now;
+
+  return data;
+}, 
+
   createInvoice: (payload) =>
     request("/api/accounting/invoices", {
       method: "POST",
@@ -253,12 +277,14 @@ export const apiClient = {
     }),
 
   getNotifications: () => request("/api/notifications"),
-
   getUnreadNotifications: () => request("/api/notifications/unread"),
-
   getUnreadNotificationCount: () => request("/api/notifications/unread-count"),
-
   getSyncStatus: () => request("/api/sync/status"),
+
+  clearTestCodesCache: () => {
+  testCodesCache = null;
+  testCodesCacheTime = 0;
+},
 
   markNotificationRead: (notificationId) =>
     request(`/api/notifications/${notificationId}/read`, {
@@ -269,6 +295,7 @@ export const apiClient = {
     request("/api/notifications/read-all", {
       method: "PATCH",
     }),
+
   createFeedbackReport: (payload) =>
     request("/api/feedback", {
       method: "POST",
@@ -276,7 +303,6 @@ export const apiClient = {
     }),
 
   getMyFeedbackReports: () => request("/api/feedback/mine"),
-
   getAdminFeedbackReports: () => request("/api/feedback/admin"),
 
   updateFeedbackReport: (feedbackId, payload) =>
@@ -284,6 +310,4 @@ export const apiClient = {
       method: "PATCH",
       body: JSON.stringify(payload),
     }),
-
-    
 };
