@@ -20,19 +20,12 @@ const REPORT_COLUMNS = [
   { key: "test", label: "Test", width: "190px" },
   { key: "result", label: "Result", width: "130px" },
   { key: "released", label: "Released At", width: "155px" },
-  { key: "action", label: "Report", align: "right", width: "280px" },
+  { key: "action", label: "Report", align: "right", width: "110px" },
 ];
-
-const PDF_DOWNLOAD_ROLES = new Set([
-  "QA Engineer",
-  "Accounting Staff",
-  "Administrator",
-]);
 
 export default function ReportsPage() {
   const user = getStoredUser();
   const role = user?.role || "Lab Technician";
-  const canDownloadOfficialReport = PDF_DOWNLOAD_ROLES.has(role);
   const isAdmin = role === "Administrator";
   const userBranchId = Number(user?.branch_id);
 
@@ -71,53 +64,7 @@ export default function ReportsPage() {
     branchFilter !== "All" &&
     branchFilter !== "My" &&
     Number(resolveBranchFilter(branchFilter, userBranchId)) !==
-      Number(userBranchId);
-
-  async function downloadSampleReport(sampleId, format = "pdf") {
-    const token =
-      localStorage.getItem("access_token") || localStorage.getItem("token");
-
-    if (!token) {
-      setError("Missing login token. Please log in again.");
-      return;
-    }
-
-    try {
-      const isExcel = format === "excel";
-      const response = await fetch(
-        `http://127.0.0.1:8000/api/samples/${sampleId}/report/${
-          isExcel ? "excel" : "pdf"
-        }`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        },
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => null);
-        throw new Error(
-          errorData?.detail ||
-            `Failed to download ${isExcel ? "Excel" : "PDF"} report.`,
-        );
-      }
-
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `${sampleId}-official-report.${isExcel ? "xlsx" : "pdf"}`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-
-      window.URL.revokeObjectURL(url);
-    } catch (err) {
-      setError(err.message || "Failed to download report.");
-    }
-  }
+    Number(userBranchId);
 
   async function loadReports() {
     setLoading(true);
@@ -362,30 +309,6 @@ export default function ReportsPage() {
 
                       <td className="right">
                         <div className="reportActions">
-                          {canDownloadOfficialReport && (
-                            <button
-                              type="button"
-                              className="reportButton"
-                              onClick={() =>
-                                downloadSampleReport(item.sample_id, "pdf")
-                              }
-                            >
-                              Download PDF
-                            </button>
-                          )}
-
-                          {canDownloadOfficialReport && (
-                            <button
-                              type="button"
-                              className="reportButton secondary"
-                              onClick={() =>
-                                downloadSampleReport(item.sample_id, "excel")
-                              }
-                            >
-                              Excel
-                            </button>
-                          )}
-
                           <Link
                             href={`/technical/tracking/${item.sample_id}`}
                             className="reportLink"
@@ -509,50 +432,11 @@ export default function ReportsPage() {
           text-align: right;
         }
 
-        .reportActions {
-          display: inline-flex;
-          align-items: center;
-          justify-content: flex-end;
-          gap: 8px;
-          min-width: 260px;
-        }
-
-        .reportButton {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          min-height: 32px;
-          padding: 0 12px;
-          border: 1px solid var(--color-brand);
-          border-radius: var(--radius-md);
-          background: var(--color-brand);
-          color: #ffffff;
-          font-size: var(--text-xs);
-          font-weight: 600;
-          text-decoration: none;
-          white-space: nowrap;
-          cursor: pointer;
-          transition:
-            background-color var(--transition-base),
-            border-color var(--transition-base),
-            opacity var(--transition-base);
-        }
-
-        .reportButton:hover {
-          opacity: 0.88;
-        }
-
-        .reportButton.secondary {
-          border-color: var(--color-border-soft);
-          background: var(--color-surface);
-          color: var(--color-text-primary);
-          font-weight: 500;
-        }
-
-        .reportButton.secondary:hover {
-          border-color: var(--color-brand);
-          color: var(--color-brand);
-        }
+.reportActions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+}
 
         :global(.reportLink) {
           display: inline-flex;
@@ -574,12 +458,14 @@ export default function ReportsPage() {
             color var(--transition-base);
         }
 
-        :global(.reportLink:hover) {
-          background: var(--color-overlay);
-          border-color: var(--color-border);
-          color: var(--color-brand);
-          text-decoration: none;
-        }
+:global(.reportLink:hover),
+:global(.reportLink:focus),
+:global(.reportLink:active) {
+  background: var(--color-overlay);
+  border-color: var(--color-border);
+  color: var(--color-brand);
+  text-decoration: none !important;
+}
 
         :global(.reportsTable table) {
           min-width: 1220px;

@@ -33,6 +33,7 @@ const ROLE_OPTIONS = [
 export default function AdminUsersPage() {
   const currentUser = getStoredUser();
   const userBranchId = Number(currentUser?.branch_id);
+  const currentUserId = String(getUserId(currentUser) || "");
 
   const [users, setUsers] = useState([]);
   const [branchFilter, setBranchFilter] = useState(userBranchId ? "My" : "All");
@@ -236,12 +237,22 @@ export default function AdminUsersPage() {
   async function handleToggleStatus(user) {
     const userId = getUserId(user);
 
+    if (String(userId) === currentUserId) {
+      setError("You cannot deactivate your own account while logged in.");
+      return;
+    }
+
     if (!userId) {
       setError("Unable to update this user because no user ID was found.");
       return;
     }
 
     const nextActive = !isUserActive(user);
+    const confirmed = window.confirm(
+      `Are you sure you want to ${nextActive ? "activate" : "deactivate"} ${getUserDisplayName(user)}?`,
+    );
+
+    if (!confirmed) return;
 
     setUpdatingUserId(String(userId));
     setError("");
@@ -444,7 +455,10 @@ export default function AdminUsersPage() {
                             ? "rowAction danger"
                             : "rowAction success"
                         }
-                        disabled={updatingUserId === String(getUserId(user))}
+                        disabled={
+                          updatingUserId === String(getUserId(user)) ||
+                          String(getUserId(user)) === currentUserId
+                        }
                         onClick={() => handleToggleStatus(user)}
                         title="Status changes preserve user history and audit links."
                       >

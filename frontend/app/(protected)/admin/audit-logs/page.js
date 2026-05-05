@@ -858,20 +858,32 @@ function getAuditAction(log) {
 }
 
 function getAuditTarget(log) {
-  const directTarget =
+  const sampleId =
     log.sample_id ||
+    log.new_value?.sample_id ||
+    log.old_value?.sample_id ||
+    log.details?.sample_id ||
+    log.metadata?.sample_id;
+
+  if (sampleId) return `Sample ${sampleId}`;
+
+  const invoiceId =
     log.invoice_id ||
+    log.new_value?.invoice_id ||
+    log.old_value?.invoice_id ||
+    log.details?.invoice_id ||
+    log.metadata?.invoice_id;
+
+  if (invoiceId) return `Invoice ${invoiceId}`;
+
+  const recordId =
     log.target ||
     log.entity ||
     log.record_id ||
-    log.new_value?.sample_id ||
-    log.old_value?.sample_id ||
-    log.new_value?.invoice_id ||
-    log.old_value?.invoice_id ||
     log.new_value?.record_id ||
     log.old_value?.record_id;
 
-  if (directTarget) return directTarget;
+  if (recordId) return recordId;
 
   return getPageLabel(log);
 }

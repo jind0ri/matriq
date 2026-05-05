@@ -39,7 +39,7 @@ export default function AdminLoginPage() {
     setSubmitting(true);
 
     try {
-      const payload = await apiClient.login(form.email, form.password);
+      const payload = await apiClient.login(form.email, form.password, "admin");
 
       if (isInactivePayload(payload)) {
         clearAuthSession();

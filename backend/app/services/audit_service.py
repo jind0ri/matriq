@@ -25,9 +25,21 @@ def _safe_int(value):
     return None
 
 
+def _safe_sample_id(value):
+    if value is None:
+        return None
+
+    text = str(value).strip()
+
+    if not text:
+        return None
+
+    return text
+
+
 def log_event(*, action: str, endpoint_accessed: str, user_id=None, sample_id=None, old_value=None, new_value=None, ip_address=None):
     db_user_id = _safe_int(user_id)
-    db_sample_id = _safe_int(sample_id)
+    db_sample_id = _safe_sample_id(sample_id)
 
     execute(
         '''

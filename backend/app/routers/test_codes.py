@@ -22,7 +22,8 @@ def get_active_test_codes(
             tc.name,
             tc.category,
             tc.standard,
-            tc.unit_price
+            tc.unit_price,
+            tc.test_type
         FROM test_codes tc
         JOIN system_active_test_codes sat
             ON tc.code = sat.code

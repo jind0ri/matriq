@@ -463,7 +463,7 @@ export default function AdminDashboard() {
               title="Recent Audit Activity"
               subtitle="Attributable records connect actions to the account that performed them."
               actions={
-                <Link href="/admin/audit" className="textAction">
+                <Link href="/admin/audit-logs" className="textAction">
                   View All
                 </Link>
               }

@@ -49,6 +49,63 @@ RESULT_FAIL = "FAIL"
 RESULT_RECORDED = "RECORDED"
 RESULT_INCOMPLETE = "INCOMPLETE"
 
+PAYMENT_UNPAID = "Unpaid"
+PAYMENT_DOWNPAYMENT = "Downpayment Paid"
+PAYMENT_PO = "PO Submitted"
+PAYMENT_FULLY_PAID = "Fully Paid"
+
+TESTING_CLEARANCE_PAYMENTS = {
+    PAYMENT_DOWNPAYMENT,
+    PAYMENT_PO,
+    PAYMENT_FULLY_PAID,
+}
+
+
+def get_metadata(sample):
+    metadata = sample.get("device_metadata") or {}
+
+    if isinstance(metadata, str):
+        try:
+            return json.loads(metadata)
+        except Exception:
+            return {}
+
+    return metadata
+
+
+def normalize_text(value):
+    return str(value or "").strip()
+
+
+def require_testing_payment_clearance(payment_status):
+    if payment_status not in TESTING_CLEARANCE_PAYMENTS:
+        raise HTTPException(
+            status_code=400,
+            detail="Downpayment, purchase order, or full payment is required before QA can approve testing.",
+        )
+
+
+def require_requested_test_match(trf, payload):
+    requested_test_code = normalize_text(trf.get("requested_test_code"))
+    submitted_test_code = normalize_text(payload.get("test_code"))
+
+    requested_test_type = normalize_text(trf.get("requested_test_type"))
+    submitted_test_type = normalize_text(payload.get("test_type"))
+
+    if requested_test_code and submitted_test_code:
+        if submitted_test_code != requested_test_code:
+            raise HTTPException(
+                status_code=400,
+                detail="Submitted test code must match the requested test selected during sample intake.",
+            )
+
+    if requested_test_type and submitted_test_type:
+        if submitted_test_type != requested_test_type:
+            raise HTTPException(
+                status_code=400,
+                detail="Submitted test type must match the requested test selected during sample intake.",
+            )
+
 
 # ============================================================
 # SHARED HELPERS
@@ -1636,9 +1693,9 @@ def create_sample(
 
     log_event(
         action="CREATE_SAMPLE",
+        endpoint_accessed="/api/samples",
         user_id=current_user["user_id"],
-        sample_id=None,
-        new_value=sample,
+        sample_id=sample["sample_id"],
         ip_address=request.client.host if request.client else None,
     )
 
@@ -1675,9 +1732,15 @@ def samples(
 def sample_image(
     sample_id: str,
     request: Request,
-    current_user=Depends(
-        require_roles(ROLE_LAB_TECH, ROLE_SENIOR_TECH, ROLE_QA, ROLE_ADMIN)
-    ),
+current_user=Depends(
+    require_roles(
+        ROLE_LAB_TECH,
+        ROLE_SENIOR_TECH,
+        ROLE_QA,
+        ROLE_ADMIN,
+        ROLE_ACCOUNTING,
+    )
+),
 ):
     item = get_sample(sample_id)
     if not item:
@@ -1745,7 +1808,7 @@ def sample_image(
         action="VIEW_SAMPLE_IMAGE",
         endpoint_accessed=f"/api/samples/{sample_id}/image",
         user_id=current_user["user_id"],
-        sample_id=None,
+        sample_id=sample_id,
         new_value={
             "sample_id": sample_id,
             "image_path": image_path,
@@ -1828,7 +1891,12 @@ def qa_pretesting_review(
             detail="Only Registered samples can be reviewed before testing",
         )
 
-    metadata = item.get("device_metadata") or {}
+    metadata = get_metadata(item)
+    payment = metadata.get("payment") or {}
+    payment_status = payment.get("payment_status") or PAYMENT_UNPAID
+
+    require_testing_payment_clearance(payment_status)
+
     metadata["qa"] = metadata.get("qa") or {}
     metadata["qa"]["pre_testing_reviewed"] = True
     metadata["qa"]["pre_testing_reviewed_by"] = current_user["user_id"]
@@ -1893,6 +1961,7 @@ def qa_result_override(
     item = get_sample(sample_id)
     if not item:
         raise HTTPException(status_code=404, detail="Sample not found")
+    require_sample_branch_access(current_user, item)
 
     if item.get("current_state") != "For Review":
         raise HTTPException(
@@ -1996,6 +2065,7 @@ def qa_release_review(
     item = get_sample(sample_id)
     if not item:
         raise HTTPException(status_code=404, detail="Sample not found")
+    require_sample_branch_access(current_user, item)
 
     if item.get("current_state") != "For Review":
         raise HTTPException(status_code=400, detail="Only For Review samples can be released")
@@ -2118,7 +2188,7 @@ def sample_detail(
         action="VIEW_SAMPLE",
         endpoint_accessed=f"/api/samples/{sample_id}",
         user_id=current_user["user_id"],
-        sample_id=None,
+        sample_id=sample_id,
         new_value={"sample_id": sample_id},
         ip_address=request.client.host if request.client else None,
     )
@@ -2296,6 +2366,7 @@ def update_test_data(
     item = get_sample(sample_id)
     if not item:
         raise HTTPException(status_code=404, detail="Sample not found")
+    require_sample_branch_access(current_user, item)
 
     if item.get("current_state") != "In Testing" and current_user["role"] != ROLE_ADMIN:
         raise HTTPException(
@@ -2306,6 +2377,11 @@ def update_test_data(
     test_type = payload.get("test_type")
     if not test_type:
         raise HTTPException(status_code=400, detail="test_type is required")
+    
+    metadata = get_metadata(item)
+    trf = metadata.get("trf") or {}
+
+    require_requested_test_match(trf, payload)
 
     evaluation = evaluate_standardized_test(test_type, payload)
 
@@ -2313,8 +2389,6 @@ def update_test_data(
     data = evaluation["data"]
 
     technician_remarks = payload.get("remarks") or ""
-
-    metadata = item.get("device_metadata") or {}
 
     metadata["test_data"] = {
         "test_type": test_type,
@@ -2416,6 +2490,7 @@ def update_sample_status(
     item = get_sample(sample_id)
     if not item:
         raise HTTPException(status_code=404, detail="Sample not found")
+    require_sample_branch_access(current_user, item)
 
     new_state = payload.get("status")
     if new_state not in {"Registered", "In Testing", "For Review", "Released", "Archived"}:

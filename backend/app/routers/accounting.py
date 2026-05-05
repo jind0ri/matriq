@@ -9,7 +9,6 @@ from ..config import ROLE_ACCOUNTING, ROLE_ADMIN, ROLE_QA
 from ..database import execute, fetchall, fetchone
 from ..services.auth_service import require_roles
 from ..services.audit_service import log_event
-from ..config import ROLE_QA
 from ..services.notification_service import notify_role_for_branch
 from ..services.sample_service import get_sample
 
@@ -20,6 +19,8 @@ PAYMENT_UNPAID = "Unpaid"
 PAYMENT_DOWNPAYMENT = "Downpayment Paid"
 PAYMENT_PO = "PO Submitted"
 PAYMENT_FULLY_PAID = "Fully Paid"
+CLIENT_WALK_IN = "Walk-in"
+CLIENT_BILLING = "Accredited Billing Client"
 
 VALID_PAYMENT_STATUSES = {
     PAYMENT_UNPAID,
@@ -787,6 +788,7 @@ def update_sample_payment(
 
     if not item:
         raise HTTPException(status_code=404, detail="Sample not found")
+    require_branch_access(current_user, item.get("branch_id"))
 
     role = current_user["role"]
     current_state = item.get("current_state")
@@ -801,6 +803,9 @@ def update_sample_payment(
             metadata = {}
 
     payment = metadata.get("payment") or {}
+    client_type = payment.get("client_type") or payload.get("client_type") or CLIENT_WALK_IN
+    po_number = (payload.get("po_number") or payment.get("po_number") or "").strip()
+    credit_terms_days = payload.get("credit_terms_days") or payment.get("credit_terms_days")
 
     old_payment_status = payment.get("payment_status") or PAYMENT_UNPAID
     new_payment_status = payload.get("payment_status")
@@ -817,6 +822,41 @@ def update_sample_payment(
 
     if new_payment_status not in VALID_PAYMENT_STATUSES:
         raise HTTPException(status_code=400, detail="Invalid payment status")
+
+    # Walk-in cannot use PO
+    if client_type == CLIENT_WALK_IN and new_payment_status == PAYMENT_PO:
+        raise HTTPException(
+            status_code=400,
+            detail="Walk-in clients cannot submit a purchase order.",
+        )
+
+    # PO validation
+    if new_payment_status == PAYMENT_PO:
+        if client_type != CLIENT_BILLING:
+            raise HTTPException(
+                status_code=400,
+                detail="Only accredited billing clients can submit a purchase order.",
+            )
+
+        if is_blank(po_number):
+            raise HTTPException(
+                status_code=400,
+                detail="Purchase order number is required for PO Submitted status.",
+            )
+
+        try:
+            credit_terms_days = int(credit_terms_days)
+        except Exception:
+            raise HTTPException(
+                status_code=400,
+                detail="Credit terms must be a valid number of days.",
+            )
+
+        if credit_terms_days <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Credit terms must be greater than zero.",
+            )
 
     if is_immutable and role != ROLE_ADMIN:
         raise HTTPException(
@@ -879,6 +919,13 @@ def update_sample_payment(
 
     payment_history.append(history_entry)
 
+    payment["client_type"] = client_type
+    payment["po_number"] = po_number if client_type == CLIENT_BILLING else ""
+    payment["credit_terms_days"] = (
+        credit_terms_days
+        if client_type == CLIENT_BILLING and new_payment_status == PAYMENT_PO
+        else None
+    )
     payment["payment_status"] = new_payment_status
     payment["payment_updated_by"] = current_user["user_id"]
     payment["payment_updated_by_name"] = user_display_name
@@ -901,10 +948,22 @@ def update_sample_payment(
         payment["confirmation_note"] = confirmation_note
 
     payment["financially_cleared_for_testing"] = (
-        new_payment_status in INITIAL_PAYMENT_STATUSES
+        new_payment_status in {PAYMENT_DOWNPAYMENT, PAYMENT_FULLY_PAID}
+        or (
+            client_type == CLIENT_BILLING
+            and new_payment_status == PAYMENT_PO
+            and not is_blank(po_number)
+        )
     )
+
     payment["financially_cleared_for_release"] = (
         new_payment_status == PAYMENT_FULLY_PAID
+        or (
+            client_type == CLIENT_BILLING
+            and new_payment_status == PAYMENT_PO
+            and not is_blank(po_number)
+            and credit_terms_days
+        )
     )
 
     metadata["payment"] = payment

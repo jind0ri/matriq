@@ -273,7 +273,7 @@ def create_sample_with_inference(
             f"Duplicate active sample already exists: {duplicate['sample_id']}"
         )
 
-    return create_sample_only(
+    sample = create_sample_only(
         client_name=client_name,
         project_reference=project_reference,
         material_type=predicted_label_db,
@@ -291,6 +291,106 @@ def create_sample_with_inference(
         original_filename=original_filename,
         image_sha256=image_sha256,
     )
+
+    execute(
+        """
+        INSERT INTO ai_inference_events (
+            id,
+            request_id,
+            endpoint_accessed,
+            outcome_status,
+            user_id,
+            user_role,
+            model_version,
+            model_name,
+            predicted_label,
+            confidence_score,
+            decision,
+            device_metadata,
+            details,
+            created_at
+        )
+        VALUES (
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP
+        )
+        """,
+        (
+            _make_id(),
+            sample["sample_id"],
+            "/api/classify",
+            "success",
+            registered_by,
+            registered_by_role,
+            model_version,
+            None,
+            ai_predicted_label_db,
+            confidence_score,
+            decision_db,
+            _json_or_text(device_metadata),
+            _json_or_text(
+                {
+                    "sample_id": sample["sample_id"],
+                    "branch_id": branch_id,
+                    "image_path": image_path,
+                    "original_filename": original_filename,
+                    "image_sha256": image_sha256,
+                    "version_id": version_id,
+                }
+            ),
+        ),
+    )
+
+    if decision_db == "Manual-Review":
+        execute(
+            """
+            INSERT INTO manual_review_cases (
+                id,
+                review_case_id,
+                sample_id_fk,
+                request_id,
+                client_name,
+                project_id,
+                branch_id,
+                predicted_label,
+                confidence_score,
+                decision,
+                required_action,
+                out_of_scope,
+                model_version,
+                device_metadata,
+                image_sha256,
+                original_filename,
+                status,
+                created_at,
+                updated_at
+            )
+            VALUES (
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            )
+            """,
+            (
+                _make_id(),
+                f"REVIEW-{sample['sample_id']}",
+                sample["sample_id"],
+                sample["sample_id"],
+                client_name,
+                project_reference,
+                branch_id,
+                ai_predicted_label_db,
+                confidence_score,
+                decision_db,
+                "Senior Technician review required",
+                confidence_score < 0.75,
+                model_version,
+                _json_or_text(device_metadata),
+                image_sha256,
+                original_filename,
+                "Pending Review",
+            ),
+        )
+
+    return sample
 
 
 def list_samples() -> list[dict]:

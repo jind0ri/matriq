@@ -35,7 +35,7 @@ export default function ProtectedLayout({ children }) {
     const storedUser = localStorage.getItem("user");
 
     if (!storedUser) {
-      router.replace("/auth/login");
+      router.replace("/auth/access-select");
       return;
     }
 

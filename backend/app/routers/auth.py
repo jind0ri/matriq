@@ -165,6 +165,44 @@ def login(user: UserLogin, request: Request):
             status_code=403,
             detail="This account has been deactivated. Please contact the administrator.",
         )
+    
+    requested_portal = (user.portal or "").strip().lower()
+
+    if requested_portal == "admin" and auth_user["role"] != "Administrator":
+        log_event(
+            action="AUTH_LOGIN_BLOCKED_WRONG_PORTAL",
+            endpoint_accessed="/api/auth/login",
+            user_id=auth_user["user_id"],
+            new_value={
+                "email": auth_user["username"],
+                "role": auth_user["role"],
+                "portal": requested_portal,
+            },
+            ip_address=request.client.host if request.client else None,
+        )
+
+        raise HTTPException(
+            status_code=403,
+            detail="This login page is for administrators only.",
+        )
+
+    if requested_portal == "employee" and auth_user["role"] == "Administrator":
+        log_event(
+            action="AUTH_LOGIN_BLOCKED_WRONG_PORTAL",
+            endpoint_accessed="/api/auth/login",
+            user_id=auth_user["user_id"],
+            new_value={
+                "email": auth_user["username"],
+                "role": auth_user["role"],
+                "portal": requested_portal,
+            },
+            ip_address=request.client.host if request.client else None,
+        )
+
+        raise HTTPException(
+            status_code=403,
+            detail="Administrators must use the admin login page.",
+        )
 
     log_event(
         action="AUTH_LOGIN_SUCCESS",

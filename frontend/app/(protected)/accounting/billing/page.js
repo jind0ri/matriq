@@ -72,6 +72,8 @@ export default function BillingPage() {
   const [balance, setBalance] = useState("");
   const [billingNotes, setBillingNotes] = useState("");
   const [confirmationNote, setConfirmationNote] = useState("");
+  const [poNumber, setPoNumber] = useState("");
+  const [creditTermsDays, setCreditTermsDays] = useState("30");
   const [paymentModalError, setPaymentModalError] = useState("");
 
   const [error, setError] = useState("");
@@ -104,7 +106,7 @@ export default function BillingPage() {
     branchFilter !== "All" &&
     branchFilter !== "My" &&
     Number(resolveBranchFilter(branchFilter, userBranchId)) !==
-      Number(userBranchId);
+    Number(userBranchId);
 
   function canActOnItem(item) {
     if (isAdmin) return true;
@@ -346,6 +348,8 @@ export default function BillingPage() {
     setBalance(payment.balance ? String(payment.balance) : "");
     setBillingNotes(payment.billing_notes || "");
     setConfirmationNote(payment.confirmation_note || "");
+    setPoNumber(payment.po_number || "");
+    setCreditTermsDays(payment.credit_terms_days ? String(payment.credit_terms_days) : "30");
     setPaymentModalError("");
     setPaymentModalOpen(true);
   }
@@ -360,6 +364,8 @@ export default function BillingPage() {
     setBalance("");
     setBillingNotes("");
     setConfirmationNote("");
+    setPoNumber("");
+    setCreditTermsDays("30");
     setPaymentModalError("");
   }
 
@@ -414,6 +420,32 @@ export default function BillingPage() {
       return;
     }
 
+    if (
+      paymentStatus === PAYMENT_STATUSES.PO &&
+      !isAccreditedBilling(selectedPaymentRecord)
+    ) {
+      setPaymentModalError(
+        "Only accredited billing clients can be marked as PO Submitted.",
+      );
+      return;
+    }
+
+    if (
+      paymentStatus === PAYMENT_STATUSES.PO &&
+      !poNumber.trim()
+    ) {
+      setPaymentModalError("Purchase order number is required for PO Submitted.");
+      return;
+    }
+
+    if (
+      paymentStatus === PAYMENT_STATUSES.PO &&
+      !creditTermsDays
+    ) {
+      setPaymentModalError("Credit terms are required for PO Submitted.");
+      return;
+    }
+
     setUpdatingPayment(true);
 
     try {
@@ -423,6 +455,9 @@ export default function BillingPage() {
         balance: parsedBalance,
         billing_notes: billingNotes.trim(),
         confirmation_note: confirmationNote.trim(),
+        po_number: paymentStatus === PAYMENT_STATUSES.PO ? poNumber.trim() : "",
+        credit_terms_days:
+          paymentStatus === PAYMENT_STATUSES.PO ? Number(creditTermsDays) : null,
       });
 
       closePaymentModal();
@@ -480,11 +515,11 @@ export default function BillingPage() {
               ? "You can view and manage billing records from all branches."
               : isCloudMonitoring
                 ? `You are viewing all cloud-synced billing records. Payment and invoice actions remain locked to your assigned branch: ${formatBranch(
-                    userBranchId,
-                  )}.`
+                  userBranchId,
+                )}.`
                 : `You are viewing ${branchLabel} billing records for monitoring. Payment and invoice actions remain locked to your assigned branch: ${formatBranch(
-                    userBranchId,
-                  )}.`}
+                  userBranchId,
+                )}.`}
           </span>
         </section>
       )}
@@ -759,9 +794,37 @@ export default function BillingPage() {
               <option value={PAYMENT_STATUSES.DOWNPAYMENT}>
                 Downpayment Paid
               </option>
-              <option value={PAYMENT_STATUSES.PO}>PO Submitted</option>
+              {isAccreditedBilling(selectedPaymentRecord) && (
+                <option value={PAYMENT_STATUSES.PO}>PO Submitted</option>
+              )}
               <option value={PAYMENT_STATUSES.FULLY_PAID}>Fully Paid</option>
             </Select>
+
+            {paymentStatus === PAYMENT_STATUSES.PO && (
+              <div className="paymentGrid">
+                <Input
+                  label="Purchase Order Number"
+                  name="poNumber"
+                  value={poNumber}
+                  required
+                  onChange={(event) => setPoNumber(event.target.value)}
+                  placeholder="e.g. PO-2026-001"
+                />
+
+                <Select
+                  label="Credit Terms"
+                  name="creditTermsDays"
+                  value={creditTermsDays}
+                  required
+                  onChange={(event) => setCreditTermsDays(event.target.value)}
+                >
+                  <option value="15">15 days</option>
+                  <option value="30">30 days</option>
+                  <option value="45">45 days</option>
+                  <option value="60">60 days</option>
+                </Select>
+              </div>
+            )}
 
             <div className="paymentGrid">
               <Input
@@ -1266,6 +1329,7 @@ function BillingDetails({ record }) {
 
   return (
     <div className="details">
+      <SampleImagePreview sampleId={record.sample_id} />
       <section className="detailGrid">
         <Detail label="Sample ID" value={record.sample_id} />
         <Detail label="Client" value={record.client_name} />
@@ -1330,6 +1394,16 @@ function BillingDetails({ record }) {
           <Detail
             label="Payment Status"
             value={payment.payment_status || "Unpaid"}
+          />
+          <Detail label="Client Type" value={payment.client_type} />
+          <Detail label="PO Number" value={payment.po_number} />
+          <Detail
+            label="Credit Terms"
+            value={
+              payment.credit_terms_days
+                ? `${payment.credit_terms_days} days`
+                : "-"
+            }
           />
           <Detail
             label="Amount Paid"
@@ -1501,6 +1575,157 @@ function BillingDetails({ record }) {
         }
       `}</style>
     </div>
+  );
+}
+
+function SampleImagePreview({ sampleId }) {
+  const [imageUrl, setImageUrl] = useState("");
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    if (!sampleId) return;
+
+    let objectUrl = "";
+
+    async function loadImage() {
+      setFailed(false);
+      setImageUrl("");
+
+      const token =
+        localStorage.getItem("access_token") ||
+        localStorage.getItem("token");
+
+      if (!token) {
+        setFailed(true);
+        return;
+      }
+
+      try {
+        const baseUrl =
+          process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000";
+
+        const response = await fetch(
+          `${baseUrl}/api/samples/${sampleId}/image`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          },
+        );
+
+        if (!response.ok) {
+          throw new Error("Image not available");
+        }
+
+        const blob = await response.blob();
+        objectUrl = URL.createObjectURL(blob);
+        setImageUrl(objectUrl);
+      } catch {
+        setFailed(true);
+      }
+    }
+
+    loadImage();
+
+    return () => {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [sampleId]);
+
+  if (!sampleId || failed) {
+    return (
+      <section className="imageBox">
+        <div className="imageEmpty">No sample image available.</div>
+
+        <style jsx>{`
+          .imageBox {
+            display: grid;
+            gap: 10px;
+            padding: 14px;
+            border: 1px solid var(--color-border-soft);
+            border-radius: var(--radius-md);
+            background: var(--color-surface);
+          }
+
+          .imageEmpty {
+            display: grid;
+            place-items: center;
+            min-height: 170px;
+            border: 1px dashed var(--color-border-soft);
+            border-radius: var(--radius-md);
+            background: var(--color-overlay);
+            color: var(--color-text-secondary);
+            font-size: var(--text-xs);
+          }
+        `}</style>
+      </section>
+    );
+  }
+
+  return (
+    <section className="imageBox">
+      <div className="imageHeader">
+        <div>
+          <h3>Sample Image</h3>
+          <p>Uploaded image used for AI material identification.</p>
+        </div>
+      </div>
+
+      <div className="imageFrame">
+        {imageUrl ? (
+          <img src={imageUrl} alt={`Uploaded sample image for ${sampleId}`} />
+        ) : (
+          <div className="imageEmpty">Loading sample image...</div>
+        )}
+      </div>
+
+      <style jsx>{`
+        .imageBox {
+          display: grid;
+          gap: 12px;
+          padding: 14px;
+          border: 1px solid var(--color-border-soft);
+          border-radius: var(--radius-md);
+          background: var(--color-surface);
+        }
+
+        .imageHeader h3 {
+          margin: 0;
+          color: var(--color-text-primary);
+          font-size: var(--text-sm);
+          font-weight: 600;
+        }
+
+        .imageHeader p {
+          margin: 4px 0 0;
+          color: var(--color-text-secondary);
+          font-size: var(--text-xs);
+          line-height: 1.45;
+        }
+
+        .imageFrame {
+          overflow: hidden;
+          border: 1px solid var(--color-border-soft);
+          border-radius: var(--radius-md);
+          background: var(--color-overlay);
+        }
+
+        .imageFrame img {
+          display: block;
+          width: 100%;
+          max-height: 320px;
+          object-fit: contain;
+        }
+
+        .imageEmpty {
+          display: grid;
+          place-items: center;
+          min-height: 170px;
+          color: var(--color-text-secondary);
+          font-size: var(--text-xs);
+        }
+      `}</style>
+    </section>
   );
 }
 
@@ -1739,4 +1964,9 @@ function formatEmpty(value) {
 function formatCurrency(value) {
   if (value === null || value === undefined || value === "") return "-";
   return `₱${Number(value || 0).toLocaleString()}`;
+}
+
+function isAccreditedBilling(record) {
+  const payment = record?.payment || record?.device_metadata?.payment || {};
+  return payment.client_type === "Accredited Billing";
 }

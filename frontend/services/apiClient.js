@@ -1,7 +1,7 @@
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000";
 
-  let testCodesCache = null;
+let testCodesCache = null;
 let testCodesCacheTime = 0;
 
 const TEST_CODES_TTL = 1000 * 60 * 10; // 10 minutes
@@ -130,10 +130,10 @@ async function request(path, options = {}) {
 }
 
 export const apiClient = {
-  login: (email, password) =>
+  login: (email, password, portal = null) =>
     request("/api/auth/login", {
       method: "POST",
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email, password, portal }),
     }),
 
   forgotPassword: (payload) =>
@@ -157,27 +157,27 @@ export const apiClient = {
   getAccountingBilling: () => request("/api/accounting/billing"),
   getAccountingInvoices: () => request("/api/accounting/invoices"),
 
-getTestCodes: async () => {
-  const now = Date.now();
+  getTestCodes: async () => {
+    const now = Date.now();
 
-  // 1. return cache if valid
-  if (testCodesCache && now - testCodesCacheTime < TEST_CODES_TTL) {
-    return testCodesCache;
-  }
+    // 1. return cache if valid
+    if (testCodesCache && now - testCodesCacheTime < TEST_CODES_TTL) {
+      return testCodesCache;
+    }
 
-  // 2. fetch from API
-  const res = await request("/api/test-codes");
+    // 2. fetch from API
+    const res = await request("/api/test-codes");
 
-  const data = Array.isArray(res)
-  ? res
-  : res?.test_codes || res?.data || res?.result || [];
+    const data = Array.isArray(res)
+      ? res
+      : res?.test_codes || res?.data || res?.result || [];
 
-  // 3. store cache
-  testCodesCache = data;
-  testCodesCacheTime = now;
+    // 3. store cache
+    testCodesCache = data;
+    testCodesCacheTime = now;
 
-  return data;
-}, 
+    return data;
+  },
 
   createInvoice: (payload) =>
     request("/api/accounting/invoices", {
@@ -282,9 +282,9 @@ getTestCodes: async () => {
   getSyncStatus: () => request("/api/sync/status"),
 
   clearTestCodesCache: () => {
-  testCodesCache = null;
-  testCodesCacheTime = 0;
-},
+    testCodesCache = null;
+    testCodesCacheTime = 0;
+  },
 
   markNotificationRead: (notificationId) =>
     request(`/api/notifications/${notificationId}/read`, {

@@ -281,7 +281,7 @@ async def classify(
         action="CLASSIFICATION_SUCCESS",
         endpoint_accessed="/api/classify",
         user_id=current_user["user_id"],
-        sample_id=None,
+        sample_id=stored_sample["sample_id"],
         new_value={
             "sample_id": stored_sample["sample_id"],
             "model_version": model_meta["version_number"],

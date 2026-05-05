@@ -43,7 +43,12 @@ export default function Page() {
     clientAddress: "",
     projectId: "",
     structureDetails: "",
+    requestedTestCode: "",
+    requestedTestKey: "",
     requestedTestType: "",
+    requestedTestStandard: "",
+    requestedTestCategory: "",
+    requestedTestUnitPrice: null,
     branchLabel,
     branchId: userBranchId,
     staff: staffName,
@@ -59,6 +64,8 @@ export default function Page() {
   const [error, setError] = useState("");
   const [showCamera, setShowCamera] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [testCodes, setTestCodes] = useState([]);
+  const [loadingTestCodes, setLoadingTestCodes] = useState(false);
 
   useEffect(() => {
     setForm((prev) => ({
@@ -81,6 +88,36 @@ export default function Page() {
     return () => URL.revokeObjectURL(url);
   }, [form.file]);
 
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadTestCodes() {
+      setLoadingTestCodes(true);
+
+      try {
+        const codes = await apiClient.getTestCodes();
+
+        if (mounted) {
+          setTestCodes(Array.isArray(codes) ? codes : []);
+        }
+      } catch (err) {
+        if (mounted) {
+          setError(err.message || "Failed to load test codes.");
+        }
+      } finally {
+        if (mounted) {
+          setLoadingTestCodes(false);
+        }
+      }
+    }
+
+    loadTestCodes();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   const createdSampleId = result?.sample_registration?.sample_id;
 
   const confidencePercent =
@@ -99,16 +136,25 @@ export default function Page() {
 
     if (!form.clientName.trim()) missing.push("Client / Contractor");
     if (!form.projectId.trim()) missing.push("Project Identifier");
-    if (!form.requestedTestType.trim()) missing.push("Requested Test Type");
+    if (!form.requestedTestCode) missing.push("Requested Test Type");
+    if (!form.requestedTestKey) missing.push("Supported Test Mapping");
     if (!form.clientType) missing.push("Client Type");
     if (!form.paymentStatus) missing.push("Payment Status");
+    if (
+      form.clientType === "Accredited Billing Client" &&
+      form.paymentStatus === "PO Submitted" &&
+      !form.poNumber.trim()
+    ) {
+      missing.push("Purchase Order Number");
+    }
+
     if (!form.file) missing.push("Sample Image");
 
     return missing;
   }, [
     form.clientName,
     form.projectId,
-    form.requestedTestType,
+    form.requestedTestCode,
     form.clientType,
     form.paymentStatus,
     form.file,
@@ -138,6 +184,29 @@ export default function Page() {
     setPreviewUrl("");
   }
 
+  function handleRequestedTestChange(event) {
+    const selectedCode = event.target.value;
+    const selectedTest = testCodes.find((item) => item.code === selectedCode);
+
+    updateForm({
+      requestedTestCode: selectedCode,
+      requestedTestKey: selectedTest?.test_type || "",
+      requestedTestType: selectedTest?.name || "",
+      requestedTestStandard: selectedTest?.standard || "",
+      requestedTestCategory: selectedTest?.category || "",
+      requestedTestUnitPrice: selectedTest?.unit_price ?? null,
+    });
+  }
+
+  function handleClientTypeChange(event) {
+    const clientType = event.target.value;
+
+    updateForm({
+      clientType,
+      paymentStatus: "Unpaid",
+    });
+  }
+
   async function analyze() {
     if (!canAnalyze) return;
 
@@ -163,7 +232,12 @@ export default function Page() {
           client_address: form.clientAddress.trim(),
           project_identifier: form.projectId.trim(),
           structure_details: form.structureDetails.trim(),
-          requested_test_type: form.requestedTestType.trim(),
+          requested_test_code: form.requestedTestCode,
+          requested_test_key: form.requestedTestKey,
+          requested_test_type: form.requestedTestType,
+          requested_test_standard: form.requestedTestStandard,
+          requested_test_category: form.requestedTestCategory,
+          requested_test_unit_price: form.requestedTestUnitPrice,
           registry_branch: form.branchLabel,
           branch_id: form.branchId,
           terminal_staff: form.staff,
@@ -276,15 +350,26 @@ export default function Page() {
                   }
                 />
 
-                <Input
+                <Select
                   label="Requested Test Type"
-                  value={form.requestedTestType}
+                  name="requestedTestCode"
+                  value={form.requestedTestCode}
                   required
-                  onChange={(event) =>
-                    updateForm({ requestedTestType: event.target.value })
-                  }
-                  placeholder="e.g. Concrete Compression Test"
-                />
+                  onChange={handleRequestedTestChange}
+                  disabled={loadingTestCodes}
+                >
+                  <option value="">
+                    {loadingTestCodes ? "Loading test options..." : "Select requested test"}
+                  </option>
+
+                  {testCodes
+                    .filter((test) => test.test_type)
+                    .map((test) => (
+                      <option key={test.code} value={test.code}>
+                        {test.code} — {test.name} ({test.standard})
+                      </option>
+                    ))}
+                </Select>
 
                 <Textarea
                   label="Structure / Design Details"
@@ -316,9 +401,7 @@ export default function Page() {
                   name="clientType"
                   value={form.clientType}
                   required
-                  onChange={(event) =>
-                    updateForm({ clientType: event.target.value })
-                  }
+                  onChange={handleClientTypeChange}
                 >
                   <option value="Walk-in">Walk-in</option>
                   <option value="Accredited Billing Client">Accredited Billing Client</option>
@@ -335,7 +418,6 @@ export default function Page() {
                 >
                   <option value="Unpaid">Unpaid</option>
                   <option value="Downpayment Paid">Downpayment Paid</option>
-                  <option value="PO Submitted">PO Submitted</option>
                 </Select>
               </div>
             </Card>
@@ -500,9 +582,8 @@ export default function Page() {
                     </div>
 
                     <div
-                      className={`resultBadge ${
-                        result ? getDecisionBadgeClass(result.decision) : ""
-                      }`}
+                      className={`resultBadge ${result ? getDecisionBadgeClass(result.decision) : ""
+                        }`}
                     >
                       {result ? getDecisionLabel(result.decision) : "Pending"}
                     </div>
@@ -526,10 +607,10 @@ export default function Page() {
                       valueStyle={
                         result
                           ? {
-                              color: getConfidenceColor(
-                                Number(result.confidence_score),
-                              ),
-                            }
+                            color: getConfidenceColor(
+                              Number(result.confidence_score),
+                            ),
+                          }
                           : {}
                       }
                       note={
@@ -568,7 +649,7 @@ export default function Page() {
                   {result && result.decision !== "AUTO_ACCEPTED" && (
                     <div className="routingAlert">
                       {result.decision === "MANUAL_REVIEW_QUEUE" ||
-                      result.decision === "MANUAL_REVIEW" ? (
+                        result.decision === "MANUAL_REVIEW" ? (
                         <p>
                           This sample has been queued for Senior Technician
                           review because the confidence score is below the

@@ -23,6 +23,7 @@ export default function TrackingDetailPage() {
 
   const user = getStoredUser();
   const role = user?.role || "";
+  const isAdmin = role === "Administrator";
   const canDownloadOfficialReport = PDF_DOWNLOAD_ROLES.has(role);
 
   const [item, setItem] = useState(null);
@@ -80,8 +81,11 @@ export default function TrackingDetailPage() {
     }
 
     try {
+      const baseUrl =
+        process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000";
+
       const response = await fetch(
-        `http://127.0.0.1:8000/api/samples/${sampleId}/report/excel`,
+        `${baseUrl}/api/samples/${sampleId}/report/excel`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -425,6 +429,7 @@ export default function TrackingDetailPage() {
             </section>
 
             <aside className="sideColumn">
+              <SampleImagePreview sampleId={item.sample_id} />
               <Card title="Record Metadata">
                 <div className="sideList">
                   <SideItem
@@ -440,8 +445,8 @@ export default function TrackingDetailPage() {
                     label="Last Action"
                     value={formatDate(
                       item.intake_timestamp ||
-                        item.inference_timestamp ||
-                        item.updated_at,
+                      item.inference_timestamp ||
+                      item.updated_at,
                     )}
                   />
                   <SideItem label="Model Version" value={item.model_version} />
@@ -512,12 +517,14 @@ export default function TrackingDetailPage() {
                 </Card>
               )}
 
-              <Card title="System JSON">
-                <details>
-                  <summary>View raw metadata</summary>
-                  <pre>{JSON.stringify(metadata, null, 2)}</pre>
-                </details>
-              </Card>
+              {isAdmin && (
+                <Card title="System JSON">
+                  <details>
+                    <summary>View raw metadata</summary>
+                    <pre>{JSON.stringify(metadata, null, 2)}</pre>
+                  </details>
+                </Card>
+              )}
 
               <Card title="Workflow Ownership">
                 <p className="sideNote">
@@ -613,6 +620,23 @@ export default function TrackingDetailPage() {
           gap: 18px;
           min-width: 0;
         }
+
+        .imageFrame {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-md);
+  background: var(--color-overlay);
+  padding: 10px;
+}
+
+.imageFrame img {
+  max-width: 100%;
+  max-height: 220px; /* 👈 keeps it SMALL */
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+}
 
         .dualGrid {
           display: grid;
@@ -902,6 +926,95 @@ export default function TrackingDetailPage() {
         }
       `}</style>
     </div>
+  );
+}
+
+function SampleImagePreview({ sampleId }) {
+  const [imageUrl, setImageUrl] = useState("");
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    if (!sampleId) return;
+
+    let objectUrl = "";
+
+    async function loadImage() {
+      setFailed(false);
+      setImageUrl("");
+
+      const token =
+        localStorage.getItem("access_token") || localStorage.getItem("token");
+
+      if (!token) {
+        setFailed(true);
+        return;
+      }
+
+      try {
+        const baseUrl =
+          process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000";
+
+        const response = await fetch(`${baseUrl}/api/samples/${sampleId}/image`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!response.ok) throw new Error("Image not available");
+
+        const blob = await response.blob();
+        objectUrl = URL.createObjectURL(blob);
+        setImageUrl(objectUrl);
+      } catch {
+        setFailed(true);
+      }
+    }
+
+    loadImage();
+
+    return () => {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [sampleId]);
+
+  return (
+    <Card
+      title="Sample Image"
+      subtitle="Uploaded image used for AI material identification."
+    >
+      <div className="imageFrame">
+        {imageUrl && !failed ? (
+          <img src={imageUrl} alt={`Sample ${sampleId}`} />
+        ) : (
+          <div className="imageEmpty">No image available.</div>
+        )}
+      </div>
+
+      <style jsx>{`
+        .imageFrame {
+          display: grid;
+          place-items: center;
+          min-height: 150px;
+          border: 1px solid var(--color-border-soft);
+          border-radius: var(--radius-md);
+          background: var(--color-overlay);
+          padding: 8px;
+        }
+
+        .imageFrame img {
+          display: block;
+          width: 100%;
+          max-height: 190px;
+          object-fit: contain;
+          border-radius: var(--radius-sm);
+        }
+
+        .imageEmpty {
+          color: var(--color-text-secondary);
+          font-size: var(--text-xs);
+        }
+      `}</style>
+    </Card>
   );
 }
 

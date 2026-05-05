@@ -74,7 +74,7 @@ export default function RegistryPage() {
     filters.branch !== "All" &&
     filters.branch !== "My" &&
     Number(resolveBranchFilter(filters.branch, userBranchId)) !==
-      Number(userBranchId);
+    Number(userBranchId);
 
   function getMetadata(item) {
     return item?.device_metadata || {};
@@ -316,11 +316,11 @@ export default function RegistryPage() {
               ? "You can view all branch registry records from the centralized system."
               : isCloudMonitoring
                 ? `You are viewing all cloud-synced branch records. Operational actions remain locked to your assigned branch: ${formatBranch(
-                    userBranchId,
-                  )}.`
+                  userBranchId,
+                )}.`
                 : `You are viewing ${branchViewLabel} records for monitoring. Operational actions remain locked to your assigned branch: ${formatBranch(
-                    userBranchId,
-                  )}.`}
+                  userBranchId,
+                )}.`}
           </span>
         </section>
       )}
@@ -1214,6 +1214,7 @@ function SampleDetails({ sample, queue }) {
 
   return (
     <div className="details">
+      <SampleImagePreview sampleId={sample.sample_id} />
       <section className="detailGrid">
         <Detail label="Sample ID" value={sample.sample_id} />
         <Detail label="Client" value={sample.client_name} />
@@ -1285,10 +1286,10 @@ function SampleDetails({ sample, queue }) {
       </section>
 
       <style jsx>{`
-        .details {
-          display: grid;
-          gap: 16px;
-        }
+.details {
+  display: grid;
+  gap: 18px;
+}
 
         .detailGrid {
           display: grid;
@@ -1326,6 +1327,157 @@ function SampleDetails({ sample, queue }) {
         }
       `}</style>
     </div>
+  );
+}
+
+function SampleImagePreview({ sampleId }) {
+  const [imageUrl, setImageUrl] = useState("");
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    if (!sampleId) return;
+
+    let objectUrl = "";
+
+    async function loadImage() {
+      setFailed(false);
+      setImageUrl("");
+
+      const token =
+        localStorage.getItem("access_token") ||
+        localStorage.getItem("token");
+
+      if (!token) {
+        setFailed(true);
+        return;
+      }
+
+      try {
+        const baseUrl =
+          process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000";
+
+        const response = await fetch(
+          `${baseUrl}/api/samples/${sampleId}/image`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          },
+        );
+
+        if (!response.ok) {
+          throw new Error("Image not available");
+        }
+
+        const blob = await response.blob();
+        objectUrl = URL.createObjectURL(blob);
+        setImageUrl(objectUrl);
+      } catch {
+        setFailed(true);
+      }
+    }
+
+    loadImage();
+
+    return () => {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [sampleId]);
+
+  if (!sampleId || failed) {
+    return (
+      <section className="imageBox">
+        <div className="imageEmpty">No sample image available.</div>
+
+        <style jsx>{`
+          .imageBox {
+            display: grid;
+            gap: 10px;
+            padding: 14px;
+            border: 1px solid var(--color-border-soft);
+            border-radius: var(--radius-md);
+            background: var(--color-surface);
+          }
+
+          .imageEmpty {
+            display: grid;
+            place-items: center;
+            min-height: 170px;
+            border: 1px dashed var(--color-border-soft);
+            border-radius: var(--radius-md);
+            background: var(--color-overlay);
+            color: var(--color-text-secondary);
+            font-size: var(--text-xs);
+          }
+        `}</style>
+      </section>
+    );
+  }
+
+  return (
+    <section className="imageBox">
+      <div className="imageHeader">
+        <div>
+          <h3>Sample Image</h3>
+          <p>Uploaded image used for AI material identification.</p>
+        </div>
+      </div>
+
+      <div className="imageFrame">
+        {imageUrl ? (
+          <img src={imageUrl} alt={`Uploaded sample image for ${sampleId}`} />
+        ) : (
+          <div className="imageEmpty">Loading sample image...</div>
+        )}
+      </div>
+
+      <style jsx>{`
+        .imageBox {
+          display: grid;
+          gap: 12px;
+          padding: 14px;
+          border: 1px solid var(--color-border-soft);
+          border-radius: var(--radius-md);
+          background: var(--color-surface);
+        }
+
+        .imageHeader h3 {
+          margin: 0;
+          color: var(--color-text-primary);
+          font-size: var(--text-sm);
+          font-weight: 600;
+        }
+
+        .imageHeader p {
+          margin: 4px 0 0;
+          color: var(--color-text-secondary);
+          font-size: var(--text-xs);
+          line-height: 1.45;
+        }
+
+        .imageFrame {
+          overflow: hidden;
+          border: 1px solid var(--color-border-soft);
+          border-radius: var(--radius-md);
+          background: var(--color-overlay);
+        }
+
+        .imageFrame img {
+          display: block;
+          width: 100%;
+          max-height: 320px;
+          object-fit: contain;
+        }
+
+        .imageEmpty {
+          display: grid;
+          place-items: center;
+          min-height: 170px;
+          color: var(--color-text-secondary);
+          font-size: var(--text-xs);
+        }
+      `}</style>
+    </section>
   );
 }
 

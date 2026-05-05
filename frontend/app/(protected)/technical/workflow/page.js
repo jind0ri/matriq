@@ -65,94 +65,25 @@ const INITIAL_FORM = {
   colorComparison: "",
 };
 
-const TEST_OPTIONS = {
-  Concrete: [
-    {
-      key: "concrete_compression",
-      label: "Compressive Strength Test",
-      standard: "ASTM C39/C39M",
-    },
-    {
-      key: "concrete_slump",
-      label: "Slump Test",
-      standard: "ASTM C143/C143M",
-    },
-    {
-      key: "concrete_flexural",
-      label: "Flexural Strength Test",
-      standard: "ASTM C78/C78M",
-    },
-  ],
-  "Reinforcing Steel Bar": [
-    {
-      key: "rsb_tensile",
-      label: "Tensile Test",
-      standard: "ASTM A370 / ASTM A615",
-    },
-    {
-      key: "rsb_bend",
-      label: "Bend Test",
-      standard: "ASTM A370 / ASTM A615",
-    },
-  ],
-  "Soil Aggregates": [
-    {
-      key: "soil_moisture",
-      label: "Moisture Content Test",
-      standard: "ASTM D2216",
-    },
-    {
-      key: "soil_classification",
-      label: "USCS Soil Classification",
-      standard: "ASTM D2487",
-    },
-    {
-      key: "aggregate_sieve",
-      label: "Sieve Analysis",
-      standard: "ASTM C136/C136M",
-    },
-    {
-      key: "aggregate_abrasion",
-      label: "Los Angeles Abrasion Test",
-      standard: "ASTM C131/C131M / ASTM C535",
-    },
-    {
-      key: "aggregate_soundness",
-      label: "Aggregate Soundness Test",
-      standard: "ASTM C88/C88M",
-    },
-    {
-      key: "aggregate_organic_impurities",
-      label: "Organic Impurities Test",
-      standard: "ASTM C40/C40M",
-    },
-  ],
-};
 
 const TEST_REQUIRED_FIELDS = {
   concrete_compression: [
     ["specimenDiameter", "Specimen Diameter"],
-    ["specimenHeight", "Specimen Height"],
-    ["maxLoad", "Maximum Load"],
-    ["requiredStrength", "Required Strength"],
+    ["maxLoad", "Maximum Applied Load"],
+    ["requiredStrength", "Required Design Strength"],
   ],
 
   concrete_slump: [
-    ["slump", "Slump"],
-    ["minSlump", "Minimum Slump"],
-    ["maxSlump", "Maximum Slump"],
+    ["slump", "Measured Slump"],
     ["slumpType", "Slump Type"],
   ],
 
-  concrete_flexural: [["requiredFlexural", "Required Flexural Strength"]],
+  concrete_flexural: [
+    ["requiredFlexural", "Required Flexural Strength"],
+  ],
 
   rsb_tensile: [
     ["yieldStrength", "Yield Strength"],
-    ["tensileStrength", "Tensile Strength"],
-    ["elongation", "Elongation"],
-    ["requiredYield", "Required Yield Strength"],
-    ["requiredTensile", "Required Tensile Strength"],
-    ["requiredElongation", "Required Elongation"],
   ],
 
   rsb_bend: [["bendObservation", "Bend Observation"]],
@@ -160,16 +91,11 @@ const TEST_REQUIRED_FIELDS = {
   soil_moisture: [
     ["wetMass", "Wet Mass"],
     ["dryMass", "Dry Mass"],
-    ["moistureContent", "Moisture Content"],
   ],
 
   soil_classification: [["uscsClass", "USCS Classification"]],
 
-  aggregate_sieve: [
-    ["percentPassing", "Percent Passing"],
-    ["minPassing", "Minimum Passing"],
-    ["maxPassing", "Maximum Passing"],
-  ],
+  aggregate_sieve: [["percentPassing", "Percent Passing"]],
 
   aggregate_abrasion: [
     ["abrasionLoss", "Abrasion Loss"],
@@ -179,8 +105,6 @@ const TEST_REQUIRED_FIELDS = {
   aggregate_soundness: [
     ["soundnessLoss", "Soundness Loss"],
     ["maxSoundnessLoss", "Maximum Soundness Loss"],
-    ["saltType", "Salt Type"],
-    ["cyclesCompleted", "Cycles Completed"],
   ],
 
   aggregate_organic_impurities: [["colorComparison", "Color Comparison"]],
@@ -235,10 +159,6 @@ export default function WorkflowPage() {
     selectedSample?.material_type || selectedSample?.ai_predicted_label,
   );
 
-  const selectedTest = (TEST_OPTIONS[selectedMaterial] || []).find(
-    (test) => test.key === form.testType,
-  );
-
   const missingRequiredFields = getMissingRequiredFields(form.testType, form);
 
   const branchOptions = useMemo(() => {
@@ -269,7 +189,7 @@ export default function WorkflowPage() {
     branchFilter !== "All" &&
     branchFilter !== "My" &&
     Number(resolveBranchFilter(branchFilter, userBranchId)) !==
-      Number(userBranchId);
+    Number(userBranchId);
 
   const visibleReadyForTesting = useMemo(() => {
     return filterItemsByBranchView(
@@ -376,6 +296,43 @@ export default function WorkflowPage() {
 
   function getMetadata(item) {
     return item?.device_metadata || {};
+  }
+
+  function getTrf(item) {
+    return getMetadata(item)?.trf || {};
+  }
+
+  function getRequestedTestKey(item) {
+    const trf = getTrf(item);
+
+    return (
+      trf.requested_test_key ||
+      trf.requested_test_type_key ||
+      trf.requested_test_code ||
+      ""
+    );
+  }
+
+  function getRequestedTestLabel(item) {
+    const trf = getTrf(item);
+
+    return (
+      trf.requested_test_type ||
+      trf.requested_test_name ||
+      "-"
+    );
+  }
+
+  function getRequestedTestStandard(item) {
+    const trf = getTrf(item);
+
+    return trf.requested_test_standard || "-";
+  }
+
+  function getRequestedTestCode(item) {
+    const trf = getTrf(item);
+
+    return trf.requested_test_code || "-";
   }
 
   function getPayment(item) {
@@ -487,26 +444,6 @@ export default function WorkflowPage() {
     } finally {
       setWorkingId("");
     }
-  }
-
-  async function confirmAndValidate(item, decision) {
-    // Optional: ensure role
-    if (!canActAsSeniorTech) {
-      setActionError(
-        "Only Senior Technicians can approve or reject AI classification review cases.",
-      );
-      return;
-    }
-
-    // Show browser confirmation dialog
-    const confirmed = window.confirm(
-      `Are you sure you want to ${decision.toUpperCase()} the AI classification for sample ${item.sample_id}? This action cannot be undone.`,
-    );
-
-    if (!confirmed) return; // stop if user cancels
-
-    // Call existing validation function
-    await handleValidation(item, decision);
   }
 
   async function handleValidation(item, decision) {
@@ -636,8 +573,20 @@ export default function WorkflowPage() {
       return;
     }
 
+    const requestedTestKey = getRequestedTestKey(item);
+
+    if (!requestedTestKey) {
+      setActionError(
+        "This sample has no requested test selected during intake. Please check the sample registration record.",
+      );
+      return;
+    }
+
     setSelectedSample(item);
-    setForm(INITIAL_FORM);
+    setForm({
+      ...INITIAL_FORM,
+      testType: requestedTestKey,
+    });
     setFormError("");
     setTestModalOpen(true);
   }
@@ -678,6 +627,9 @@ export default function WorkflowPage() {
 
     const payload = {
       test_type: form.testType,
+      test_code: getRequestedTestCode(selectedSample),
+      test_name: getRequestedTestLabel(selectedSample),
+      standard: getRequestedTestStandard(selectedSample),
       remarks: form.remarks,
     };
 
@@ -824,15 +776,15 @@ export default function WorkflowPage() {
             ? "You can view and act on all workflow queues across branches."
             : isCloudMonitoring
               ? `You are viewing all cloud-synced branch records. Actions remain locked to your assigned branch: ${formatBranch(
-                  userBranchId,
-                )}.`
+                userBranchId,
+              )}.`
               : isOtherBranchView
                 ? `You are viewing ${branchViewLabel} records for monitoring. Actions remain locked to your assigned branch: ${formatBranch(
-                    userBranchId,
-                  )}.`
+                  userBranchId,
+                )}.`
                 : `You are viewing your assigned branch: ${formatBranch(
-                    userBranchId,
-                  )}.`}
+                  userBranchId,
+                )}.`}
         </span>
       </section>
 
@@ -934,6 +886,8 @@ export default function WorkflowPage() {
             >
               {visibleReviews.map((item) => (
                 <Card key={item.sample_id}>
+                  <SampleImagePreview sampleId={item.sample_id} />
+
                   <div className="cardTop">
                     <div>
                       <span className="miniLabel">Sample ID</span>
@@ -1008,26 +962,44 @@ export default function WorkflowPage() {
               ))}
 
               {showConfirmModal && modalSample && (
-                <div className="modalOverlay">
-                  <div className="modalContent">
-                    <h3>
-                      Confirm{" "}
-                      {modalAction === "approve" ? "Approval" : "Rejection"}
-                    </h3>
-                    <p>
-                      Are you sure you want to {modalAction.toUpperCase()} the
-                      AI classification for sample {modalSample.sample_id}? This
-                      action cannot be undone.
-                    </p>
-                    <div className="modalButtons">
+                <div className="confirmOverlay">
+                  <div className="confirmModal">
+                    <div className="confirmHeader">
+                      <span className={modalAction === "approve" ? "confirmIcon approve" : "confirmIcon reject"}>
+                        {modalAction === "approve" ? "✓" : "!"}
+                      </span>
+
+                      <div>
+                        <h3>
+                          Confirm {modalAction === "approve" ? "Approval" : "Rejection"}
+                        </h3>
+                        <p>
+                          Review this action before updating the AI classification decision.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="confirmBody">
+                      <span>Sample ID</span>
+                      <strong>{modalSample.sample_id}</strong>
+
+                      <p>
+                        Are you sure you want to{" "}
+                        <b>{modalAction === "approve" ? "approve" : "reject"}</b>{" "}
+                        this AI classification? This action cannot be undone.
+                      </p>
+                    </div>
+
+                    <div className="confirmActions">
                       <Button
                         variant="secondary"
                         onClick={() => setShowConfirmModal(false)}
                       >
                         Cancel
                       </Button>
+
                       <Button
-                        variant="primary"
+                        variant={modalAction === "approve" ? "success" : "danger"}
                         onClick={async () => {
                           await handleValidation(modalSample, modalAction);
                           setShowConfirmModal(false);
@@ -1079,9 +1051,9 @@ export default function WorkflowPage() {
                             text={
                               canActAsQa
                                 ? getBranchLockNote(
-                                    item,
-                                    "QA pre-testing approval",
-                                  )
+                                  item,
+                                  "QA pre-testing approval",
+                                )
                                 : "QA Engineer action required for pre-testing approval."
                             }
                           />
@@ -1130,6 +1102,10 @@ export default function WorkflowPage() {
 
                       return (
                         <article className="reportCard" key={item.sample_id}>
+                          <div className="reportImage">
+                            <SampleImagePreview sampleId={item.sample_id} />
+                          </div>
+
                           <div className="reportTop">
                             <div>
                               <h3>{item.sample_id}</h3>
@@ -1356,7 +1332,12 @@ export default function WorkflowPage() {
                                     size="sm"
                                     variant="secondary"
                                     onClick={() => handleQaResultOverride(item)}
-                                    disabled={workingId === item.sample_id}
+                                    disabled={
+                                      workingId === item.sample_id ||
+                                      !overrideDraft.result ||
+                                      !overrideDraft.reason ||
+                                      overrideDraft.reason.trim().length < 10
+                                    }
                                   >
                                     Save QA Final Result
                                   </Button>
@@ -1375,7 +1356,10 @@ export default function WorkflowPage() {
                                 <Button
                                   size="sm"
                                   onClick={() => handleQaRelease(item)}
-                                  disabled={workingId === item.sample_id}
+                                  disabled={
+                                    workingId === item.sample_id ||
+                                    !getFinalResult(testData)
+                                  }
                                 >
                                   {workingId === item.sample_id
                                     ? "Releasing..."
@@ -1394,9 +1378,9 @@ export default function WorkflowPage() {
                                 <p>
                                   {canActAsQa
                                     ? getBranchLockNote(
-                                        item,
-                                        "QA result review and report release",
-                                      )
+                                      item,
+                                      "QA result review and report release",
+                                    )
                                     : "QA Engineer action is required to review, override, or release this official report."}
                                 </p>
                               </div>
@@ -1448,30 +1432,20 @@ export default function WorkflowPage() {
         <div className="testForm">
           {formError && <div className="formError">{formError}</div>}
 
-          <Select
-            label="Test Performed"
-            name="testType"
-            value={form.testType}
-            required
-            onChange={(event) =>
-              setForm({ ...INITIAL_FORM, testType: event.target.value })
-            }
-          >
-            <option value="">Select test performed</option>
-
-            {(TEST_OPTIONS[selectedMaterial] || []).map((test) => (
-              <option key={test.key} value={test.key}>
-                {test.label}
-              </option>
-            ))}
-          </Select>
-
-          {selectedTest && (
-            <div className="standardBox">
-              <span>Auto-applied standard</span>
-              <strong>{selectedTest.standard}</strong>
-            </div>
+          {selectedSample?.sample_id && (
+            <SampleImagePreview sampleId={selectedSample.sample_id} />
           )}
+
+          <div className="lockedTestBox">
+            <span>Test Performed</span>
+            <strong>{getRequestedTestLabel(selectedSample)}</strong>
+            <small>Code: {getRequestedTestCode(selectedSample)}</small>
+          </div>
+
+          <div className="standardBox">
+            <span>Auto-applied standard</span>
+            <strong>{getRequestedTestStandard(selectedSample)}</strong>
+          </div>
 
           <TestFields form={form} setForm={setForm} />
 
@@ -1592,13 +1566,14 @@ export default function WorkflowPage() {
           gap: 14px;
         }
 
-        .cardTop {
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-start;
-          gap: 12px;
-          margin-bottom: 14px;
-        }
+.cardTop {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: 14px;
+  margin-bottom: 14px;
+}
 
         .miniLabel {
           display: block;
@@ -1638,6 +1613,10 @@ export default function WorkflowPage() {
           overflow: hidden;
           box-shadow: none;
         }
+
+        .reportImage {
+  padding: 18px 20px 0;
+}
 
         .reportTop {
           display: flex;
@@ -1851,6 +1830,38 @@ export default function WorkflowPage() {
           gap: 14px;
         }
 
+                .lockedTestBox {
+          display: grid;
+          gap: 4px;
+          border: 1px solid var(--color-border-soft);
+          border-radius: var(--radius-md);
+          background: var(--color-overlay);
+          padding: 12px;
+          color: var(--color-text-secondary);
+          font-size: var(--text-xs);
+          line-height: 1.45;
+        }
+
+        .lockedTestBox span {
+          color: var(--color-text-secondary);
+          font-size: 10px;
+          font-weight: 500;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+
+        .lockedTestBox strong {
+          color: var(--color-text-primary);
+          font-size: var(--text-sm);
+          font-weight: 600;
+        }
+
+        .lockedTestBox small {
+          color: var(--color-text-muted);
+          font-size: 10px;
+          font-weight: 500;
+        }
+
         .standardBox {
           display: grid;
           gap: 4px;
@@ -1914,64 +1925,107 @@ export default function WorkflowPage() {
           }
         }
 
-        .modalOverlay {
-          position: fixed;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          background: rgba(
-            0,
-            0,
-            0,
-            0.35
-          ); /* slightly lighter background for soft shadow */
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          z-index: 1000;
-        }
+.confirmOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.62);
+  backdrop-filter: blur(6px);
+}
 
-        .modalContent {
-          background: #fff;
-          padding: 24px 28px;
-          border-radius: 12px;
-          width: 440px;
-          max-width: 90%;
-          box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25); /* deeper shadow for elevation */
-          display: flex;
-          flex-direction: column;
-        }
+.confirmModal {
+  width: min(440px, 100%);
+  display: grid;
+  gap: 18px;
+  padding: 20px;
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.35);
+}
 
-        .modalTitle {
-          font-size: 1.25rem;
-          font-weight: 600;
-          margin-bottom: 14px;
-          color: #111;
-        }
+.confirmHeader {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
 
-        .modalMessage {
-          font-size: 1rem;
-          margin-bottom: 22px;
-          line-height: 1.5;
-          color: #333;
-        }
+.confirmIcon {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  font-size: 18px;
+  font-weight: 700;
+}
 
-        .modalButtons {
-          display: flex;
-          justify-content: flex-end;
-          gap: 12px;
-        }
+.confirmIcon.approve {
+  color: var(--color-success);
+  background: var(--color-success-bg);
+  border: 1px solid var(--color-success-border);
+}
 
-        .modalButtons .secondary {
-          background: #f5f5f5;
-          color: #333;
-        }
+.confirmIcon.reject {
+  color: var(--color-danger);
+  background: var(--color-danger-bg);
+  border: 1px solid var(--color-danger-border);
+}
 
-        .modalButtons .primary {
-          background: #4f46e5; /* deep purple like screenshot */
-          color: #fff;
-        }
+.confirmHeader h3 {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.confirmHeader p,
+.confirmBody p {
+  margin: 5px 0 0;
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
+
+.confirmBody {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-md);
+  background: var(--color-overlay);
+}
+
+.confirmBody span {
+  color: var(--color-text-secondary);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.confirmBody strong {
+  color: var(--color-text-primary);
+  font-size: var(--text-sm);
+  font-weight: 700;
+}
+
+.confirmBody b {
+  color: var(--color-text-primary);
+  font-weight: 700;
+}
+
+.confirmActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
       `}</style>
     </div>
   );
@@ -2351,6 +2405,157 @@ function ResultNotice({ result }) {
   );
 }
 
+function SampleImagePreview({ sampleId }) {
+  const [imageUrl, setImageUrl] = useState("");
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    if (!sampleId) return;
+
+    let objectUrl = "";
+
+    async function loadImage() {
+      setFailed(false);
+      setImageUrl("");
+
+      const token =
+        localStorage.getItem("access_token") ||
+        localStorage.getItem("token");
+
+      if (!token) {
+        setFailed(true);
+        return;
+      }
+
+      try {
+        const baseUrl =
+          process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000";
+
+        const response = await fetch(
+          `${baseUrl}/api/samples/${sampleId}/image`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          },
+        );
+
+        if (!response.ok) {
+          throw new Error("Image not available");
+        }
+
+        const blob = await response.blob();
+        objectUrl = URL.createObjectURL(blob);
+        setImageUrl(objectUrl);
+      } catch {
+        setFailed(true);
+      }
+    }
+
+    loadImage();
+
+    return () => {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [sampleId]);
+
+  if (!sampleId || failed) {
+    return (
+      <section className="imageBox">
+        <div className="imageEmpty">No sample image available.</div>
+
+        <style jsx>{`
+          .imageBox {
+            display: grid;
+            gap: 10px;
+            padding: 14px;
+            border: 1px solid var(--color-border-soft);
+            border-radius: var(--radius-md);
+            background: var(--color-surface);
+          }
+
+          .imageEmpty {
+            display: grid;
+            place-items: center;
+            min-height: 170px;
+            border: 1px dashed var(--color-border-soft);
+            border-radius: var(--radius-md);
+            background: var(--color-overlay);
+            color: var(--color-text-secondary);
+            font-size: var(--text-xs);
+          }
+        `}</style>
+      </section>
+    );
+  }
+
+  return (
+    <section className="imageBox">
+      <div className="imageHeader">
+        <div>
+          <h3>Sample Image</h3>
+          <p>Uploaded image used for AI material identification.</p>
+        </div>
+      </div>
+
+      <div className="imageFrame">
+        {imageUrl ? (
+          <img src={imageUrl} alt={`Uploaded sample image for ${sampleId}`} />
+        ) : (
+          <div className="imageEmpty">Loading sample image...</div>
+        )}
+      </div>
+
+      <style jsx>{`
+        .imageBox {
+          display: grid;
+          gap: 12px;
+          padding: 14px;
+          border: 1px solid var(--color-border-soft);
+          border-radius: var(--radius-md);
+          background: var(--color-surface);
+        }
+
+        .imageHeader h3 {
+          margin: 0;
+          color: var(--color-text-primary);
+          font-size: var(--text-sm);
+          font-weight: 600;
+        }
+
+        .imageHeader p {
+          margin: 4px 0 0;
+          color: var(--color-text-secondary);
+          font-size: var(--text-xs);
+          line-height: 1.45;
+        }
+
+        .imageFrame {
+          overflow: hidden;
+          border: 1px solid var(--color-border-soft);
+          border-radius: var(--radius-md);
+          background: var(--color-overlay);
+        }
+
+        .imageFrame img {
+          display: block;
+          width: 100%;
+          max-height: 320px;
+          object-fit: contain;
+        }
+
+        .imageEmpty {
+          display: grid;
+          place-items: center;
+          min-height: 170px;
+          color: var(--color-text-secondary);
+          font-size: var(--text-xs);
+        }
+      `}</style>
+    </section>
+  );
+}
+
 function Info({ label, value }) {
   return (
     <div className="info">
@@ -2443,54 +2648,41 @@ function ReportInfo({ label, value }) {
 }
 
 function TestFields({ form, setForm }) {
-  // Concrete Tests
   if (form.testType === "concrete_compression") {
     return (
       <>
+        <NoteBox>
+          Standard guide: record specimen dimensions and maximum applied load.
+          The system computes compressive strength and PASS/FAIL based on the
+          required design strength.
+        </NoteBox>
+
         <InputField
           label="Specimen Diameter (mm)"
           value={form.specimenDiameter}
           required
           onChange={(value) => setForm({ ...form, specimenDiameter: value })}
         />
+
         <InputField
           label="Specimen Height (mm)"
           value={form.specimenHeight}
-          required
           onChange={(value) => setForm({ ...form, specimenHeight: value })}
         />
-        <InputField
-          label="Mass (kg)"
-          value={form.mass}
-          required
-          onChange={(value) => setForm({ ...form, mass: value })}
-        />
+
         <InputField
           label="Maximum Applied Load (kN)"
           value={form.maxLoad}
           required
           onChange={(value) => setForm({ ...form, maxLoad: value })}
         />
+
         <InputField
-          label="Computed Compressive Strength (MPa / psi)"
+          label="Required Design Strength (MPa)"
           value={form.requiredStrength}
           required
           onChange={(value) => setForm({ ...form, requiredStrength: value })}
         />
-        <InputField
-          label="Fracture Type"
-          value={form.fractureType}
-          onChange={(value) => setForm({ ...form, fractureType: value })}
-        />
-        <Select
-          label="Pass / Fail"
-          value={form.passFail}
-          onChange={(e) => setForm({ ...form, passFail: e.target.value })}
-        >
-          <option value="">Select result</option>
-          <option value="Pass">Pass</option>
-          <option value="Fail">Fail</option>
-        </Select>
       </>
     );
   }
@@ -2498,36 +2690,43 @@ function TestFields({ form, setForm }) {
   if (form.testType === "concrete_slump") {
     return (
       <>
+        <NoteBox>
+          Standard guide: record the measured slump and classify the slump type.
+          PASS/FAIL is computed only when minimum and/or maximum acceptance
+          limits are provided.
+        </NoteBox>
+
         <InputField
-          label="Slump (mm)"
+          label="Measured Slump (mm)"
           value={form.slump}
           required
           onChange={(value) => setForm({ ...form, slump: value })}
         />
+
         <InputField
-          label="Minimum Slump (mm)"
+          label="Minimum Allowed Slump (mm)"
           value={form.minSlump}
           onChange={(value) => setForm({ ...form, minSlump: value })}
         />
+
         <InputField
-          label="Maximum Slump (mm)"
+          label="Maximum Allowed Slump (mm)"
           value={form.maxSlump}
           onChange={(value) => setForm({ ...form, maxSlump: value })}
         />
+
         <Select
           label="Slump Type"
           value={form.slumpType}
-          onChange={(e) => setForm({ ...form, slumpType: e.target.value })}
+          required
+          onChange={(event) =>
+            setForm({ ...form, slumpType: event.target.value })
+          }
         >
           <option value="true">True Slump</option>
           <option value="shear">Shear Slump</option>
           <option value="collapse">Collapse Slump</option>
         </Select>
-        <InputField
-          label="Ambient Temperature (°C)"
-          value={form.ambientTemp}
-          onChange={(value) => setForm({ ...form, ambientTemp: value })}
-        />
       </>
     );
   }
@@ -2535,31 +2734,42 @@ function TestFields({ form, setForm }) {
   if (form.testType === "concrete_flexural") {
     return (
       <>
+        <NoteBox>
+          Standard guide: provide either the measured flexural strength or the
+          beam dimensions, span length, and maximum load so the system can
+          compute flexural strength.
+        </NoteBox>
+
         <InputField
           label="Beam Width (mm)"
           value={form.beamWidth}
           onChange={(value) => setForm({ ...form, beamWidth: value })}
         />
+
         <InputField
           label="Beam Depth (mm)"
           value={form.beamDepth}
           onChange={(value) => setForm({ ...form, beamDepth: value })}
         />
+
         <InputField
           label="Span Length (mm)"
           value={form.spanLength}
           onChange={(value) => setForm({ ...form, spanLength: value })}
         />
+
         <InputField
           label="Maximum Load (kN)"
           value={form.flexuralMaxLoad}
           onChange={(value) => setForm({ ...form, flexuralMaxLoad: value })}
         />
+
         <InputField
-          label="Flexural Strength (MPa)"
+          label="Measured Flexural Strength (MPa)"
           value={form.flexuralStrength}
           onChange={(value) => setForm({ ...form, flexuralStrength: value })}
         />
+
         <InputField
           label="Required Flexural Strength (MPa)"
           value={form.requiredFlexural}
@@ -2570,44 +2780,49 @@ function TestFields({ form, setForm }) {
     );
   }
 
-  // RSB Tests
   if (form.testType === "rsb_tensile") {
     return (
       <>
+        <NoteBox>
+          Standard guide: record mechanical properties from the tensile test.
+          The system compares provided values against required minimum
+          thresholds when those thresholds are entered.
+        </NoteBox>
+
         <InputField
           label="Yield Strength (MPa)"
           value={form.yieldStrength}
           required
           onChange={(value) => setForm({ ...form, yieldStrength: value })}
         />
+
         <InputField
           label="Tensile Strength (MPa)"
           value={form.tensileStrength}
-          required
           onChange={(value) => setForm({ ...form, tensileStrength: value })}
         />
+
         <InputField
           label="Elongation (%)"
           value={form.elongation}
-          required
           onChange={(value) => setForm({ ...form, elongation: value })}
         />
+
         <InputField
           label="Required Yield Strength (MPa)"
           value={form.requiredYield}
-          required
           onChange={(value) => setForm({ ...form, requiredYield: value })}
         />
+
         <InputField
           label="Required Tensile Strength (MPa)"
           value={form.requiredTensile}
-          required
           onChange={(value) => setForm({ ...form, requiredTensile: value })}
         />
+
         <InputField
           label="Required Elongation (%)"
           value={form.requiredElongation}
-          required
           onChange={(value) => setForm({ ...form, requiredElongation: value })}
         />
       </>
@@ -2616,50 +2831,64 @@ function TestFields({ form, setForm }) {
 
   if (form.testType === "rsb_bend") {
     return (
-      <Select
-        label="Bend Observation"
-        value={form.bendObservation}
-        required
-        onChange={(event) =>
-          setForm({ ...form, bendObservation: event.target.value })
-        }
-      >
-        <option value="">Select observed condition</option>
-        <option value="no_crack">No Crack / No Fracture</option>
-        <option value="crack">Visible Crack</option>
-        <option value="fracture">Fracture</option>
-        <option value="broken">Broken</option>
-      </Select>
+      <>
+        <NoteBox>
+          Standard guide: record the actual bend observation. The system assigns
+          PASS only when no crack or fracture is observed.
+        </NoteBox>
+
+        <Select
+          label="Bend Observation"
+          value={form.bendObservation}
+          required
+          onChange={(event) =>
+            setForm({ ...form, bendObservation: event.target.value })
+          }
+        >
+          <option value="">Select observed condition</option>
+          <option value="no_crack">No Crack / No Fracture</option>
+          <option value="crack">Visible Crack</option>
+          <option value="fracture">Fracture</option>
+          <option value="broken">Broken</option>
+        </Select>
+      </>
     );
   }
 
-  // Soil / Aggregates Tests
   if (form.testType === "soil_moisture") {
     return (
       <>
+        <NoteBox>
+          Standard guide: record wet and dry mass. The system computes moisture
+          content from mass values when moisture content is not manually entered.
+        </NoteBox>
+
         <InputField
           label="Wet Mass (g)"
           value={form.wetMass}
           required
           onChange={(value) => setForm({ ...form, wetMass: value })}
         />
+
         <InputField
           label="Dry Mass (g)"
           value={form.dryMass}
           required
           onChange={(value) => setForm({ ...form, dryMass: value })}
         />
+
         <InputField
-          label="Moisture Content (%)"
+          label="Measured Moisture Content (%)"
           value={form.moistureContent}
-          required
           onChange={(value) => setForm({ ...form, moistureContent: value })}
         />
+
         <InputField
           label="Maximum Allowed Moisture (%)"
           value={form.maxMoisture}
           onChange={(value) => setForm({ ...form, maxMoisture: value })}
         />
+
         <InputField
           label="USCS Classification"
           value={form.uscsClass}
@@ -2671,36 +2900,50 @@ function TestFields({ form, setForm }) {
 
   if (form.testType === "soil_classification") {
     return (
-      <InputField
-        label="USCS Classification"
-        value={form.uscsClass}
-        required
-        onChange={(value) => setForm({ ...form, uscsClass: value })}
-      />
+      <>
+        <NoteBox>
+          Standard guide: record the USCS classification. If a required
+          classification is provided later, the system can compare against it.
+        </NoteBox>
+
+        <InputField
+          label="USCS Classification"
+          value={form.uscsClass}
+          required
+          onChange={(value) => setForm({ ...form, uscsClass: value })}
+        />
+      </>
     );
   }
 
   if (form.testType === "aggregate_sieve") {
     return (
       <>
+        <NoteBox>
+          Standard guide: record percent passing and optional gradation limits.
+          PASS/FAIL is computed when minimum and/or maximum passing limits are
+          provided.
+        </NoteBox>
+
         <InputField
           label="Percent Passing (%)"
           value={form.percentPassing}
           required
           onChange={(value) => setForm({ ...form, percentPassing: value })}
         />
+
         <InputField
-          label="Minimum Passing (%)"
+          label="Minimum Passing Limit (%)"
           value={form.minPassing}
-          required
           onChange={(value) => setForm({ ...form, minPassing: value })}
         />
+
         <InputField
-          label="Maximum Passing (%)"
+          label="Maximum Passing Limit (%)"
           value={form.maxPassing}
-          required
           onChange={(value) => setForm({ ...form, maxPassing: value })}
         />
+
         <InputField
           label="Absorption (%)"
           value={form.absorption}
@@ -2713,14 +2956,20 @@ function TestFields({ form, setForm }) {
   if (form.testType === "aggregate_abrasion") {
     return (
       <>
+        <NoteBox>
+          Standard guide: record Los Angeles abrasion loss and the maximum
+          allowed abrasion loss. The system computes PASS/FAIL from these values.
+        </NoteBox>
+
         <InputField
           label="Abrasion Loss (%)"
           value={form.abrasionLoss}
           required
           onChange={(value) => setForm({ ...form, abrasionLoss: value })}
         />
+
         <InputField
-          label="Maximum Abrasion Loss (%)"
+          label="Maximum Allowed Abrasion Loss (%)"
           value={form.maxAbrasionLoss}
           required
           onChange={(value) => setForm({ ...form, maxAbrasionLoss: value })}
@@ -2732,28 +2981,34 @@ function TestFields({ form, setForm }) {
   if (form.testType === "aggregate_soundness") {
     return (
       <>
+        <NoteBox>
+          Standard guide: record soundness loss and the maximum allowed loss.
+          Salt type and cycles may be recorded as supporting test details.
+        </NoteBox>
+
         <InputField
           label="Soundness Loss (%)"
           value={form.soundnessLoss}
           required
           onChange={(value) => setForm({ ...form, soundnessLoss: value })}
         />
+
         <InputField
-          label="Maximum Soundness Loss (%)"
+          label="Maximum Allowed Soundness Loss (%)"
           value={form.maxSoundnessLoss}
           required
           onChange={(value) => setForm({ ...form, maxSoundnessLoss: value })}
         />
+
         <InputField
           label="Salt Type"
           value={form.saltType}
-          required
           onChange={(value) => setForm({ ...form, saltType: value })}
         />
+
         <InputField
           label="Cycles Completed"
           value={form.cyclesCompleted}
-          required
           onChange={(value) => setForm({ ...form, cyclesCompleted: value })}
         />
       </>
@@ -2762,23 +3017,34 @@ function TestFields({ form, setForm }) {
 
   if (form.testType === "aggregate_organic_impurities") {
     return (
-      <Select
-        label="Color Comparison"
-        value={form.colorComparison}
-        required
-        onChange={(event) =>
-          setForm({ ...form, colorComparison: event.target.value })
-        }
-      >
-        <option value="">Select color comparison</option>
-        <option value="lighter_than_standard">Lighter Than Standard</option>
-        <option value="equal_to_standard">Equal To Standard</option>
-        <option value="darker_than_standard">Darker Than Standard</option>
-      </Select>
+      <>
+        <NoteBox>
+          Standard guide: compare the sample color against the organic
+          impurities standard. The system computes PASS/FAIL from the comparison.
+        </NoteBox>
+
+        <Select
+          label="Color Comparison"
+          value={form.colorComparison}
+          required
+          onChange={(event) =>
+            setForm({ ...form, colorComparison: event.target.value })
+          }
+        >
+          <option value="">Select color comparison</option>
+          <option value="lighter_than_standard">Lighter Than Standard</option>
+          <option value="equal_to_standard">Equal To Standard</option>
+          <option value="darker_than_standard">Darker Than Standard</option>
+        </Select>
+      </>
     );
   }
 
-  return null;
+  return (
+    <NoteBox>
+      No standard-based input template is available for this test type yet.
+    </NoteBox>
+  );
 }
 
 function InputField({ label, value, onChange, required = false }) {

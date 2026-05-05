@@ -28,13 +28,19 @@ export default function EmployeeLoginPage() {
     setSubmitting(true);
 
     try {
-      const payload = await apiClient.login(form.email, form.password);
+      const payload = await apiClient.login(form.email, form.password, "employee");
 
       if (isInactivePayload(payload)) {
         clearAuthSession();
         setError(
           "This account has been deactivated. Please contact the administrator.",
         );
+        return;
+      }
+
+      if (payload.role === "Administrator") {
+        clearAuthSession();
+        setError("Administrators must use the admin login page.");
         return;
       }
 
@@ -54,12 +60,8 @@ export default function EmployeeLoginPage() {
         return;
       }
 
-      if (payload.role === "Administrator") {
-        router.push("/admin");
-        return;
-      }
-
-      router.push("/auth/access-select");
+      clearAuthSession();
+      setError("This login is for employees only.");
     } catch (err) {
       clearAuthSession();
       setError(err.message || "Invalid credentials.");
