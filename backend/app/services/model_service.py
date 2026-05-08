@@ -372,6 +372,7 @@ def predict(pil_image: Image.Image) -> dict:
             provider = 'keras-jax'
         except Exception:
             predicted_label, confidence = _heuristic_predict(pre)
+            provider = "heuristic-fallback"
     else:
         predicted_label, confidence = _heuristic_predict(pre)
 

@@ -161,7 +161,7 @@ async def classify(
             ip_address=request.client.host if request.client else None,
         )
         raise HTTPException(status_code=500, detail="Inference failed.")
-
+    
     content_type = image.content_type or "image/jpeg"
     image_path = upload_to_supabase(raw, image.filename or "sample.jpg", content_type)
 
