@@ -242,7 +242,7 @@ def _detect_material_anomaly(rgb: np.ndarray, hsv: np.ndarray, gray: np.ndarray)
 
 @lru_cache(maxsize=1)
 def _load_real_model():
-    os.environ.setdefault('KERAS_BACKEND', 'jax')
+    os.environ.setdefault('KERAS_BACKEND', 'tensorflow')
     import keras
     from keras import layers
     from keras.applications import MobileNetV2
