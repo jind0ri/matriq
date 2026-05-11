@@ -74,7 +74,7 @@ def get_metadata(sample):
 
 
 def normalize_text(value):
-    return str(value or "").strip()
+    return str(value or "").strip().lower()
 
 
 def require_testing_payment_clearance(payment_status):
@@ -89,21 +89,12 @@ def require_requested_test_match(trf, payload):
     requested_test_code = normalize_text(trf.get("requested_test_code"))
     submitted_test_code = normalize_text(payload.get("test_code"))
 
-    requested_test_type = normalize_text(trf.get("requested_test_type"))
-    submitted_test_type = normalize_text(payload.get("test_type"))
-
+    # Validate using stable test codes only
     if requested_test_code and submitted_test_code:
         if submitted_test_code != requested_test_code:
             raise HTTPException(
                 status_code=400,
                 detail="Submitted test code must match the requested test selected during sample intake.",
-            )
-
-    if requested_test_type and submitted_test_type:
-        if submitted_test_type != requested_test_type:
-            raise HTTPException(
-                status_code=400,
-                detail="Submitted test type must match the requested test selected during sample intake.",
             )
 
 
