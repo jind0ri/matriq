@@ -1,6 +1,6 @@
 {
   "model_name": "MobileNetV2",
-  "version_number": "v20260416130223",
+  "version_number": "matriq-mobilenetv2-v1.0.0",
   "accuracy": 1.0,
   "loss": 0.012376,
   "class_names": [
