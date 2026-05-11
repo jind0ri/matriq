@@ -1,9 +1,9 @@
 [
   {
     "model_name": "MobileNetV2",
-    "version_number": "v20260416130223",
+    "version_number": "matriq-mobilenetv2-v1.0.0",
     "provider": "tensorflow",
-    "artifact_path": "backend/ai_models/active/mobilenetv2_v20260416130223.keras",
+    "artifact_path": "backend/ai_models/active/matriq-mobilenetv2-v1.0.0.keras",
     "artifact_signature": "5ca897451f03bfd792474db61eaef6e0dd398961fd91a9efc911043b9a42e150",
     "deployed_by": "local_dev",
     "deployment_timestamp": "2026-04-16T13:02:24Z",
@@ -14,6 +14,6 @@
       "soil_aggregates"
     ],
     "preprocessing_profile": "pre_increment_2_profile",
-    "metrics_path": "backend/ai_models/active/mobilenetv2_v20260416130223_metrics.json"
+    "metrics_path": "backend/ai_models/active/matriq-mobilenetv2-v1.0.0_metrics.json"
   }
 ]
