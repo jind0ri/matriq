@@ -67,6 +67,12 @@ export default function TrackingDetailPage() {
   const isArchived = item?.current_state === "Archived";
   const isReadOnly = item?.is_immutable || isArchived || isReleased;
 
+  const role = user?.role;
+
+  const canArchiveSample =
+  (role === "QA Engineer" || role === "Administrator") &&
+  item?.current_state === "Released";
+
   function handlePrintReport() {
     window.print();
   }
@@ -116,6 +122,22 @@ export default function TrackingDetailPage() {
     }
   }
 
+  async function handleArchiveSample() {
+  if (!sampleId) return;
+
+  setError("");
+
+  try {
+    await apiClient.updateSampleStatus(sampleId, {
+      status: "Archived",
+    });
+
+    await loadSample();
+  } catch (err) {
+    setError(err.message || "Failed to archive sample.");
+  }
+}
+
   return (
     <div className="page">
       <header className="header no-print">
@@ -133,6 +155,12 @@ export default function TrackingDetailPage() {
             <Button variant="secondary" size="sm" onClick={loadSample}>
               Refresh
             </Button>
+
+            {canArchiveSample && (
+  <Button variant="secondary" size="sm" onClick={handleArchiveSample}>
+    Archive
+  </Button>
+)}
           </div>
         )}
       </header>

@@ -182,16 +182,17 @@ export default function BillingPage() {
     return map;
   }, [visibleInvoices]);
 
-  const paymentFollowUpSamples = useMemo(() => {
-    return visibleSamples.filter((sample) => {
-      const payment = getPaymentMetadata(sample);
-      const paymentStatus = payment.payment_status || "Unpaid";
+const paymentFollowUpSamples = useMemo(() => {
+  return visibleSamples.filter((sample) => {
+    const payment = getPaymentMetadata(sample);
+    const paymentStatus = payment.payment_status || "Unpaid";
 
-      return (
-        sample.current_state === "For Review" && paymentStatus !== "Fully Paid"
-      );
-    });
-  }, [visibleSamples]);
+    return (
+      ["Registered", "For Review"].includes(sample.current_state) &&
+      paymentStatus !== "Fully Paid"
+    );
+  });
+}, [visibleSamples]);
 
   const releasedSamples = useMemo(() => {
     return visibleSamples.filter(
@@ -1825,12 +1826,12 @@ function getBillingStatus(sample, invoice) {
   const payment = getPaymentMetadata(sample);
   const paymentStatus = payment.payment_status || "Unpaid";
 
-  if (
-    sample.current_state === "For Review" &&
-    paymentStatus !== PAYMENT_STATUSES.FULLY_PAID
-  ) {
-    return STATUS_FILTERS.PAYMENT_FOLLOW_UP;
-  }
+if (
+  ["Registered", "For Review"].includes(sample.current_state) &&
+  paymentStatus !== PAYMENT_STATUSES.FULLY_PAID
+) {
+  return STATUS_FILTERS.PAYMENT_FOLLOW_UP;
+}
 
   if (sample.current_state === "Released") return STATUS_FILTERS.READY;
   if (sample.current_state === "Archived") return STATUS_FILTERS.PAID;
