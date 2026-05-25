@@ -186,9 +186,10 @@ const paymentFollowUpSamples = useMemo(() => {
   return visibleSamples.filter((sample) => {
     const payment = getPaymentMetadata(sample);
     const paymentStatus = payment.payment_status || "Unpaid";
+    const lifecycleState = getLifecycleState(sample);
 
     return (
-      ["Registered", "For Review"].includes(sample.current_state) &&
+      ["Registered", "For Review"].includes(lifecycleState) &&
       paymentStatus !== "Fully Paid"
     );
   });
@@ -1818,6 +1819,10 @@ function PaymentStatusBadge({ status }) {
   );
 }
 
+function getLifecycleState(sample) {
+  return sample?.current_state || sample?.status || "";
+}
+
 function getBillingStatus(sample, invoice) {
   if (invoice?.status === "Paid") return STATUS_FILTERS.PAID;
   if (invoice?.status === "Pending") return STATUS_FILTERS.INVOICED;
@@ -1826,15 +1831,17 @@ function getBillingStatus(sample, invoice) {
   const payment = getPaymentMetadata(sample);
   const paymentStatus = payment.payment_status || "Unpaid";
 
+const lifecycleState = getLifecycleState(sample);
+
 if (
-  ["Registered", "For Review"].includes(sample.current_state) &&
+  ["Registered", "For Review"].includes(lifecycleState) &&
   paymentStatus !== PAYMENT_STATUSES.FULLY_PAID
 ) {
   return STATUS_FILTERS.PAYMENT_FOLLOW_UP;
 }
 
-  if (sample.current_state === "Released") return STATUS_FILTERS.READY;
-  if (sample.current_state === "Archived") return STATUS_FILTERS.PAID;
+if (lifecycleState === "Released") return STATUS_FILTERS.READY;
+if (lifecycleState === "Archived") return STATUS_FILTERS.PAID;
 
   return STATUS_FILTERS.PAYMENT_FOLLOW_UP;
 }

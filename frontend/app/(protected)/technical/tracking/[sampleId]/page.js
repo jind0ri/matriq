@@ -63,15 +63,15 @@ export default function TrackingDetailPage() {
   const qaOverride = getQaOverride(testData);
   const specificationStatus = getSpecificationStatus(finalResult);
 
-  const isReleased = item?.current_state === "Released";
-  const isArchived = item?.current_state === "Archived";
+const lifecycleState = item?.current_state || item?.status;
+
+const isReleased = lifecycleState === "Released";
+const isArchived = lifecycleState === "Archived";
   const isReadOnly = item?.is_immutable || isArchived || isReleased;
 
-  const role = user?.role;
-
-  const canArchiveSample =
+const canArchiveSample =
   (role === "QA Engineer" || role === "Administrator") &&
-  item?.current_state === "Released";
+  isReleased;
 
   function handlePrintReport() {
     window.print();
@@ -122,7 +122,7 @@ export default function TrackingDetailPage() {
     }
   }
 
-  async function handleArchiveSample() {
+async function handleArchiveSample() {
   if (!sampleId) return;
 
   setError("");
@@ -130,6 +130,7 @@ export default function TrackingDetailPage() {
   try {
     await apiClient.updateSampleStatus(sampleId, {
       status: "Archived",
+      new_state: "Archived",
     });
 
     await loadSample();
@@ -156,8 +157,12 @@ export default function TrackingDetailPage() {
               Refresh
             </Button>
 
-            {canArchiveSample && (
-  <Button variant="secondary" size="sm" onClick={handleArchiveSample}>
+{canArchiveSample && (
+  <Button
+    variant="secondary"
+    size="sm"
+    onClick={handleArchiveSample}
+  >
     Archive
   </Button>
 )}
