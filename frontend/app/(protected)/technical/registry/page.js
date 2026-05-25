@@ -140,6 +140,10 @@ export default function RegistryPage() {
       return { label: "Archive", type: "archive" };
     }
 
+    if (item.current_state === "Archived") {
+  return { label: "Archived", type: "archived" };
+}
+
     if (item.current_state === "In Testing") {
       return { label: "Testing", type: "testing" };
     }
@@ -191,9 +195,10 @@ export default function RegistryPage() {
           item.current_state === "For Review" &&
           payment.payment_status === "Fully Paid";
 
-        const archive = item.current_state === "Released";
+const archive =
+  item.current_state === "Released" || item.current_state === "Archived";
 
-        return pre || release || archive;
+return pre || release || archive;
       });
     }
 
@@ -1114,6 +1119,37 @@ export default function RegistryPage() {
 }
 
 function SampleFilters({ filters, setFilters, branchOptions, role }) {
+  const statusOptionsByRole = {
+    "Lab Technician": [
+      { value: "Registered", label: "Ready for Testing" },
+      { value: "In Testing", label: "In Testing" },
+    ],
+    "Senior Technician": [
+      { value: "For Review", label: "Manual Review" },
+    ],
+    "QA Engineer": [
+      { value: "Registered", label: "QA Pre-Test" },
+      { value: "For Review", label: "QA Release" },
+      { value: "Released", label: "For Archive" },
+      { value: "Archived", label: "Archived" },
+    ],
+    Administrator: [
+      { value: "Registered", label: "Registered" },
+      { value: "In Testing", label: "In Testing" },
+      { value: "For Review", label: "For Review" },
+      { value: "Released", label: "Released" },
+      { value: "Archived", label: "Archived" },
+    ],
+  };
+
+  const statusOptions = statusOptionsByRole[role] || [
+    { value: "Registered", label: "Registered" },
+    { value: "In Testing", label: "In Testing" },
+    { value: "For Review", label: "For Review" },
+    { value: "Released", label: "Released" },
+    { value: "Archived", label: "Archived" },
+  ];
+
   return (
     <>
       <Input
@@ -1157,34 +1193,11 @@ function SampleFilters({ filters, setFilters, branchOptions, role }) {
       >
         <option value="All">All Queues</option>
 
-        {role === "Lab Technician" && (
-          <>
-            <option value="Registered">Ready for Testing</option>
-            <option value="In Testing">In Testing</option>
-          </>
-        )}
-
-        {role === "Senior Technician" && (
-          <option value="For Review">Manual Review</option>
-        )}
-
-        {role === "QA Engineer" && (
-          <>
-            <option value="Registered">QA Pre-Test</option>
-            <option value="For Review">QA Release</option>
-            <option value="Released">Archive</option>
-          </>
-        )}
-
-        {role === "Administrator" && (
-          <>
-            <option value="Registered">Registered</option>
-            <option value="In Testing">In Testing</option>
-            <option value="For Review">For Review</option>
-            <option value="Released">Released</option>
-            <option value="Archived">Archived</option>
-          </>
-        )}
+        {statusOptions.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
       </Select>
 
       <Select
