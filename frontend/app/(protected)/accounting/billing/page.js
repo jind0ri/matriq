@@ -1968,5 +1968,5 @@ function formatCurrency(value) {
 
 function isAccreditedBilling(record) {
   const payment = record?.payment || record?.device_metadata?.payment || {};
-  return payment.client_type === "Accredited Billing";
+  return payment.client_type === "Accredited Billing Client";
 }
