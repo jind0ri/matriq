@@ -145,6 +145,11 @@ export default function WorkflowPage() {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [modalAction, setModalAction] = useState(null); // "approve" or "reject"
   const [modalSample, setModalSample] = useState(null);
+  const [classificationJustification, setClassificationJustification] =
+    useState("");
+
+  const [preTestingModalOpen, setPreTestingModalOpen] = useState(false);
+  const [selectedPreTestingSample, setSelectedPreTestingSample] = useState(null);
 
   const canViewLabTechQueue = isLabTech || isAdmin;
   const canActAsLabTech = isLabTech || isAdmin;
@@ -446,7 +451,7 @@ export default function WorkflowPage() {
     }
   }
 
-  async function handleValidation(item, decision) {
+  async function handleValidation(item, decision, justification) {
     if (!canActAsSeniorTech) {
       setActionError(
         "Only Senior Technicians can approve or reject AI classification review cases.",
@@ -459,11 +464,18 @@ export default function WorkflowPage() {
       return;
     }
 
+    if (!justification || justification.trim().length < 10) {
+      setActionError(
+        "Justification is required before approving or rejecting the classification."
+      );
+      return;
+    }
+
     await runAction(item.sample_id, async () => {
       await apiClient.validate({
         sample_id: item.sample_id,
         corrected_label: normalizeMaterialName(item.predicted_label),
-        justification: "Validated by Senior Technician",
+        justification: justification.trim(),
         decision,
       });
     });
@@ -483,6 +495,16 @@ export default function WorkflowPage() {
     await runAction(item.sample_id, async () => {
       await apiClient.qaApprovePreTesting(item.sample_id);
     });
+  }
+
+  function openPreTestingModal(item) {
+    setSelectedPreTestingSample(item);
+    setPreTestingModalOpen(true);
+  }
+
+  function closePreTestingModal() {
+    setSelectedPreTestingSample(null);
+    setPreTestingModalOpen(false);
   }
 
   async function handleQaRelease(item) {
@@ -931,6 +953,7 @@ export default function WorkflowPage() {
                         onClick={() => {
                           setModalAction("approve");
                           setModalSample(item);
+                          setClassificationJustification("");
                           setShowConfirmModal(true);
                         }}
                       >
@@ -943,6 +966,7 @@ export default function WorkflowPage() {
                         onClick={() => {
                           setModalAction("reject");
                           setModalSample(item);
+                          setClassificationJustification("");
                           setShowConfirmModal(true);
                         }}
                       >
@@ -988,20 +1012,48 @@ export default function WorkflowPage() {
                         <b>{modalAction === "approve" ? "approve" : "reject"}</b>{" "}
                         this AI classification? This action cannot be undone.
                       </p>
+
+                      <Textarea
+                        label="Justification *"
+                        value={classificationJustification}
+                        required
+                        rows={3}
+                        minLength={10}
+                        onChange={(event) =>
+                          setClassificationJustification(event.target.value)
+                        }
+                        placeholder={
+                          modalAction === "approve"
+                            ? "Required: Explain why the AI classification is accepted."
+                            : "Required: Explain why the AI classification is rejected."
+                        }
+                      />
                     </div>
 
                     <div className="confirmActions">
                       <Button
+                        type="button"
                         variant="secondary"
-                        onClick={() => setShowConfirmModal(false)}
+                        onClick={() => {
+                          setClassificationJustification("");
+                          setShowConfirmModal(false);
+                        }}
                       >
                         Cancel
                       </Button>
 
                       <Button
+                        type="button"
                         variant={modalAction === "approve" ? "success" : "danger"}
+                        disabled={classificationJustification.trim().length < 10}
                         onClick={async () => {
-                          await handleValidation(modalSample, modalAction);
+                          await handleValidation(
+                            modalSample,
+                            modalAction,
+                            classificationJustification,
+                          );
+
+                          setClassificationJustification("");
                           setShowConfirmModal(false);
                         }}
                       >
@@ -1039,12 +1091,9 @@ export default function WorkflowPage() {
                         canActAsQa && canActOnItem(item) ? (
                           <Button
                             size="sm"
-                            onClick={() => handleQaPreTesting(item)}
-                            disabled={workingId === item.sample_id}
+                            onClick={() => openPreTestingModal(item)}
                           >
-                            {workingId === item.sample_id
-                              ? "Approving..."
-                              : "Approve for Testing"}
+                            View Sample
                           </Button>
                         ) : (
                           <OversightNote
@@ -1396,6 +1445,77 @@ export default function WorkflowPage() {
           )}
         </>
       )}
+
+      <Modal
+        open={preTestingModalOpen}
+        title="QA Pre-Testing Review"
+        description={
+          selectedPreTestingSample?.sample_id ||
+          "Review sample details before approving for testing."
+        }
+        onClose={closePreTestingModal}
+        size="lg"
+        footer={
+          <>
+            <Button variant="secondary" onClick={closePreTestingModal}>
+              Cancel
+            </Button>
+
+            <Button
+              variant="primary"
+              disabled={
+                !selectedPreTestingSample ||
+                workingId === selectedPreTestingSample?.sample_id
+              }
+              onClick={async () => {
+                await handleQaPreTesting(selectedPreTestingSample);
+                closePreTestingModal();
+              }}
+            >
+              {workingId === selectedPreTestingSample?.sample_id
+                ? "Approving..."
+                : "Approve for Testing"}
+            </Button>
+          </>
+        }
+      >
+        {selectedPreTestingSample && (
+          <div className="testForm">
+            <SampleImagePreview sampleId={selectedPreTestingSample.sample_id} />
+
+            <div className="infoGrid">
+              <Info label="Sample ID" value={selectedPreTestingSample.sample_id} />
+              <Info label="Client" value={selectedPreTestingSample.client_name} />
+              <Info
+                label="Project"
+                value={selectedPreTestingSample.project_reference}
+              />
+              <Info
+                label="Material"
+                value={normalizeMaterialName(selectedPreTestingSample.material_type)}
+              />
+              <Info
+                label="Branch"
+                value={formatBranch(selectedPreTestingSample.branch_id)}
+              />
+              <Info
+                label="Payment Status"
+                value={
+                  getPayment(selectedPreTestingSample).payment_status || "Unpaid"
+                }
+              />
+              <Info
+                label="Requested Test"
+                value={getRequestedTestLabel(selectedPreTestingSample)}
+              />
+              <Info
+                label="Test Standard"
+                value={getRequestedTestStandard(selectedPreTestingSample)}
+              />
+            </div>
+          </div>
+        )}
+      </Modal>
 
       <Modal
         open={testModalOpen}
