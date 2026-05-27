@@ -182,18 +182,18 @@ export default function BillingPage() {
     return map;
   }, [visibleInvoices]);
 
-const paymentFollowUpSamples = useMemo(() => {
-  return visibleSamples.filter((sample) => {
-    const payment = getPaymentMetadata(sample);
-    const paymentStatus = payment.payment_status || "Unpaid";
-    const lifecycleState = getLifecycleState(sample);
+  const paymentFollowUpSamples = useMemo(() => {
+    return visibleSamples.filter((sample) => {
+      const payment = getPaymentMetadata(sample);
+      const paymentStatus = payment.payment_status || "Unpaid";
+      const lifecycleState = getLifecycleState(sample);
 
-    return (
-      ["Registered", "For Review"].includes(lifecycleState) &&
-      paymentStatus !== "Fully Paid"
-    );
-  });
-}, [visibleSamples]);
+      return (
+        ["Registered", "For Review"].includes(lifecycleState) &&
+        paymentStatus !== "Fully Paid"
+      );
+    });
+  }, [visibleSamples]);
 
   const releasedSamples = useMemo(() => {
     return visibleSamples.filter(
@@ -379,9 +379,16 @@ const paymentFollowUpSamples = useMemo(() => {
     const currentPayment = selectedPaymentRecord.payment || {};
     const currentPaymentStatus = currentPayment.payment_status || "Unpaid";
 
-    if (paymentStatus === currentPaymentStatus) {
+    const hasMetadataChanges =
+      amountPaid !== "" ||
+      balance !== "" ||
+      billingNotes.trim() ||
+      confirmationNote.trim() ||
+      poNumber.trim();
+
+    if (paymentStatus === currentPaymentStatus && !hasMetadataChanges) {
       setPaymentModalError(
-        "Please select a different payment status before saving.",
+        "Please change the payment status or add payment details before saving.",
       );
       return;
     }
@@ -414,7 +421,7 @@ const paymentFollowUpSamples = useMemo(() => {
 
     if (
       paymentStatus === PAYMENT_STATUSES.FULLY_PAID &&
-      confirmationNote.trim().length < 8
+      !confirmationNote.trim()
     ) {
       setPaymentModalError(
         "Confirmation note is required when marking a sample as Fully Paid.",
@@ -1831,17 +1838,17 @@ function getBillingStatus(sample, invoice) {
   const payment = getPaymentMetadata(sample);
   const paymentStatus = payment.payment_status || "Unpaid";
 
-const lifecycleState = getLifecycleState(sample);
+  const lifecycleState = getLifecycleState(sample);
 
-if (
-  ["Registered", "For Review"].includes(lifecycleState) &&
-  paymentStatus !== PAYMENT_STATUSES.FULLY_PAID
-) {
-  return STATUS_FILTERS.PAYMENT_FOLLOW_UP;
-}
+  if (
+    ["Registered", "For Review"].includes(lifecycleState) &&
+    paymentStatus !== PAYMENT_STATUSES.FULLY_PAID
+  ) {
+    return STATUS_FILTERS.PAYMENT_FOLLOW_UP;
+  }
 
-if (lifecycleState === "Released") return STATUS_FILTERS.READY;
-if (lifecycleState === "Archived") return STATUS_FILTERS.PAID;
+  if (lifecycleState === "Released") return STATUS_FILTERS.READY;
+  if (lifecycleState === "Archived") return STATUS_FILTERS.PAID;
 
   return STATUS_FILTERS.PAYMENT_FOLLOW_UP;
 }

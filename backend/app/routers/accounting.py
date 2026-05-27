@@ -889,7 +889,7 @@ def update_sample_payment(
             detail="Accounting Staff cannot downgrade payment status. Ask an Administrator to perform a correction.",
         )
 
-    if new_payment_status == PAYMENT_FULLY_PAID and len(confirmation_note) < 8:
+    if new_payment_status == PAYMENT_FULLY_PAID and is_blank(confirmation_note):
         raise HTTPException(
             status_code=400,
             detail="Confirmation note is required when marking a sample as Fully Paid.",
