@@ -1112,36 +1112,49 @@ def draw_report_header(pdf, sample):
 
     top_y = height - 16 * mm
 
-    if matest_logo.exists():
-        pdf.drawImage(
-            str(matest_logo),
-            15 * mm,
-            top_y - 18 * mm,
-            width=58 * mm,
-            height=18 * mm,
-            preserveAspectRatio=True,
-            mask="auto",
-        )
-    else:
-        pdf.setFont("Helvetica-Bold", 22)
+    # MATEST logo / fallback
+    try:
+        if matest_logo.exists():
+            pdf.drawImage(
+                str(matest_logo),
+                15 * mm,
+                top_y - 18 * mm,
+                width=58 * mm,
+                height=18 * mm,
+                preserveAspectRatio=True,
+                mask="auto",
+            )
+        else:
+            raise FileNotFoundError
+    except Exception:
+        pdf.setFont("Helvetica-Bold", 14)
         pdf.setFillColor(colors.HexColor("#f58220"))
-        pdf.drawString(15 * mm, top_y - 10 * mm, "Matest")
+        pdf.drawString(15 * mm, top_y - 8 * mm, "MATEST")
+        pdf.setFont("Helvetica-Bold", 7)
         pdf.setFillColor(colors.black)
+        pdf.drawString(15 * mm, top_y - 13 * mm, "LABORATORY SERVICES")
+        pdf.setFont("Helvetica", 6)
+        pdf.drawString(15 * mm, top_y - 17 * mm, "Laboratory Services and Technical Solutions Inc.")
 
-    if dpwh_logo.exists():
-        pdf.drawImage(
-            str(dpwh_logo),
-            76 * mm,
-            top_y - 18 * mm,
-            width=18 * mm,
-            height=18 * mm,
-            preserveAspectRatio=True,
-            mask="auto",
-        )
-    else:
+    # DPWH logo / fallback
+    try:
+        if dpwh_logo.exists():
+            pdf.drawImage(
+                str(dpwh_logo),
+                76 * mm,
+                top_y - 18 * mm,
+                width=18 * mm,
+                height=18 * mm,
+                preserveAspectRatio=True,
+                mask="auto",
+            )
+        else:
+            raise FileNotFoundError
+    except Exception:
         pdf.setFont("Helvetica-Bold", 6)
+        pdf.setFillColor(colors.black)
         pdf.drawString(76 * mm, top_y - 8 * mm, "DPWH-BRS")
-        pdf.drawString(76 * mm, top_y - 12 * mm, "Accredited")
+        pdf.drawString(76 * mm, top_y - 12 * mm, "ACCREDITED")
 
     pdf.setStrokeColor(colors.HexColor("#333333"))
     pdf.setLineWidth(0.8)
@@ -2207,11 +2220,9 @@ def sample_report_pdf(
     if current_user.get("role") != ROLE_ADMIN:
         require_sample_branch_access(current_user, item)
 
-    if item.get("current_state") != "Released" and current_user.get("role") != ROLE_ADMIN:
-        raise HTTPException(
+    if item.get("current_state") not in {"Released", "Archived"} and current_user.get("role") != ROLE_ADMIN:        raise HTTPException(
             status_code=400,
-            detail="Official PDF report is available only after QA release.",
-        )
+            detail="Official PDF report is available only after QA release or archiving.",        )
 
     hydrated_item = hydrate_sample_user_names(item)
     pdf_buffer = build_official_sample_report_pdf(hydrated_item)
@@ -2259,11 +2270,9 @@ def sample_report_excel(
     if current_user.get("role") != ROLE_ADMIN:
         require_sample_branch_access(current_user, item)
 
-    if item.get("current_state") != "Released" and current_user.get("role") != ROLE_ADMIN:
-        raise HTTPException(
+    if item.get("current_state") not in {"Released", "Archived"} and current_user.get("role") != ROLE_ADMIN:        raise HTTPException(
             status_code=400,
-            detail="Official Excel report is available only after QA release.",
-        )
+            detail="Official Excel report is available only after QA release or archiving.",        )
 
     hydrated_item = hydrate_sample_user_names(item)
     excel_buffer = build_official_sample_report_excel(hydrated_item)

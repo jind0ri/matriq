@@ -63,18 +63,60 @@ export default function TrackingDetailPage() {
   const qaOverride = getQaOverride(testData);
   const specificationStatus = getSpecificationStatus(finalResult);
 
-const lifecycleState = item?.current_state || item?.status;
+  const lifecycleState = item?.current_state || item?.status;
 
-const isReleased = lifecycleState === "Released";
-const isArchived = lifecycleState === "Archived";
-  const isReadOnly = item?.is_immutable || isArchived || isReleased;
+  const isReleased = lifecycleState === "Released";
+  const isArchived = lifecycleState === "Archived";
+  const isFinalized = isReleased || isArchived;
+  const isReadOnly = item?.is_immutable || isFinalized;
 
-const canArchiveSample =
-  (role === "QA Engineer" || role === "Administrator") &&
-  isReleased;
+  const canArchiveSample =
+    (role === "QA Engineer" || role === "Administrator") &&
+    isReleased;
 
-  function handlePrintReport() {
-    window.print();
+  async function handleDownloadPdfReport() {
+    const token =
+      localStorage.getItem("access_token") || localStorage.getItem("token");
+
+    if (!token) {
+      setError("Missing login token. Please log in again.");
+      return;
+    }
+
+    try {
+      const baseUrl =
+        process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000";
+
+      const response = await fetch(
+        `${baseUrl}/api/samples/${sampleId}/report/pdf`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        throw new Error(
+          errorData?.detail || "Failed to download PDF report.",
+        );
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${sampleId}_official_report.pdf`;
+      document.body.appendChild(link);
+      link.click();
+
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err.message || "Failed to download PDF report.");
+    }
   }
 
   async function handleDownloadExcelReport() {
@@ -122,22 +164,22 @@ const canArchiveSample =
     }
   }
 
-async function handleArchiveSample() {
-  if (!sampleId) return;
+  async function handleArchiveSample() {
+    if (!sampleId) return;
 
-  setError("");
+    setError("");
 
-  try {
-    await apiClient.updateSampleStatus(sampleId, {
-      status: "Archived",
-      new_state: "Archived",
-    });
+    try {
+      await apiClient.updateSampleStatus(sampleId, {
+        status: "Archived",
+        new_state: "Archived",
+      });
 
-    await loadSample();
-  } catch (err) {
-    setError(err.message || "Failed to archive sample.");
+      await loadSample();
+    } catch (err) {
+      setError(err.message || "Failed to archive sample.");
+    }
   }
-}
 
   return (
     <div className="page">
@@ -157,15 +199,15 @@ async function handleArchiveSample() {
               Refresh
             </Button>
 
-{canArchiveSample && (
-  <Button
-    variant="secondary"
-    size="sm"
-    onClick={handleArchiveSample}
-  >
-    Archive
-  </Button>
-)}
+            {canArchiveSample && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleArchiveSample}
+              >
+                Archive
+              </Button>
+            )}
           </div>
         )}
       </header>
@@ -197,7 +239,7 @@ async function handleArchiveSample() {
             </section>
           )}
 
-          {isReleased && testData && (
+          {isFinalized && testData && (
             <OfficialReport
               item={item}
               trf={trf}
@@ -205,7 +247,7 @@ async function handleArchiveSample() {
               testData={testData}
               testValues={testValues}
               qa={qa}
-              onPrint={handlePrintReport}
+              onPrint={handleDownloadPdfReport}
               onDownloadExcel={handleDownloadExcelReport}
               canDownloadOfficialReport={canDownloadOfficialReport}
             />
@@ -516,7 +558,7 @@ async function handleArchiveSample() {
                 </Card>
               )}
 
-              {isReleased && (
+              {isFinalized && (
                 <Card title="Official Report">
                   <p className="sideNote">
                     This report documents the actual laboratory result. It does
@@ -528,7 +570,7 @@ async function handleArchiveSample() {
                       <Button
                         variant="secondary"
                         size="sm"
-                        onClick={handlePrintReport}
+                        onClick={handleDownloadPdfReport}
                       >
                         Print / Save Report
                       </Button>
@@ -1192,7 +1234,7 @@ function OfficialReport({
           canDownloadOfficialReport ? (
             <div className="reportActionGroup">
               <Button variant="primary" size="sm" onClick={onPrint}>
-                Print / Save PDF
+                Download PDF
               </Button>
 
               <Button variant="secondary" size="sm" onClick={onDownloadExcel}>
