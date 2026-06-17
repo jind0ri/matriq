@@ -20,12 +20,12 @@ import Textarea from "@/components/ui/Textarea";
 const BASE_FEE = 2500;
 
 const STATUS_FILTERS = {
-  ALL: "All",
-  PAYMENT_FOLLOW_UP: "Payment Follow-up",
-  READY: "Ready to Invoice",
-  INVOICED: "Invoiced",
-  PAID: "Paid",
-  CANCELLED: "Cancelled",
+  ALL: "ALL",
+  PAYMENT_FOLLOW_UP: "PAYMENT_FOLLOW_UP",
+  READY: "READY",
+  INVOICED: "INVOICED",
+  PAID: "PAID",
+  CANCELLED: "CANCELLED",
 };
 
 const PAYMENT_STATUSES = {
@@ -254,7 +254,8 @@ export default function BillingPage() {
 
       const matchesStatus =
         statusFilter === STATUS_FILTERS.ALL ||
-        item.billing_status === statusFilter;
+        item.billing_status === statusFilter ||
+        Object.values(STATUS_FILTERS).find(val => val === statusFilter) === item.billing_status;
 
       return matchesSearch && matchesStatus;
     });
@@ -627,8 +628,6 @@ export default function BillingPage() {
               <option value={STATUS_FILTERS.PAYMENT_FOLLOW_UP}>
                 Payment Follow-up
               </option>
-              <option value={STATUS_FILTERS.READY}>Ready to Invoice</option>
-              <option value={STATUS_FILTERS.INVOICED}>Invoiced</option>
               <option value={STATUS_FILTERS.PAID}>Paid</option>
               <option value={STATUS_FILTERS.CANCELLED}>Cancelled</option>
             </Select>
@@ -1787,9 +1786,18 @@ function BillingStatusBadge({ status }) {
             ? "warning"
             : "neutral";
 
+  // Map the internal key back to a user-friendly string for the UI text layout
+  const displayLabels = {
+    [STATUS_FILTERS.PAID]: "Paid",
+    [STATUS_FILTERS.CANCELLED]: "Cancelled",
+    [STATUS_FILTERS.INVOICED]: "Invoiced",
+    [STATUS_FILTERS.READY]: "Ready to Invoice",
+    [STATUS_FILTERS.PAYMENT_FOLLOW_UP]: "Payment Follow-up",
+  };
+
   return (
     <Badge variant={variant} size="sm">
-      {status}
+      {displayLabels[status] || status}
     </Badge>
   );
 }

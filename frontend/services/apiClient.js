@@ -260,9 +260,10 @@ export const apiClient = {
   getQaPreTestingQueue: () => request("/api/qa/pre-testing"),
   getQaReleaseQueue: () => request("/api/qa/release"),
 
-  qaApprovePreTesting: (sampleId) =>
+  qaApprovePreTesting: (sampleId, data) =>
     request(`/api/samples/${sampleId}/qa-pretesting`, {
       method: "PATCH",
+      body: data, // <-- This passes the audit logs and justification to the backend!
     }),
 
   qaApproveRelease: (sampleId) =>

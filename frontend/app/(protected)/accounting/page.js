@@ -84,7 +84,7 @@ export default function AccountingDashboard() {
     branchFilter !== "All" &&
     branchFilter !== "My" &&
     Number(resolveBranchFilter(branchFilter, userBranchId)) !==
-      Number(userBranchId);
+    Number(userBranchId);
 
   async function loadData() {
     setLoading(true);
@@ -186,11 +186,18 @@ export default function AccountingDashboard() {
   }, [actionAllowedInvoices]);
 
   const invoiceableSamples = useMemo(() => {
-    return actionAllowedReleasedSamples.filter(
-      (item) =>
-        item.current_state === "Released" &&
-        !activeInvoiceSampleIds.has(item.sample_id),
-    );
+    return actionAllowedReleasedSamples.filter((item) => {
+      // 1. Must not already have an active invoice
+      const hasNoInvoice = !activeInvoiceSampleIds.has(item.sample_id);
+
+      // 2. Extract the payment status from the deep metadata object
+      const paymentStatus = item.device_metadata?.payment?.payment_status;
+
+      // 3. Must be explicitly marked as "Fully Paid"
+      const isFullyPaid = paymentStatus === "Fully Paid";
+
+      return hasNoInvoice && isFullyPaid;
+    });
   }, [actionAllowedReleasedSamples, activeInvoiceSampleIds]);
 
   const pendingInvoices = useMemo(() => {
@@ -378,11 +385,11 @@ export default function AccountingDashboard() {
               ? "You can view and manage accounting records from all branches."
               : isCloudMonitoring
                 ? `You are viewing all cloud-synced accounting records. Invoice creation remains locked to your assigned branch: ${formatBranch(
-                    userBranchId,
-                  )}.`
+                  userBranchId,
+                )}.`
                 : `You are viewing ${branchLabel} accounting records for monitoring. Invoice creation remains locked to your assigned branch: ${formatBranch(
-                    userBranchId,
-                  )}.`}
+                  userBranchId,
+                )}.`}
           </span>
         </section>
       )}
@@ -551,8 +558,8 @@ export default function AccountingDashboard() {
           isAdmin
             ? "Create a stored invoice for a released sample."
             : `Create a stored invoice for a released ${formatBranch(
-                userBranchId,
-              )} sample.`
+              userBranchId,
+            )} sample.`
         }
         onClose={closeCreateInvoiceModal}
         size="md"
@@ -635,7 +642,7 @@ export default function AccountingDashboard() {
                   <strong>
                     {normalizeMaterialName(
                       selectedSample.material_type ||
-                        selectedSample.ai_predicted_label,
+                      selectedSample.ai_predicted_label,
                     )}
                   </strong>
                 </div>

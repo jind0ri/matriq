@@ -810,15 +810,40 @@ def update_sample_payment(
     old_payment_status = payment.get("payment_status") or PAYMENT_UNPAID
     new_payment_status = payload.get("payment_status")
     
-    if new_payment_status == old_payment_status:
-        raise HTTPException(
-        status_code=400,
-        detail="Payment status is already set to this value.",
-    )
     amount_paid = normalize_amount(payload.get("amount_paid"), "amount_paid")
     balance = normalize_amount(payload.get("balance"), "balance")
+    if new_payment_status == PAYMENT_FULLY_PAID:
+        if amount_paid is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Amount paid is required for Fully Paid samples.",
+            )
+
+        if balance is None:
+            balance = 0
     billing_notes = (payload.get("billing_notes") or "").strip()
     confirmation_note = (payload.get("confirmation_note") or "").strip()
+
+    existing_amount_paid = payment.get("amount_paid")
+    existing_balance = payment.get("balance")
+    existing_billing_notes = (payment.get("billing_notes") or "").strip()
+    existing_confirmation_note = (
+        payment.get("confirmation_note") or ""
+    ).strip()
+
+    no_changes = (
+        new_payment_status == old_payment_status
+        and amount_paid == existing_amount_paid
+        and balance == existing_balance
+        and billing_notes == existing_billing_notes
+        and confirmation_note == existing_confirmation_note
+    )
+
+    if no_changes:
+        raise HTTPException(
+            status_code=400,
+            detail="No changes detected.",
+        )
 
     if new_payment_status not in VALID_PAYMENT_STATUSES:
         raise HTTPException(status_code=400, detail="Invalid payment status")
@@ -858,11 +883,15 @@ def update_sample_payment(
                 detail="Credit terms must be greater than zero.",
             )
 
-    if is_immutable and role != ROLE_ADMIN:
+    if (
+        is_immutable
+        and current_state in {"Released", "Archived"}
+        and role != ROLE_ADMIN
+    ):
         raise HTTPException(
-            status_code=400,
-            detail="Released or archived records are finalized. Only an Administrator can correct payment metadata.",
-        )
+        status_code=400,
+        detail="Released or archived records are finalized. Only an Administrator can correct payment metadata.",
+    )
 
     if current_state in {"Released", "Archived"} and role != ROLE_ADMIN:
         raise HTTPException(
@@ -890,6 +919,18 @@ def update_sample_payment(
         )
 
     if new_payment_status == PAYMENT_FULLY_PAID and is_blank(confirmation_note):
+        if new_payment_status == PAYMENT_FULLY_PAID:
+            if amount_paid is None or amount_paid <= 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail="A valid amount paid is required.",
+                )
+
+            if balance not in (0, 0.0, None):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Balance must be zero for Fully Paid samples.",
+                )
         raise HTTPException(
             status_code=400,
             detail="Confirmation note is required when marking a sample as Fully Paid.",
@@ -935,8 +976,8 @@ def update_sample_payment(
     payment["payment_updated_at"] = datetime.now().isoformat()
     payment["payment_history"] = payment_history
 
-    if amount_paid is not None:
-        payment["amount_paid"] = amount_paid
+    payment["amount_paid"] = amount_paid
+    payment["balance"] = balance
 
     if balance is not None:
         payment["balance"] = balance

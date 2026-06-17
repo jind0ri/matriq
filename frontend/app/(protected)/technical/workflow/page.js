@@ -150,6 +150,8 @@ export default function WorkflowPage() {
 
   const [preTestingModalOpen, setPreTestingModalOpen] = useState(false);
   const [selectedPreTestingSample, setSelectedPreTestingSample] = useState(null);
+  const [qaMaterialOverride, setQaMaterialOverride] = useState("");
+  const [qaPreTestingJustification, setQaPreTestingJustification] = useState("");
 
   const canViewLabTechQueue = isLabTech || isAdmin;
   const canActAsLabTech = isLabTech || isAdmin;
@@ -492,18 +494,45 @@ export default function WorkflowPage() {
       return;
     }
 
+    // Fallback setup to establish what label the AI generated initially
+    const originalPrediction = item?.ai_predicted_label || item?.material_type || "Unknown";
+    const finalPredictionSelection = qaMaterialOverride;
+    const isModified = originalPrediction !== finalPredictionSelection;
+
+    // Build out a comprehensive audit trail payload package
+    const auditPayload = {
+      sample_id: item.sample_id,
+      justification: qaPreTestingJustification.trim(),
+      material_type: finalPredictionSelection,
+
+      // Audit Metadata logs layer variables
+      audit_logs: {
+        action: isModified ? "QA_PRE_TESTING_MODIFICATION_AND_APPROVAL" : "QA_PRE_TESTING_APPROVAL",
+        original_prediction: originalPrediction,
+        corrected_prediction: finalPredictionSelection,
+        ai_prediction_was_wrong: isModified,
+        timestamp: new Date().toISOString(),
+      }
+    };
+
     await runAction(item.sample_id, async () => {
-      await apiClient.qaApprovePreTesting(item.sample_id);
+      // Send the rich validation bundle to your backend API route
+      await apiClient.qaApprovePreTesting(item.sample_id, auditPayload);
     });
   }
 
   function openPreTestingModal(item) {
     setSelectedPreTestingSample(item);
+    // Pre-populate with the current material type/AI label
+    setQaMaterialOverride(item?.material_type || item?.ai_predicted_label || "");
+    setQaPreTestingJustification("");
     setPreTestingModalOpen(true);
   }
 
   function closePreTestingModal() {
     setSelectedPreTestingSample(null);
+    setQaMaterialOverride("");
+    setQaPreTestingJustification("");
     setPreTestingModalOpen(false);
   }
 
@@ -595,7 +624,7 @@ export default function WorkflowPage() {
       return;
     }
 
-    const requestedTestKey = getRequestedTestKey(item);
+    let requestedTestKey = getRequestedTestKey(item);
 
     if (!requestedTestKey) {
       setActionError(
@@ -604,10 +633,34 @@ export default function WorkflowPage() {
       return;
     }
 
+    // --- AUTOMATIC NORMALIZATION LAYER ---
+    // Converts "Concrete-Slump" or "CONCRETE_SLUMP" into "concrete_slump"
+    requestedTestKey = String(requestedTestKey)
+      .trim()
+      .toLowerCase()
+      .replaceAll("-", "_")             // Fixes dashes
+      .replaceAll(" ", "_");            // Fixes accidental spaces
+
+    // Handles common legacy/short codes generated during registration
+    const registrationAliasMap = {
+      "conc_comp": "concrete_compression",
+      "slump": "concrete_slump",
+      "flexural": "concrete_flexural",
+      "tensile": "rsb_tensile",
+      "bend": "rsb_bend",
+      "moisture": "soil_moisture",
+      "classification": "soil_classification"
+    };
+
+    if (registrationAliasMap[requestedTestKey]) {
+      requestedTestKey = registrationAliasMap[requestedTestKey];
+    }
+    // -------------------------------------
+
     setSelectedSample(item);
     setForm({
       ...INITIAL_FORM,
-      testType: requestedTestKey,
+      testType: requestedTestKey, // Form now opens with a guaranteed valid snake_case matching key
     });
     setFormError("");
     setTestModalOpen(true);
@@ -647,8 +700,11 @@ export default function WorkflowPage() {
       return;
     }
 
+    // This converts "concrete-slump" to "concrete_slump" dynamically
+    const backendFriendlyTestType = String(form.testType).toLowerCase().replaceAll("-", "_");
+
     const payload = {
-      test_type: form.testType,
+      test_type: backendFriendlyTestType, // Now sends "concrete_slump" -> Backend accepts it!
       test_code: getRequestedTestCode(selectedSample),
       test_name: getRequestedTestLabel(selectedSample),
       standard: getRequestedTestStandard(selectedSample),
@@ -1448,10 +1504,10 @@ export default function WorkflowPage() {
 
       <Modal
         open={preTestingModalOpen}
-        title="QA Pre-Testing Review"
+        title="QA Pre-Testing Review & Classification Triage"
         description={
           selectedPreTestingSample?.sample_id ||
-          "Review sample details before approving for testing."
+          "Review sample details, correct AI classification anomalies, and authorize testing."
         }
         onClose={closePreTestingModal}
         size="lg"
@@ -1463,9 +1519,12 @@ export default function WorkflowPage() {
 
             <Button
               variant="primary"
+              // Button is disabled if justification is missing or less than 10 characters
               disabled={
                 !selectedPreTestingSample ||
-                workingId === selectedPreTestingSample?.sample_id
+                workingId === selectedPreTestingSample?.sample_id ||
+                !qaPreTestingJustification.trim() ||
+                qaPreTestingJustification.trim().length < 10
               }
               onClick={async () => {
                 await handleQaPreTesting(selectedPreTestingSample);
@@ -1473,8 +1532,8 @@ export default function WorkflowPage() {
               }}
             >
               {workingId === selectedPreTestingSample?.sample_id
-                ? "Approving..."
-                : "Approve for Testing"}
+                ? "Processing..."
+                : "Approve & Authorize Testing"}
             </Button>
           </>
         }
@@ -1486,33 +1545,38 @@ export default function WorkflowPage() {
             <div className="infoGrid">
               <Info label="Sample ID" value={selectedPreTestingSample.sample_id} />
               <Info label="Client" value={selectedPreTestingSample.client_name} />
-              <Info
-                label="Project"
-                value={selectedPreTestingSample.project_reference}
-              />
-              <Info
-                label="Material"
-                value={normalizeMaterialName(selectedPreTestingSample.material_type)}
-              />
-              <Info
-                label="Branch"
-                value={formatBranch(selectedPreTestingSample.branch_id)}
-              />
-              <Info
-                label="Payment Status"
-                value={
-                  getPayment(selectedPreTestingSample).payment_status || "Unpaid"
-                }
-              />
-              <Info
-                label="Requested Test"
-                value={getRequestedTestLabel(selectedPreTestingSample)}
-              />
-              <Info
-                label="Test Standard"
-                value={getRequestedTestStandard(selectedPreTestingSample)}
-              />
+              <Info label="Project" value={selectedPreTestingSample.project_reference} />
+              <Info label="Branch" value={formatBranch(selectedPreTestingSample.branch_id)} />
+              <Info label="Payment Status" value={getPayment(selectedPreTestingSample).payment_status || "Unpaid"} />
+              <Info label="Requested Test" value={getRequestedTestLabel(selectedPreTestingSample)} />
+              <Info label="Test Standard" value={getRequestedTestStandard(selectedPreTestingSample)} />
+              <Info label="Original AI Label" value={selectedPreTestingSample.ai_predicted_label || selectedPreTestingSample.material_type || "-"} />
             </div>
+
+            <hr style={{ border: "0", borderTop: "1px solid var(--color-border-soft)", margin: "10px 0" }} />
+
+            {/* NEW: Interactive QA Material Modification Selection */}
+            <Select
+              label="Verify / Modify Material Classification *"
+              name="qaMaterialOverride"
+              value={qaMaterialOverride}
+              required
+              onChange={(event) => setQaMaterialOverride(event.target.value)}
+            >
+              <option value="Concrete">Concrete</option>
+              <option value="Reinforcing Steel Bar">Reinforcing Steel Bar</option>
+              <option value="Soil Aggregates">Soil Aggregates</option>
+            </Select>
+
+            {/* NEW: Mandatory Action Justification */}
+            <Textarea
+              label="Triage / Action Justification *"
+              value={qaPreTestingJustification}
+              required
+              rows={3}
+              placeholder="Required (min 10 chars): Explain why this sample is cleared for lab testing, or justify why you modified the AI material prediction label..."
+              onChange={(event) => setQaPreTestingJustification(event.target.value)}
+            />
           </div>
         )}
       </Modal>
