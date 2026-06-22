@@ -49,15 +49,16 @@ def get_user_by_login_identifier(login_identifier: str):
             full_name,
             role,
             branch_id,
-            is_active
+            is_active,
+            last_activity
         FROM users
         WHERE lower(username) = lower(%s)
         """,
         (login_identifier,),
     )
 
-
 def get_user_by_id(user_id: int):
+    # MODIFIED: Added last_activity column to the selector statement
     return fetchone(
         """
         SELECT
@@ -66,7 +67,8 @@ def get_user_by_id(user_id: int):
             full_name,
             role,
             branch_id,
-            is_active
+            is_active,
+            last_activity
         FROM users
         WHERE user_id = %s
         """,
@@ -123,6 +125,54 @@ def current_user(authorization: str | None = Header(default=None)):
 
     if not db_user:
         raise HTTPException(status_code=401, detail="User account no longer exists.")
+
+    # --- MODIFIED: AUTOMATIC INACTIVITY EXPIRATION RULE ---
+    from datetime import datetime, timezone
+    from ..database import execute  # Import database executor utility
+        
+    INACTIVITY_LIMIT_DAYS = 30  # Threshold timeframe specification
+    last_activity_val = db_user.get("last_activity")
+        
+    if last_activity_val:
+        # Normalize text timestamp column responses into valid native datetimes
+        if isinstance(last_activity_val, str):
+            last_activity = datetime.fromisoformat(last_activity_val.replace("Z", "+00:00"))
+        else:
+            last_activity = last_activity_val
+                
+        if last_activity.tzinfo is None:
+            last_activity = last_activity.replace(tzinfo=timezone.utc)
+                
+        current_time = datetime.now(timezone.utc)
+        days_inactive = (current_time - last_activity).days
+            
+        # Deactivate user automatically if window limit is exceeded
+        if days_inactive >= INACTIVITY_LIMIT_DAYS:
+            execute(
+                """
+                UPDATE users
+                SET is_active = FALSE
+                WHERE user_id = %s
+                """,
+                (db_user["user_id"],)
+            )
+            db_user["is_active"] = False
+            raise HTTPException(
+                status_code=403,
+                detail=f"This account has been automatically inactivated due to {days_inactive} days of inactivity. Please contact the administrator.",
+            )
+
+    # SLIDING WINDOW: If user is safe, extend their active activity lock window to right now
+    if db_user.get("is_active"):
+        execute(
+            """
+            UPDATE users
+            SET last_activity = CURRENT_TIMESTAMP
+            WHERE user_id = %s
+            """,
+            (db_user["user_id"],)
+        )
+    # -----------------------------------------------------
 
     if not db_user.get("is_active"):
         raise HTTPException(

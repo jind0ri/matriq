@@ -135,6 +135,7 @@ def _format_user(row: dict[str, Any] | None):
         "status": "Active" if is_active else "Inactive",
         "account_status": "Active" if is_active else "Inactive",
         "created_at": row.get("created_at"),
+        "last_activity": row.get("last_activity"),  # <-- INSERT THIS LINE
     }
 
 
@@ -172,7 +173,8 @@ def list_users(current_user=Depends(require_roles(ROLE_ADMIN))):
             role,
             branch_id,
             is_active,
-            created_at
+            created_at,
+            last_activity
         FROM users
         ORDER BY user_id ASC
         """

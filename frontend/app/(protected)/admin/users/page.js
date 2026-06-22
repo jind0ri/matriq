@@ -19,6 +19,7 @@ const USER_COLUMNS = [
   { key: "role", label: "Role", width: "170px" },
   { key: "branch", label: "Branch", width: "130px" },
   { key: "status", label: "Status", width: "120px" },
+  { key: "inactivity", label: "Inactivity Period", width: "150px" }, // <-- INSERT THIS LINE
   { key: "action", label: "Action", align: "right", width: "180px" },
 ];
 
@@ -29,6 +30,19 @@ const ROLE_OPTIONS = [
   "Senior Technician",
   "Accounting Staff",
 ];
+
+function getDaysInactive(lastActivityStr) {
+  if (!lastActivityStr) return "N/A (Never)";
+
+  const lastActivity = new Date(lastActivityStr);
+  const today = new Date();
+
+  const diffTime = Math.abs(today - lastActivity);
+  const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+  if (diffDays === 0) return "Active Today";
+  return `${diffDays} days inactive`;
+}
 
 export default function AdminUsersPage() {
   const currentUser = getStoredUser();
@@ -116,8 +130,12 @@ export default function AdminUsersPage() {
       const matchesSearch =
         !q ||
         getUserDisplayName(user).toLowerCase().includes(q) ||
-        String(user.username || "").toLowerCase().includes(q) ||
-        String(user.email || "").toLowerCase().includes(q) ||
+        String(user.username || "")
+          .toLowerCase()
+          .includes(q) ||
+        String(user.email || "")
+          .toLowerCase()
+          .includes(q) ||
         role.toLowerCase().includes(q) ||
         formatBranch(user.branch_id).toLowerCase().includes(q);
 
@@ -447,6 +465,24 @@ export default function AdminUsersPage() {
                       <UserStatusBadge user={user} />
                     </td>
 
+                    {/* ========================================== */}
+                    {/* ADD THIS NEW TABLE DISPLAY CELL HERE:     */}
+                    {/* ========================================== */}
+                    <td>
+                      <span
+                        style={{
+                          color: isUserActive(user)
+                            ? "var(--color-text-secondary)"
+                            : "var(--color-danger)",
+                          fontSize: "var(--text-xs)",
+                          fontWeight: !isUserActive(user) ? "600" : "normal",
+                        }}
+                      >
+                        {getDaysInactive(user.last_activity)}
+                      </span>
+                    </td>
+                    {/* ========================================== */}
+
                     <td className="right">
                       <button
                         type="button"
@@ -493,7 +529,11 @@ export default function AdminUsersPage() {
               Cancel
             </Button>
 
-            <Button variant="primary" onClick={handleCreateUser} disabled={saving}>
+            <Button
+              variant="primary"
+              onClick={handleCreateUser}
+              disabled={saving}
+            >
               {saving ? "Creating..." : "Create User"}
             </Button>
           </>
@@ -768,7 +808,7 @@ export default function AdminUsersPage() {
         }
 
         :global(.usersTable table) {
-          min-width: 860px;
+          min-width: 1010px; /* Increased by 150px to accommodate the new column width perfectly */
         }
 
         @media (max-width: 1100px) {
@@ -814,7 +854,10 @@ function RoleBadge({ role }) {
   const normalizedRole = normalizeRoleName(role);
 
   return (
-    <Badge variant={normalizedRole === "Administrator" ? "brand" : "info"} size="sm">
+    <Badge
+      variant={normalizedRole === "Administrator" ? "brand" : "info"}
+      size="sm"
+    >
       {normalizedRole || "Unassigned"}
     </Badge>
   );
